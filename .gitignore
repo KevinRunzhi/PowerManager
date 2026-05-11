@@ -1,0 +1,4 @@
+.vscode/
+docs_review/
+/*.md
+!/README.md
