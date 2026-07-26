@@ -8,6 +8,7 @@ import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
+import 'package:power_manager/application/settings_service.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
@@ -15,6 +16,7 @@ import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/debug/presentation/debug_environment_page.dart';
 import 'package:power_manager/features/home/presentation/home_page.dart';
+import 'package:power_manager/features/settings/presentation/settings_page.dart';
 
 void main() {
   testWidgets('app starts inside ProviderScope and renders the home shell', (
@@ -256,6 +258,56 @@ void main() {
       expect(find.textContaining('自动调整'), findsNothing);
     },
   );
+
+  testWidgets('settings validates base range and schedules valid boundary', (
+    tester,
+  ) async {
+    final settingsMutator = _FakeSettingsMutator();
+    await tester.pumpWidget(_testApp(settingsMutator: settingsMutator));
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(SettingsPage.pageKey), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('base-estimate-field')), '59');
+    await tester.tap(find.byKey(const Key('save-base-estimate-button')));
+    await tester.pump();
+    expect(find.text('请输入 60～140 的整数'), findsOneWidget);
+    expect(settingsMutator.scheduled, isEmpty);
+
+    await tester.enterText(find.byKey(const Key('base-estimate-field')), '140');
+    await tester.tap(find.byKey(const Key('save-base-estimate-button')));
+    await tester.pumpAndSettle();
+    expect(settingsMutator.scheduled, [140]);
+    expect(find.textContaining('规则编辑或迁移入口'), findsOneWidget);
+  });
+
+  testWidgets('first explanation completes once and settings can reopen it', (
+    tester,
+  ) async {
+    final settingsMutator = _FakeSettingsMutator();
+    await tester.pumpWidget(
+      _testApp(
+        settingsMutator: settingsMutator,
+        appSettings: _appSettings(onboardingCompleted: false),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('onboarding-dialog')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('onboarding-confirm-button')));
+    await tester.pumpAndSettle();
+    expect(settingsMutator.onboardingCount, 1);
+    expect(find.byKey(const Key('onboarding-dialog')), findsNothing);
+
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('review-onboarding-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('onboarding-dialog')), findsOneWidget);
+  });
 }
 
 Widget _testApp({
@@ -264,6 +316,8 @@ Widget _testApp({
   WellbeingMutator? wellbeing,
   TextScaler textScaler = TextScaler.noScaling,
   HistoryReview? history,
+  AppSettings? appSettings,
+  SettingsMutator? settingsMutator,
 }) {
   return ProviderScope(
     overrides: [
@@ -292,6 +346,12 @@ Widget _testApp({
               ),
             ),
       ),
+      appSettingsProvider.overrideWith(
+        (ref) async => appSettings ?? _appSettings(onboardingCompleted: true),
+      ),
+      settingsServiceProvider.overrideWithValue(
+        settingsMutator ?? _FakeSettingsMutator(),
+      ),
       if (mutator != null) activityUseCasesProvider.overrideWithValue(mutator),
       if (wellbeing != null)
         wellbeingUseCasesProvider.overrideWithValue(wellbeing),
@@ -301,6 +361,26 @@ Widget _testApp({
       child: const PowerManagerApp(),
     ),
   );
+}
+
+final class _FakeSettingsMutator implements SettingsMutator {
+  final scheduled = <int>[];
+  var onboardingCount = 0;
+
+  @override
+  Future<AppSettings> completeOnboarding() async {
+    onboardingCount++;
+    return _appSettings(onboardingCompleted: true);
+  }
+
+  @override
+  Future<AppSettings> scheduleBaseEstimate(int value) async {
+    scheduled.add(value);
+    return _appSettings(
+      onboardingCompleted: true,
+      pendingBaseEstimatedEnergy: value,
+    );
+  }
 }
 
 final class _FakeActivityMutator implements ActivityMutator {
@@ -504,5 +584,24 @@ DailySummary _dailySummary(LifeDay day) {
     isStandardEffectiveDay: true,
     isWeakEffectiveDay: false,
     settledAt: DateTime.utc(2026, 7, 26, 4),
+  );
+}
+
+AppSettings _appSettings({
+  required bool onboardingCompleted,
+  int? pendingBaseEstimatedEnergy,
+}) {
+  return AppSettings(
+    baseEstimatedEnergy: 100,
+    pendingBaseEstimatedEnergy: pendingBaseEstimatedEnergy,
+    baseEnergyEffectiveLifeDay: pendingBaseEstimatedEnergy == null
+        ? null
+        : LifeDay(2026, 7, 27),
+    activeRuleVersion: 'energy-rules-v2-mvp-a',
+    pendingRuleVersion: null,
+    pendingRuleEffectiveLifeDay: null,
+    onboardingCompleted: onboardingCompleted,
+    createdAt: DateTime.utc(2026, 7, 26),
+    updatedAt: DateTime.utc(2026, 7, 26),
   );
 }

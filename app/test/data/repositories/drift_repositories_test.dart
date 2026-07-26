@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:power_manager/application/json_export_service.dart';
 import 'package:power_manager/data/db/app_database.dart';
 import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/data/repositories/drift_repositories.dart';
@@ -314,6 +315,46 @@ void main() {
     expect(activityJson['deletedAt'], isNotNull);
     expect(jsonDecode(jsonEncode(json)), isA<Map<String, Object?>>());
   });
+
+  test(
+    'JSON export service emits parseable versioned backup with deletes',
+    () async {
+      final activity = _activity(
+        id: 'service-deleted-export',
+        completedAt: DateTime.utc(2026, 7, 26, 10),
+      );
+      await activitiesRepository.insert(activity);
+      await activitiesRepository.logicallyDelete(
+        activity.id,
+        DateTime.utc(2026, 7, 26, 11),
+      );
+      final service = JsonExportService(
+        settings: settingsRepository,
+        rules: rulesRepository,
+        mornings: checkInsRepository,
+        activities: activitiesRepository,
+        observations: observationsRepository,
+        summaries: summariesRepository,
+        receipts: receiptsRepository,
+        appVersionLoader: () async => '0.1.0+1',
+      );
+
+      final result = await service.create(exportedAt: testNow);
+      final json = jsonDecode(result.contents) as Map<String, Object?>;
+      final records = json['activityRecords']! as List<Object?>;
+      final deleted = records.single as Map<String, Object?>;
+
+      expect(result.fileName, 'powermanager-20260726-120000Z.json');
+      expect(json['schemaVersion'], 1);
+      expect(json['appVersion'], '0.1.0+1');
+      expect(json['exportedAt'], testNow.toIso8601String());
+      expect(json['ruleConfigVersions'], isA<List<Object?>>());
+      expect(deleted['status'], 'deleted');
+      expect(deleted, isNot(contains('rowid')));
+      expect(deleted, isNot(contains('internalId')));
+      expect(json, isNot(contains('deviceId')));
+    },
+  );
 }
 
 MorningCheckIn _checkIn() {

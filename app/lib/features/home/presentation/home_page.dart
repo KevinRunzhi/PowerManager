@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
+import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/home_view_model.dart';
 import 'package:power_manager/application/history_review_service.dart';
@@ -18,6 +19,7 @@ import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/activity/presentation/activity_record_sheet.dart';
 import 'package:power_manager/features/wellbeing/presentation/actual_state_sheet.dart';
 import 'package:power_manager/features/wellbeing/presentation/morning_check_in_sheet.dart';
+import 'package:power_manager/features/settings/presentation/onboarding_dialog.dart';
 import 'package:power_manager/shared/widgets/debug_stage_banner.dart';
 
 class HomePage extends ConsumerWidget {
@@ -46,6 +48,7 @@ class HomePage extends ConsumerWidget {
             ),
           ),
           const DebugStageBanner(),
+          const _OnboardingAutoPrompt(),
         ],
       ),
     );
@@ -165,6 +168,8 @@ class _LoadedHome extends ConsumerWidget {
               lifeDay: result.current.lifeDay.previous,
               isYesterday: true,
             ),
+            onSettings: () =>
+                Navigator.of(context).pushNamed(AppRoutes.settings),
           ),
         ),
         if (history != null &&
@@ -686,6 +691,7 @@ class _WellbeingTools extends StatelessWidget {
     required this.onActual,
     required this.onCorrection,
     required this.onYesterday,
+    required this.onSettings,
   });
 
   final bool hasCurrentActual;
@@ -694,6 +700,7 @@ class _WellbeingTools extends StatelessWidget {
   final VoidCallback onCorrection;
   final VoidCallback onYesterday;
   final VoidCallback onOverview;
+  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -726,10 +733,44 @@ class _WellbeingTools extends StatelessWidget {
                 onPressed: onYesterday,
                 child: const Text('补充昨日实际状态'),
               ),
+            OutlinedButton(
+              key: const Key('settings-button'),
+              onPressed: onSettings,
+              child: const Text('设置'),
+            ),
           ],
         ),
       ),
     );
+  }
+}
+
+class _OnboardingAutoPrompt extends ConsumerStatefulWidget {
+  const _OnboardingAutoPrompt();
+
+  @override
+  ConsumerState<_OnboardingAutoPrompt> createState() =>
+      _OnboardingAutoPromptState();
+}
+
+class _OnboardingAutoPromptState extends ConsumerState<_OnboardingAutoPrompt> {
+  bool _shown = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = ref.watch(appSettingsProvider).value;
+    if (!_shown && settings != null && !settings.onboardingCompleted) {
+      _shown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) {
+          return;
+        }
+        await showOnboardingDialog(context, dismissible: false);
+        await ref.read(settingsServiceProvider).completeOnboarding();
+        ref.invalidate(appSettingsProvider);
+      });
+    }
+    return const SizedBox.shrink();
   }
 }
 

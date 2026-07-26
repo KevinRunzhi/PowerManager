@@ -5,8 +5,10 @@ import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/energy_reminder_service.dart';
 import 'package:power_manager/application/history_review_service.dart';
+import 'package:power_manager/application/json_export_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
+import 'package:power_manager/application/settings_service.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/db/app_database.dart';
@@ -17,6 +19,7 @@ import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 final clockProvider = Provider<Clock>((ref) => const SystemClock());
 
@@ -215,6 +218,34 @@ final historyReviewProvider = FutureProvider<HistoryReview>((ref) async {
   return ref
       .watch(historyReviewServiceProvider)
       .load(currentLifeDay: prepared.current.lifeDay);
+});
+
+final appSettingsProvider = FutureProvider<AppSettings>((ref) {
+  return ref.watch(settingsRepositoryProvider).get();
+});
+
+final settingsServiceProvider = Provider<SettingsMutator>((ref) {
+  return SettingsService(
+    transactionRunner: DriftTransactionRunner(ref.watch(appDatabaseProvider)),
+    preparer: ref.watch(operationPreparerProvider),
+    settings: ref.watch(settingsRepositoryProvider),
+  );
+});
+
+final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
+  return JsonExportService(
+    settings: ref.watch(settingsRepositoryProvider),
+    rules: ref.watch(rulesRepositoryProvider),
+    mornings: ref.watch(morningsRepositoryProvider),
+    activities: ref.watch(activitiesRepositoryProvider),
+    observations: ref.watch(observationsRepositoryProvider),
+    summaries: ref.watch(summariesRepositoryProvider),
+    receipts: ref.watch(receiptsRepositoryProvider),
+    appVersionLoader: () async {
+      final info = await PackageInfo.fromPlatform();
+      return '${info.version}+${info.buildNumber}';
+    },
+  );
 });
 
 final energyReminderMessageProvider =
