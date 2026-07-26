@@ -53,6 +53,22 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('preparation failure shows retry without internal details', (
+    tester,
+  ) async {
+    final preparer = _FailingPreparer();
+    await tester.pumpWidget(_testApp(preparer: preparer));
+    await tester.pumpAndSettle();
+
+    expect(find.text('读取当天状态失败。'), findsOneWidget);
+    expect(find.text('重试'), findsOneWidget);
+    expect(find.textContaining('database unavailable'), findsNothing);
+
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(preparer.attempts, 3);
+  });
+
   testWidgets('home shell does not overflow on a compact landscape viewport', (
     tester,
   ) async {
@@ -373,6 +389,7 @@ void main() {
 }
 
 Widget _testApp({
+  OperationPreparer? preparer,
   ActivityMutator? mutator,
   MorningCompletionStatus morningStatus = MorningCompletionStatus.notAnswered,
   WellbeingMutator? wellbeing,
@@ -383,7 +400,7 @@ Widget _testApp({
 }) {
   return ProviderScope(
     overrides: [
-      operationPreparerProvider.overrideWithValue(_FakePreparer()),
+      operationPreparerProvider.overrideWithValue(preparer ?? _FakePreparer()),
       morningCompletionStatusProvider.overrideWith(
         (ref) async => morningStatus,
       ),
@@ -577,6 +594,19 @@ final class _FakePreparer implements OperationPreparer {
       appliedPendingBaseEnergy: false,
       appliedPendingRuleVersion: false,
     );
+  }
+}
+
+final class _FailingPreparer implements OperationPreparer {
+  var attempts = 0;
+
+  @override
+  Future<OperationPreparationResult> prepare(PreparationTrigger trigger) async {
+    attempts++;
+    if (trigger == PreparationTrigger.coldStart) {
+      return _FakePreparer().prepare(trigger);
+    }
+    throw StateError('database unavailable: internal test detail');
   }
 }
 
