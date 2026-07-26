@@ -1,6 +1,3 @@
-import 'dart:math' as math;
-
-import 'package:flutter/widgets.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 
 enum RecordGesturePhase {
@@ -30,25 +27,30 @@ final class RecordGestureState {
     this.category,
     this.subcategory,
     this.duration,
+    this.hotIndex,
   });
 
   const RecordGestureState.idle()
     : phase = RecordGesturePhase.idle,
       category = null,
       subcategory = null,
-      duration = null;
+      duration = null,
+      hotIndex = null;
 
   final RecordGesturePhase phase;
   final ActivityCategory? category;
   final ActivitySubcategory? subcategory;
   final DurationSlot? duration;
+
+  /// The node currently under the pointer. It is only a preview until
+  /// [RecordGestureController.confirmHot] is called after the dwell window.
+  final int? hotIndex;
 }
 
+/// Owns the three-step selection state, but deliberately knows nothing about
+/// pointer geometry or timers. The presentation layer performs node hit tests
+/// and only commits a preview after it has remained stable long enough.
 final class RecordGestureController {
-  static const categoryInnerRadius = 34.0;
-  static const subcategoryInnerRadius = 88.0;
-  static const durationInnerRadius = 148.0;
-
   RecordGestureState _state = const RecordGestureState.idle();
 
   RecordGestureState get state => _state;
@@ -59,50 +61,98 @@ final class RecordGestureController {
     );
   }
 
-  void update(Offset displacement) {
-    if (_state.phase == RecordGesturePhase.idle ||
-        _state.phase == RecordGesturePhase.cancelled) {
+  void setHotIndex(int? index) {
+    final current = _state;
+    if (current.phase == RecordGesturePhase.idle ||
+        current.phase == RecordGesturePhase.cancelled) {
       return;
     }
-    final radius = displacement.distance;
-    if (radius < categoryInnerRadius) {
-      _state = const RecordGestureState(
-        phase: RecordGesturePhase.selectingCategory,
-      );
-      return;
-    }
-    if (radius < subcategoryInnerRadius) {
-      _state = RecordGestureState(
-        phase: RecordGesturePhase.selectingSubcategory,
-        category: _pick(ActivityCategory.values, displacement),
-      );
-      return;
-    }
-    final category = _state.category;
-    if (category == null) {
-      return;
-    }
-    if (radius < durationInnerRadius) {
-      final subcategories = ActivitySubcategory.values
-          .where((item) => item.category == category)
-          .toList(growable: false);
-      _state = RecordGestureState(
-        phase: RecordGesturePhase.selectingDuration,
-        category: category,
-        subcategory: _pick(subcategories, displacement),
-      );
-      return;
-    }
-    final subcategory = _state.subcategory;
-    if (subcategory == null) {
-      return;
+    final phase = current.phase == RecordGesturePhase.ready
+        ? RecordGesturePhase.selectingDuration
+        : current.phase;
+    final count = _itemCount(phase, current.category);
+    if (index != null && (index < 0 || index >= count)) {
+      throw RangeError.index(index, List<void>.filled(count, null));
     }
     _state = RecordGestureState(
-      phase: RecordGesturePhase.ready,
-      category: category,
-      subcategory: subcategory,
-      duration: _pick(DurationSlot.values, displacement),
+      phase: phase,
+      category: current.category,
+      subcategory: current.subcategory,
+      hotIndex: index,
     );
+  }
+
+  /// Commits the current preview and advances exactly one layer.
+  ///
+  /// Calling this without a hot node is intentionally a no-op, which keeps a
+  /// timer racing with pointer exit from producing a write.
+  void confirmHot() {
+    final current = _state;
+    final hotIndex = current.hotIndex;
+    if (hotIndex == null) {
+      return;
+    }
+    switch (current.phase) {
+      case RecordGesturePhase.selectingCategory:
+        _state = RecordGestureState(
+          phase: RecordGesturePhase.selectingSubcategory,
+          category: ActivityCategory.values[hotIndex],
+        );
+        return;
+      case RecordGesturePhase.selectingSubcategory:
+        final category = current.category;
+        if (category == null) {
+          return;
+        }
+        final items = _subcategories(category);
+        _state = RecordGestureState(
+          phase: RecordGesturePhase.selectingDuration,
+          category: category,
+          subcategory: items[hotIndex],
+        );
+        return;
+      case RecordGesturePhase.selectingDuration:
+        final category = current.category;
+        final subcategory = current.subcategory;
+        if (category == null || subcategory == null) {
+          return;
+        }
+        _state = RecordGestureState(
+          phase: RecordGesturePhase.ready,
+          category: category,
+          subcategory: subcategory,
+          duration: DurationSlot.values[hotIndex],
+          hotIndex: hotIndex,
+        );
+        return;
+      case RecordGesturePhase.ready:
+      case RecordGesturePhase.idle:
+      case RecordGesturePhase.cancelled:
+        return;
+    }
+  }
+
+  /// Returns to the preceding layer and clears the choice made in that layer.
+  bool back() {
+    final current = _state;
+    switch (current.phase) {
+      case RecordGesturePhase.ready:
+      case RecordGesturePhase.selectingDuration:
+        _state = RecordGestureState(
+          phase: RecordGesturePhase.selectingSubcategory,
+          category: current.category,
+        );
+        return true;
+      case RecordGesturePhase.selectingSubcategory:
+        _state = const RecordGestureState(
+          phase: RecordGesturePhase.selectingCategory,
+        );
+        return true;
+      case RecordGesturePhase.selectingCategory:
+      case RecordGesturePhase.idle:
+      case RecordGesturePhase.cancelled:
+        return false;
+    }
   }
 
   RecordGestureSelection? finish() {
@@ -130,13 +180,19 @@ final class RecordGestureController {
     _state = const RecordGestureState.idle();
   }
 
-  static T _pick<T>(List<T> values, Offset displacement) {
-    final angleFromTop =
-        (math.atan2(displacement.dy, displacement.dx) + math.pi / 2) %
-        (math.pi * 2);
-    final sector = math.pi * 2 / values.length;
-    final index =
-        ((angleFromTop + sector / 2) / sector).floor() % values.length;
-    return values[index];
+  static int _itemCount(RecordGesturePhase phase, ActivityCategory? category) {
+    return switch (phase) {
+      RecordGesturePhase.selectingCategory => ActivityCategory.values.length,
+      RecordGesturePhase.selectingSubcategory =>
+        category == null ? 0 : _subcategories(category).length,
+      RecordGesturePhase.selectingDuration ||
+      RecordGesturePhase.ready => DurationSlot.values.length,
+      RecordGesturePhase.idle || RecordGesturePhase.cancelled => 0,
+    };
   }
+
+  static List<ActivitySubcategory> _subcategories(ActivityCategory category) =>
+      ActivitySubcategory.values
+          .where((item) => item.category == category)
+          .toList(growable: false);
 }

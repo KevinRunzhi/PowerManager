@@ -99,6 +99,7 @@ class _LoadedHome extends ConsumerWidget {
                 _createFromGesture(context, ref, selection),
             child: _EnergyBall(
               estimate: projection.currentEstimate,
+              initialEstimate: viewModel.initialEstimate,
               morningCompleted:
                   morningStatus == MorningCompletionStatus.completed,
             ),
@@ -558,11 +559,51 @@ String _correctionText(CorrectionCounts counts) {
       '偏高 ${counts.higher}）';
 }
 
-class _EnergyBall extends StatelessWidget {
-  const _EnergyBall({required this.estimate, required this.morningCompleted});
+class _EnergyBall extends StatefulWidget {
+  const _EnergyBall({
+    required this.estimate,
+    required this.initialEstimate,
+    required this.morningCompleted,
+  });
 
   final int estimate;
+  final int initialEstimate;
   final bool morningCompleted;
+
+  @override
+  State<_EnergyBall> createState() => _EnergyBallState();
+}
+
+class _EnergyBallState extends State<_EnergyBall>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _flow;
+
+  @override
+  void initState() {
+    super.initState();
+    _flow = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 12),
+    )..repeat();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _flow
+        ..stop()
+        ..value = 0;
+    } else if (!_flow.isAnimating) {
+      _flow.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _flow.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -573,63 +614,247 @@ class _EnergyBall extends StatelessWidget {
     return Center(
       child: Semantics(
         key: HomePage.energyBallKey,
-        label: '估计精力 $estimate',
+        label: '估计精力 ${widget.estimate}',
         readOnly: true,
-        child: Container(
-          width: diameter,
+        child: SizedBox(
+          width: viewport.width,
           height: diameter,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const RadialGradient(
-              center: Alignment(-0.25, -0.3),
-              radius: 0.95,
-              colors: [
-                Color(0x665EEAD4),
-                Color(0x407DD3FC),
-                AppColors.backgroundOverlay,
-              ],
-              stops: [0, 0.48, 1],
-            ),
-            border: Border.all(color: AppColors.line),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(
-                  0xFF5EEAD4,
-                ).withValues(alpha: morningCompleted ? 0.14 : 0.06),
-                blurRadius: 64,
-                spreadRadius: 8,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _EnergyBallPainter(
+                    animation: _flow,
+                    diameter: diameter,
+                    estimate: widget.estimate,
+                    initialEstimate: widget.initialEstimate,
+                    morningCompleted: widget.morningCompleted,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: diameter * 0.82,
+                height: diameter * 0.62,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.morningCompleted ? '估计精力' : '估计精力 · 未晨间确认',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelMedium?.copyWith(letterSpacing: 2.2),
+                      ),
+                      const SizedBox(height: AppSpacing.unit),
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(end: widget.estimate.toDouble()),
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : const Duration(milliseconds: 620),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, _) => Text(
+                          '${value.round()}',
+                          style: Theme.of(context).textTheme.displayLarge
+                              ?.copyWith(fontSize: diameter < 160 ? 42 : 64),
+                        ),
+                      ),
+                      if (widget.estimate < 0) ...[
+                        const SizedBox(height: 6),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0x669B8AB8)),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 2,
+                            ),
+                            child: Text(
+                              '估计透支',
+                              style: TextStyle(
+                                color: Color(0xFF9B8AB8),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ],
-          ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: SizedBox(
-              width: diameter * 0.8,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    morningCompleted ? '估计精力' : '估计精力 · 未晨间确认',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.labelMedium?.copyWith(letterSpacing: 2.2),
-                  ),
-                  const SizedBox(height: AppSpacing.unit),
-                  Text(
-                    '$estimate',
-                    style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                      fontSize: diameter < 160 ? 42 : 64,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _EnergyBallPainter extends CustomPainter {
+  _EnergyBallPainter({
+    required this.animation,
+    required this.diameter,
+    required this.estimate,
+    required this.initialEstimate,
+    required this.morningCompleted,
+  }) : super(repaint: animation);
+
+  final Animation<double> animation;
+  final double diameter;
+  final int estimate;
+  final int initialEstimate;
+  final bool morningCompleted;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final time = animation.value * math.pi * 2;
+    final ratio = initialEstimate == 0 ? 0.0 : estimate / initialEstimate;
+    final colors = morningCompleted
+        ? _energyColors(ratio)
+        : (const Color(0xFF3A4152), const Color(0xFF262C3A));
+    final overdrawn = ratio < 0;
+    final flow = morningCompleted ? (0.35 + 0.65 * ratio.clamp(0, 1)) : 0.18;
+    final breathAmplitude = overdrawn ? 0.008 : 0.018;
+    final breathCycles = overdrawn ? 1.5 : 12 / 5.5;
+    final radius =
+        diameter / 2 * (1 + breathAmplitude * math.sin(time * breathCycles));
+    final mist = overdrawn ? 0.45 : 1.0;
+    final glowAlpha =
+        (morningCompleted ? 0.12 + 0.23 * ratio.clamp(0, 1) : 0.10) * mist;
+
+    final glowRect = Rect.fromCircle(center: center, radius: radius * 1.65);
+    canvas.drawRect(
+      glowRect,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [
+            colors.$1.withValues(alpha: glowAlpha),
+            colors.$1.withValues(alpha: 0),
+          ],
+        ).createShader(glowRect),
+    );
+
+    canvas.save();
+    canvas.clipPath(
+      Path()..addOval(Rect.fromCircle(center: center, radius: radius)),
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = Color.lerp(
+          AppColors.backgroundBase,
+          colors.$1,
+          morningCompleted ? 0.16 * mist : 0.08,
+        )!,
+    );
+    _drawBlob(
+      canvas,
+      center +
+          Offset(
+            radius * 0.38 * math.cos(time * 0.9 * flow),
+            radius * 0.30 * math.sin(time * 1.25 * flow),
+          ),
+      radius * (overdrawn ? 1.1 : 0.95),
+      colors.$1,
+      0.50 * mist,
+    );
+    _drawBlob(
+      canvas,
+      center -
+          Offset(
+            radius * 0.32 * math.cos(time * 0.7 * flow + 2),
+            radius * 0.36 * math.sin(time * 0.95 * flow + 1),
+          ),
+      radius * (overdrawn ? 1.05 : 0.9),
+      colors.$2,
+      0.42 * mist,
+    );
+    _drawBlob(
+      canvas,
+      center +
+          Offset(
+            radius * 0.15 * math.sin(time * 0.5 * flow),
+            radius * 0.42 * math.cos(time * 0.62 * flow),
+          ),
+      radius * 0.7,
+      colors.$2,
+      0.25 * mist,
+    );
+    canvas.restore();
+
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = colors.$1.withValues(
+          alpha: morningCompleted ? 0.22 * mist : 0.08,
+        )
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  void _drawBlob(
+    Canvas canvas,
+    Offset center,
+    double radius,
+    Color color,
+    double alpha,
+  ) {
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..blendMode = BlendMode.plus
+        ..shader = RadialGradient(
+          colors: [
+            color.withValues(alpha: alpha),
+            color.withValues(alpha: 0),
+          ],
+        ).createShader(rect),
+    );
+  }
+
+  (Color, Color) _energyColors(double ratio) {
+    const stops = <(double, Color, Color)>[
+      (0.80, Color(0xFF5EEAD4), Color(0xFFA7F3D0)),
+      (0.50, Color(0xFF7DD3FC), Color(0xFF5EEAD4)),
+      (0.25, Color(0xFFFCD34D), Color(0xFF7DD3FC)),
+      (0.00, Color(0xFFF0A868), Color(0xFFB08968)),
+      (-0.30, Color(0xFF9B8AB8), Color(0xFF6E6284)),
+    ];
+    if (ratio >= stops.first.$1) {
+      return (stops.first.$2, stops.first.$3);
+    }
+    for (var index = 0; index < stops.length - 1; index++) {
+      final upper = stops[index];
+      final lower = stops[index + 1];
+      if (ratio <= upper.$1 && ratio >= lower.$1) {
+        final t = (upper.$1 - ratio) / (upper.$1 - lower.$1);
+        return (
+          Color.lerp(upper.$2, lower.$2, t)!,
+          Color.lerp(upper.$3, lower.$3, t)!,
+        );
+      }
+    }
+    return (stops.last.$2, stops.last.$3);
+  }
+
+  @override
+  bool shouldRepaint(_EnergyBallPainter oldDelegate) =>
+      oldDelegate.estimate != estimate ||
+      oldDelegate.initialEstimate != initialEstimate ||
+      oldDelegate.morningCompleted != morningCompleted ||
+      oldDelegate.diameter != diameter;
 }
 
 class _ActivityTile extends StatelessWidget {

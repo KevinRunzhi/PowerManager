@@ -321,15 +321,22 @@ void main() {
     );
     final gesture = await tester.startGesture(center);
     await tester.pump(const Duration(milliseconds: 150));
-    await gesture.moveBy(const Offset(0, -60));
-    await tester.pump();
-    await gesture.moveBy(const Offset(0, -50));
-    await tester.pump();
-    await gesture.moveBy(const Offset(0, -70));
-    await tester.pump();
     expect(find.byKey(const Key('record-gesture-overlay')), findsOneWidget);
+
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const Key('gesture-node-0'))),
+    );
+    await tester.pump(const Duration(milliseconds: 700));
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const Key('gesture-node-0'))),
+    );
+    await tester.pump(const Duration(milliseconds: 700));
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const Key('gesture-node-0'))),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
     await gesture.up();
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(mutator.createCount, 1);
     expect(find.text('撤销'), findsOneWidget);
@@ -412,7 +419,11 @@ Widget _testApp({
         wellbeingUseCasesProvider.overrideWithValue(wellbeing),
     ],
     child: MediaQuery(
-      data: MediaQueryData(size: const Size(800, 600), textScaler: textScaler),
+      data: MediaQueryData(
+        size: const Size(800, 600),
+        textScaler: textScaler,
+        disableAnimations: true,
+      ),
       child: const PowerManagerApp(),
     ),
   );
