@@ -33,6 +33,7 @@ abstract interface class ActivityRecordsRepository {
 
 abstract interface class EnergyObservationsRepository {
   Future<void> insert(EnergyObservation observation);
+  Future<void> update(EnergyObservation observation);
   Future<EnergyObservation?> find(String id);
   Future<List<EnergyObservation>> listForLifeDay(LifeDay lifeDay);
   Future<List<EnergyObservation>> list();

@@ -8,8 +8,11 @@ import 'package:power_manager/app/theme/app_spacing.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
+import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
 import 'package:power_manager/features/activity/presentation/activity_record_sheet.dart';
+import 'package:power_manager/features/wellbeing/presentation/actual_state_sheet.dart';
+import 'package:power_manager/features/wellbeing/presentation/morning_check_in_sheet.dart';
 import 'package:power_manager/shared/widgets/debug_stage_banner.dart';
 
 class HomePage extends ConsumerWidget {
@@ -52,13 +55,32 @@ class _LoadedHome extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projection = result.current.projection;
+    final morningStatus = switch (ref.watch(morningCompletionStatusProvider)) {
+      AsyncData(:final value) => value,
+      _ =>
+        result.current.morningCheckInCompleted
+            ? MorningCompletionStatus.completed
+            : MorningCompletionStatus.notAnswered,
+    };
+    final canSupplementYesterday =
+        ref.watch(canSupplementYesterdayProvider).value ?? false;
     return CustomScrollView(
       slivers: [
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x4)),
-        const SliverToBoxAdapter(child: _MorningHint()),
+        SliverToBoxAdapter(
+          child: _MorningHint(
+            status: morningStatus,
+            onTap: () =>
+                MorningCheckInSheet.show(context, result.current.lifeDay),
+          ),
+        ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x8)),
         SliverToBoxAdapter(
-          child: _EnergyBall(estimate: projection.currentEstimate),
+          child: _EnergyBall(
+            estimate: projection.currentEstimate,
+            morningCompleted:
+                morningStatus == MorningCompletionStatus.completed,
+          ),
         ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x4)),
         SliverToBoxAdapter(
@@ -100,6 +122,22 @@ class _LoadedHome extends ConsumerWidget {
               );
             },
           ),
+        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x6)),
+        SliverToBoxAdapter(
+          child: _WellbeingTools(
+            hasCurrentActual:
+                ref.watch(currentDailyObservationProvider).value != null,
+            canSupplementYesterday: canSupplementYesterday,
+            onActual: () =>
+                ActualStateSheet.show(context, lifeDay: result.current.lifeDay),
+            onCorrection: () => RelativeCorrectionSheet.show(context),
+            onYesterday: () => ActualStateSheet.show(
+              context,
+              lifeDay: result.current.lifeDay.previous,
+              isYesterday: true,
+            ),
+          ),
+        ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x12)),
       ],
     );
@@ -169,9 +207,10 @@ class _LoadedHome extends ConsumerWidget {
 }
 
 class _EnergyBall extends StatelessWidget {
-  const _EnergyBall({required this.estimate});
+  const _EnergyBall({required this.estimate, required this.morningCompleted});
 
   final int estimate;
+  final bool morningCompleted;
 
   @override
   Widget build(BuildContext context) {
@@ -200,9 +239,11 @@ class _EnergyBall extends StatelessWidget {
               stops: [0, 0.48, 1],
             ),
             border: Border.all(color: AppColors.line),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Color(0x245EEAD4),
+                color: const Color(
+                  0xFF5EEAD4,
+                ).withValues(alpha: morningCompleted ? 0.14 : 0.06),
                 blurRadius: 64,
                 spreadRadius: 8,
               ),
@@ -212,7 +253,7 @@ class _EnergyBall extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                '估计精力',
+                morningCompleted ? '估计精力' : '估计精力 · 未晨间确认',
                 style: Theme.of(
                   context,
                 ).textTheme.labelMedium?.copyWith(letterSpacing: 2.2),
@@ -282,25 +323,89 @@ class _ActivityTile extends StatelessWidget {
 }
 
 class _MorningHint extends StatelessWidget {
-  const _MorningHint();
+  const _MorningHint({required this.status, required this.onTap});
+
+  final MorningCompletionStatus status;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final label = switch (status) {
+      MorningCompletionStatus.notAnswered => '晨间确认（可跳过）',
+      MorningCompletionStatus.skipped => '今天已跳过晨间确认 · 可补做',
+      MorningCompletionStatus.completed => '晨间已确认 · 可修改',
+    };
     return Semantics(
-      label: '晨间确认尚未处理',
-      child: Column(
-        children: [
-          Container(
-            width: 34,
-            height: 3,
-            decoration: BoxDecoration(
-              color: AppColors.textSecondary.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(2),
-            ),
+      button: true,
+      label: label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.x2),
+          child: Column(
+            children: [
+              Container(
+                width: 34,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: AppColors.textSecondary.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.x2),
+              Text(label, style: Theme.of(context).textTheme.labelMedium),
+            ],
           ),
-          const SizedBox(height: AppSpacing.x2),
-          Text('晨间确认', style: Theme.of(context).textTheme.labelMedium),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WellbeingTools extends StatelessWidget {
+  const _WellbeingTools({
+    required this.hasCurrentActual,
+    required this.canSupplementYesterday,
+    required this.onActual,
+    required this.onCorrection,
+    required this.onYesterday,
+  });
+
+  final bool hasCurrentActual;
+  final bool canSupplementYesterday;
+  final VoidCallback onActual;
+  final VoidCallback onCorrection;
+  final VoidCallback onYesterday;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: AppSpacing.x2,
+          runSpacing: AppSpacing.x2,
+          children: [
+            OutlinedButton(
+              key: const Key('actual-state-button'),
+              onPressed: onActual,
+              child: Text(hasCurrentActual ? '修改今日实际状态' : '记录今日实际状态'),
+            ),
+            OutlinedButton(
+              key: const Key('relative-correction-button'),
+              onPressed: onCorrection,
+              child: const Text('此刻校正'),
+            ),
+            if (canSupplementYesterday)
+              OutlinedButton(
+                key: const Key('yesterday-actual-button'),
+                onPressed: onYesterday,
+                child: const Text('补充昨日实际状态'),
+              ),
+          ],
+        ),
       ),
     );
   }

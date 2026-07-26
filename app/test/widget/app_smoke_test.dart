@@ -7,6 +7,7 @@ import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
+import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
@@ -117,13 +118,86 @@ void main() {
     expect(find.text('撤销'), findsNothing);
     expect(mutator.deleteCount, 0);
   });
+
+  testWidgets('skipped morning still shows estimate and a distinct state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(morningStatus: MorningCompletionStatus.skipped),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('今天已跳过晨间确认 · 可补做'), findsOneWidget);
+    expect(find.text('100'), findsOneWidget);
+    expect(find.text('···'), findsNothing);
+  });
+
+  testWidgets('four-step morning check-in saves all raw choices', (
+    tester,
+  ) async {
+    final wellbeing = _FakeWellbeingMutator();
+    await tester.pumpWidget(_testApp(wellbeing: wellbeing));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('晨间确认（可跳过）'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('好'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('中'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('压力不大'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('差'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('morning-submit-button')));
+    await tester.pumpAndSettle();
+
+    expect(wellbeing.savedMorning!.overallState, MorningOverallState.good);
+    expect(wellbeing.savedMorning!.freeTimeLevel, FreeTimeLevel.medium);
+    expect(wellbeing.savedMorning!.pressureSource, PressureSource.low);
+    expect(wellbeing.savedMorning!.sleepRecovery, SleepRecovery.bad);
+  });
+
+  testWidgets('actual estimate remains hidden until selection is saved', (
+    tester,
+  ) async {
+    final wellbeing = _FakeWellbeingMutator();
+    await tester.pumpWidget(_testApp(wellbeing: wellbeing));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('actual-state-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('actual-state-selection')), findsOneWidget);
+    expect(find.byKey(const Key('revealed-system-estimate')), findsNothing);
+    expect(find.text('系统当时的估计'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('actual-low')));
+    await tester.pumpAndSettle();
+    expect(wellbeing.savedActual, AbsoluteEnergyState.low);
+    expect(find.byKey(const Key('actual-state-reveal')), findsOneWidget);
+    expect(find.byKey(const Key('revealed-system-estimate')), findsOneWidget);
+    expect(find.text('88'), findsOneWidget);
+    expect(find.textContaining('不会覆盖估计'), findsOneWidget);
+  });
 }
 
-Widget _testApp({ActivityMutator? mutator}) {
+Widget _testApp({
+  ActivityMutator? mutator,
+  MorningCompletionStatus morningStatus = MorningCompletionStatus.notAnswered,
+  WellbeingMutator? wellbeing,
+}) {
   return ProviderScope(
     overrides: [
       operationPreparerProvider.overrideWithValue(_FakePreparer()),
+      morningCompletionStatusProvider.overrideWith(
+        (ref) async => morningStatus,
+      ),
+      currentMorningCheckInProvider.overrideWith((ref) async => null),
+      currentDailyObservationProvider.overrideWith((ref) async => null),
+      canSupplementYesterdayProvider.overrideWith((ref) async => false),
       if (mutator != null) activityUseCasesProvider.overrideWithValue(mutator),
+      if (wellbeing != null)
+        wellbeingUseCasesProvider.overrideWithValue(wellbeing),
     ],
     child: const PowerManagerApp(),
   );
@@ -175,6 +249,64 @@ final class _FakeActivityMutator implements ActivityMutator {
     required DateTime completedAt,
   }) {
     throw UnimplementedError();
+  }
+}
+
+final class _FakeWellbeingMutator implements WellbeingMutator {
+  MorningCheckIn? savedMorning;
+  AbsoluteEnergyState? savedActual;
+  RelativeCorrection? savedCorrection;
+
+  @override
+  Future<CurrentDayProjection> saveMorningCheckIn(
+    MorningCheckIn checkIn,
+  ) async {
+    savedMorning = checkIn;
+    return _currentProjection();
+  }
+
+  @override
+  Future<void> skipMorning(String receiptId) async {}
+
+  @override
+  Future<DailyObservationResult> saveDailyAbsolute({
+    required String observationId,
+    required LifeDay targetLifeDay,
+    required AbsoluteEnergyState state,
+  }) async {
+    savedActual = state;
+    final observation = EnergyObservation(
+      id: observationId,
+      lifeDay: targetLifeDay,
+      type: EnergyObservationType.dailyAbsolute,
+      absoluteState: state,
+      relativeState: null,
+      estimateAtObservation: null,
+      observedAt: DateTime.utc(2026, 7, 26, 12),
+    );
+    return DailyObservationResult(
+      observation: observation,
+      systemEstimate: 88,
+      differenceDescription: '你的感受比系统估计更疲惫一些。',
+      wasUpdated: false,
+    );
+  }
+
+  @override
+  Future<EnergyObservation> saveRelativeCorrection({
+    required String observationId,
+    required RelativeCorrection correction,
+  }) async {
+    savedCorrection = correction;
+    return EnergyObservation(
+      id: observationId,
+      lifeDay: LifeDay(2026, 7, 26),
+      type: EnergyObservationType.relativeCorrection,
+      absoluteState: null,
+      relativeState: correction,
+      estimateAtObservation: 100,
+      observedAt: DateTime.utc(2026, 7, 26, 12),
+    );
   }
 }
 

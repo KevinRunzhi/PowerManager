@@ -206,6 +206,22 @@ final class DriftEnergyObservationsRepository
   }
 
   @override
+  Future<void> update(EnergyObservation observation) async {
+    final changed = await dao.updateById(
+      observation.id,
+      EnergyObservationsTableCompanion(
+        lifeDay: Value(observation.lifeDay),
+        type: Value(observation.type),
+        absoluteState: Value(observation.absoluteState),
+        relativeState: Value(observation.relativeState),
+        estimateAtObservation: Value(observation.estimateAtObservation),
+        observedAt: Value(observation.observedAt.toUtc()),
+      ),
+    );
+    _expectOneChanged(changed, 'observation ${observation.id}');
+  }
+
+  @override
   Future<EnergyObservation?> find(String id) async {
     final row = await dao.findById(id);
     return row == null ? null : _mapObservation(row);

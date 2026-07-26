@@ -2,6 +2,7 @@ import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
+import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/db/app_database.dart';
 import 'package:power_manager/data/db/drift_transaction_runner.dart';
@@ -370,6 +371,162 @@ void main() {
       );
     },
   );
+  test(
+    'morning context saves but only overall state changes estimate',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 8);
+      final useCases = harness.wellbeingUseCases();
+      final badSleep = await useCases.saveMorningCheckIn(
+        _morningWith(
+          LifeDay(2026, 7, 26),
+          overall: MorningOverallState.normal,
+          sleep: SleepRecovery.bad,
+        ),
+      );
+      final goodSleep = await useCases.saveMorningCheckIn(
+        _morningWith(
+          LifeDay(2026, 7, 26),
+          overall: MorningOverallState.normal,
+          sleep: SleepRecovery.good,
+        ),
+      );
+      final goodOverall = await useCases.saveMorningCheckIn(
+        _morningWith(
+          LifeDay(2026, 7, 26),
+          overall: MorningOverallState.good,
+          sleep: SleepRecovery.good,
+        ),
+      );
+      expect(badSleep.projection.initialEstimate, 100);
+      expect(goodSleep.projection.initialEstimate, 100);
+      expect(goodOverall.projection.initialEstimate, 106);
+      final stored = await harness.mornings.findByLifeDay(LifeDay(2026, 7, 26));
+      expect(stored!.freeTimeLevel, FreeTimeLevel.medium);
+      expect(stored.pressureSource, PressureSource.low);
+      expect(stored.sleepRecovery, SleepRecovery.good);
+      expect(stored.morningAdjustment, 6);
+    },
+  );
+
+  test('skipping morning never blocks activity recording', () async {
+    clock.value = DateTime(2026, 7, 26, 8);
+    await harness.wellbeingUseCases().skipMorning('skip-morning');
+    await harness.wellbeingUseCases().skipMorning('skip-morning-duplicate');
+    final result = await harness.activityUseCases().create(
+      ActivityDraft(
+        operationId: 'after-skip',
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.homework,
+        duration: DurationSlot.minutes15,
+        completedAt: DateTime(2026, 7, 26, 7),
+      ),
+    );
+    expect(result.current.morningAdjustment, 0);
+    expect(result.current.projection.initialEstimate, 100);
+    expect(result.current.projection.currentEstimate, 95);
+    expect(
+      await harness.receipts.exists(
+        type: PromptReceiptType.morning,
+        scopeKey: '2026-07-26',
+        action: PromptReceiptAction.skipped,
+      ),
+      isTrue,
+    );
+  });
+
+  test(
+    'today daily state updates but yesterday supplement is immutable',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 8);
+      await harness.summaries.insertOrGet(
+        _summary(LifeDay(2026, 7, 25), finalEstimate: 70),
+      );
+      final useCases = harness.wellbeingUseCases();
+      final first = await useCases.saveDailyAbsolute(
+        observationId: 'today-daily',
+        targetLifeDay: LifeDay(2026, 7, 26),
+        state: AbsoluteEnergyState.low,
+      );
+      final updated = await useCases.saveDailyAbsolute(
+        observationId: 'ignored-id',
+        targetLifeDay: LifeDay(2026, 7, 26),
+        state: AbsoluteEnergyState.good,
+      );
+      final yesterday = await useCases.saveDailyAbsolute(
+        observationId: 'yesterday-daily',
+        targetLifeDay: LifeDay(2026, 7, 25),
+        state: AbsoluteEnergyState.exhausted,
+      );
+      expect(first.wasUpdated, isFalse);
+      expect(updated.wasUpdated, isTrue);
+      expect(updated.observation.id, 'today-daily');
+      expect(yesterday.systemEstimate, 70);
+      expect(
+        await harness.observations.listForLifeDay(LifeDay(2026, 7, 26)),
+        hasLength(1),
+      );
+      await expectLater(
+        useCases.saveDailyAbsolute(
+          observationId: 'second-yesterday',
+          targetLifeDay: LifeDay(2026, 7, 25),
+          state: AbsoluteEnergyState.full,
+        ),
+        throwsStateError,
+      );
+      expect(
+        (await harness.summaries.findByLifeDay(
+          LifeDay(2026, 7, 25),
+        ))!.finalEstimatedEnergy,
+        70,
+      );
+    },
+  );
+
+  test('relative correction snapshots estimate without changing it', () async {
+    clock.value = DateTime(2026, 7, 26, 8);
+    await harness.activityUseCases().create(
+      ActivityDraft(
+        operationId: 'before-correction',
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.homework,
+        duration: DurationSlot.minutes30,
+        completedAt: DateTime(2026, 7, 26, 7),
+      ),
+    );
+    final before = await harness.prepare(PreparationTrigger.resumed);
+    final observation = await harness
+        .wellbeingUseCases()
+        .saveRelativeCorrection(
+          observationId: 'relative-1',
+          correction: RelativeCorrection.lowerThanEstimate,
+        );
+    final after = await harness.prepare(PreparationTrigger.resumed);
+    expect(observation.estimateAtObservation, 92);
+    expect(observation.relativeState, RelativeCorrection.lowerThanEstimate);
+    expect(
+      after.current.projection.currentEstimate,
+      before.current.projection.currentEstimate,
+    );
+  });
+
+  test('difference descriptions do not invent an actual numeric value', () {
+    expect(
+      describeDifference(
+        actual: AbsoluteEnergyState.exhausted,
+        estimate: 100,
+        initialEstimate: 100,
+      ),
+      contains('疲惫不少'),
+    );
+    expect(
+      describeDifference(
+        actual: AbsoluteEnergyState.full,
+        estimate: 100,
+        initialEstimate: 100,
+      ),
+      contains('大致一致'),
+    );
+  });
 }
 
 final class MutableClock implements Clock {
@@ -395,6 +552,7 @@ final class _Harness {
        observations = DriftEnergyObservationsRepository(
          database.energyObservationsDao,
        ),
+       receipts = DriftPromptReceiptsRepository(database.promptReceiptsDao),
        summaries =
            summaryOverride ??
            DriftDailySummariesRepository(database.dailySummariesDao);
@@ -406,6 +564,7 @@ final class _Harness {
   final DriftMorningCheckInsRepository mornings;
   final DriftActivityRecordsRepository activities;
   final DriftEnergyObservationsRepository observations;
+  final DriftPromptReceiptsRepository receipts;
   final DailySummariesRepository summaries;
 
   _Harness withSummaries(DailySummariesRepository replacement) {
@@ -465,6 +624,39 @@ final class _Harness {
       projectionService: projection,
     );
   }
+
+  WellbeingUseCases wellbeingUseCases() {
+    final projection = CurrentDayProjectionService(
+      morningCheckIns: mornings,
+      activities: activities,
+      summaries: summaries,
+    );
+    final preparer = OperationPreparationService(
+      clock: clock,
+      lifeDayCalculator: LifeDayCalculator(),
+      transactionRunner: DriftTransactionRunner(database),
+      settings: settings,
+      settlementService: SettlementService(
+        morningCheckIns: mornings,
+        activities: activities,
+        observations: observations,
+        summaries: summaries,
+        projectionService: projection,
+      ),
+      projectionService: projection,
+    );
+    return WellbeingUseCases(
+      clock: clock,
+      transactionRunner: DriftTransactionRunner(database),
+      preparer: preparer,
+      mornings: mornings,
+      activities: activities,
+      observations: observations,
+      summaries: summaries,
+      receipts: receipts,
+      projectionService: projection,
+    );
+  }
 }
 
 final class _FailOnSecondInsertSummaries implements DailySummariesRepository {
@@ -500,6 +692,23 @@ MorningCheckIn _morning(LifeDay day) {
     pressureSource: PressureSource.low,
     sleepRecovery: SleepRecovery.good,
     morningAdjustment: 6,
+    completedAt: DateTime.utc(day.year, day.month, day.day, 5),
+  );
+}
+
+MorningCheckIn _morningWith(
+  LifeDay day, {
+  required MorningOverallState overall,
+  required SleepRecovery sleep,
+}) {
+  return MorningCheckIn(
+    id: 'morning-$day',
+    lifeDay: day,
+    overallState: overall,
+    freeTimeLevel: FreeTimeLevel.medium,
+    pressureSource: PressureSource.low,
+    sleepRecovery: sleep,
+    morningAdjustment: overall.adjustment,
     completedAt: DateTime.utc(day.year, day.month, day.day, 5),
   );
 }

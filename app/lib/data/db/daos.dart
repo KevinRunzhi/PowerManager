@@ -145,6 +145,12 @@ final class EnergyObservationsDao extends DatabaseAccessor<AppDatabase>
     )..where((row) => row.id.equals(id))).getSingleOrNull();
   }
 
+  Future<int> updateById(String id, EnergyObservationsTableCompanion changes) {
+    return (update(
+      energyObservationsTable,
+    )..where((row) => row.id.equals(id))).write(changes);
+  }
+
   Future<List<EnergyObservationRow>> listForLifeDay(LifeDay lifeDay) {
     return (select(energyObservationsTable)
           ..where((row) => row.lifeDay.equalsValue(lifeDay))
