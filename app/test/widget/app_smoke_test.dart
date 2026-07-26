@@ -308,6 +308,61 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('onboarding-dialog')), findsOneWidget);
   });
+
+  testWidgets('complete energy gesture creates through the shared mutator', (
+    tester,
+  ) async {
+    final mutator = _FakeActivityMutator();
+    await tester.pumpWidget(_testApp(mutator: mutator));
+    await tester.pumpAndSettle();
+
+    final center = tester.getCenter(
+      find.byKey(const Key('energy-gesture-surface')),
+    );
+    final gesture = await tester.startGesture(center);
+    await tester.pump(const Duration(milliseconds: 150));
+    await gesture.moveBy(const Offset(0, -60));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -50));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -70));
+    await tester.pump();
+    expect(find.byKey(const Key('record-gesture-overlay')), findsOneWidget);
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(mutator.createCount, 1);
+    expect(find.text('撤销'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('incomplete energy gesture and timeout never write', (
+    tester,
+  ) async {
+    final mutator = _FakeActivityMutator();
+    await tester.pumpWidget(_testApp(mutator: mutator));
+    await tester.pumpAndSettle();
+    final center = tester.getCenter(
+      find.byKey(const Key('energy-gesture-surface')),
+    );
+
+    final incomplete = await tester.startGesture(center);
+    await tester.pump(const Duration(milliseconds: 150));
+    await incomplete.moveBy(const Offset(0, -60));
+    await incomplete.up();
+    await tester.pump();
+    expect(mutator.createCount, 0);
+
+    final timedOut = await tester.startGesture(center);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.byKey(const Key('record-gesture-overlay')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 11));
+    expect(find.byKey(const Key('record-gesture-overlay')), findsNothing);
+    await timedOut.up();
+    await tester.pump();
+    expect(mutator.createCount, 0);
+  });
 }
 
 Widget _testApp({

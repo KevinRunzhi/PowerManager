@@ -17,6 +17,8 @@ import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/activity/presentation/activity_record_sheet.dart';
+import 'package:power_manager/features/activity/presentation/energy_gesture_surface.dart';
+import 'package:power_manager/features/activity/application/record_gesture_controller.dart';
 import 'package:power_manager/features/wellbeing/presentation/actual_state_sheet.dart';
 import 'package:power_manager/features/wellbeing/presentation/morning_check_in_sheet.dart';
 import 'package:power_manager/features/settings/presentation/onboarding_dialog.dart';
@@ -92,10 +94,14 @@ class _LoadedHome extends ConsumerWidget {
         ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x8)),
         SliverToBoxAdapter(
-          child: _EnergyBall(
-            estimate: projection.currentEstimate,
-            morningCompleted:
-                morningStatus == MorningCompletionStatus.completed,
+          child: EnergyGestureSurface(
+            onConfirmed: (selection) =>
+                _createFromGesture(context, ref, selection),
+            child: _EnergyBall(
+              estimate: projection.currentEstimate,
+              morningCompleted:
+                  morningStatus == MorningCompletionStatus.completed,
+            ),
           ),
         ),
         SliverToBoxAdapter(
@@ -195,6 +201,39 @@ class _LoadedHome extends ConsumerWidget {
       return;
     }
     _showUndo(context, ref, result);
+  }
+
+  Future<void> _createFromGesture(
+    BuildContext context,
+    WidgetRef ref,
+    RecordGestureSelection selection,
+  ) async {
+    ref.read(undoWindowActiveProvider.notifier).setActive(true);
+    try {
+      final now = DateTime.now();
+      final result = await ref
+          .read(activityUseCasesProvider)
+          .create(
+            ActivityDraft(
+              operationId: 'gesture-${now.microsecondsSinceEpoch}',
+              category: selection.category,
+              subcategory: selection.subcategory,
+              duration: selection.duration,
+              completedAt: now,
+            ),
+          );
+      if (context.mounted) {
+        ref.invalidate(currentPreparationProvider);
+        _showUndo(context, ref, result);
+      }
+    } catch (_) {
+      ref.read(undoWindowActiveProvider.notifier).setActive(false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('手势记录失败，可立即使用 + 记录。')));
+      }
+    }
   }
 
   Future<void> _edit(

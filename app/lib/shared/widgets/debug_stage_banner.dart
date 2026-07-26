@@ -25,7 +25,7 @@ class DebugStageBanner extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               child: Text(
-                'MVP-A · Stage 9 · 设置与导出',
+                'MVP-A · Stage 10 · 手势原型',
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
               ),
             ),
