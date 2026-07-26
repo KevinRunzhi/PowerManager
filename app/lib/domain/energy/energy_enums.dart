@@ -177,6 +177,27 @@ enum SleepRecovery {
   final String code;
 }
 
+enum FreeTimeLevel {
+  low('low'),
+  medium('medium'),
+  high('high');
+
+  const FreeTimeLevel(this.code);
+
+  final String code;
+}
+
+enum PressureSource {
+  study('study'),
+  practice('practice'),
+  both('both'),
+  low('low');
+
+  const PressureSource(this.code);
+
+  final String code;
+}
+
 enum AbsoluteEnergyState {
   exhausted('exhausted'),
   low('low'),
@@ -189,12 +210,43 @@ enum AbsoluteEnergyState {
   final String code;
 }
 
+enum EnergyObservationType {
+  dailyAbsolute('dailyAbsolute'),
+  relativeCorrection('relativeCorrection');
+
+  const EnergyObservationType(this.code);
+
+  final String code;
+}
+
 enum RelativeCorrection {
   lowerThanEstimate('lower'),
   aboutRight('aboutRight'),
   higherThanEstimate('higher');
 
   const RelativeCorrection(this.code);
+
+  final String code;
+}
+
+enum PromptReceiptType {
+  onboarding('onboarding'),
+  morning('morning'),
+  dailyObservation('dailyObservation'),
+  yesterday('yesterday'),
+  energyBand('energyBand');
+
+  const PromptReceiptType(this.code);
+
+  final String code;
+}
+
+enum PromptReceiptAction {
+  shown('shown'),
+  skipped('skipped'),
+  dismissed('dismissed');
+
+  const PromptReceiptAction(this.code);
 
   final String code;
 }

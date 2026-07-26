@@ -18,6 +18,7 @@
 - `PowerManager_MVP-A_阶段0_环境与仓库基线验收.md`
 - `PowerManager_MVP-A_阶段1_Flutter工程骨架验收.md`
 - `PowerManager_MVP-A_阶段2_领域规则与纯算法验收.md`
+- `PowerManager_MVP-A_阶段3_Drift数据层验收.md`
 
 上述 v2 文档是后续 Flutter 开发的唯一规则来源。
 
