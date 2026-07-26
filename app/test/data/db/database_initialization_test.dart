@@ -82,6 +82,10 @@ void main() {
 
     expect(settings.baseEstimatedEnergy, 100);
     expect(settings.activeRuleVersion, energyRulesV2MvpAVersion);
+    expect(settings.pendingBaseEstimatedEnergy, isNull);
+    expect(settings.baseEnergyEffectiveLifeDay, isNull);
+    expect(settings.pendingRuleVersion, isNull);
+    expect(settings.pendingRuleEffectiveLifeDay, isNull);
     expect(settings.createdAt, testNow);
     expect(settings.createdAt.isUtc, isTrue);
     expect(rule.version, energyRulesV2MvpAVersion);
@@ -124,6 +128,7 @@ void main() {
           baseEnergyEffectiveLifeDay: null,
           activeRuleVersion: original.activeRuleVersion,
           pendingRuleVersion: null,
+          pendingRuleEffectiveLifeDay: null,
           onboardingCompleted: true,
           createdAt: original.createdAt,
           updatedAt: DateTime.utc(2026, 7, 26, 13),

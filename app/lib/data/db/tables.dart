@@ -17,6 +17,10 @@ class AppSettingsTable extends Table {
   TextColumn get activeRuleVersion => text().named('active_rule_version')();
   TextColumn get pendingRuleVersion =>
       text().named('pending_rule_version').nullable()();
+  TextColumn get pendingRuleEffectiveLifeDay => text()
+      .named('pending_rule_effective_life_day')
+      .map(const LifeDayConverter())
+      .nullable()();
   BoolColumn get onboardingCompleted => boolean()
       .named('onboarding_completed')
       .withDefault(const Constant(false))();
@@ -32,6 +36,7 @@ class AppSettingsTable extends Table {
     'CHECK (base_energy BETWEEN 60 AND 140)',
     'CHECK (pending_base_energy IS NULL OR pending_base_energy BETWEEN 60 AND 140)',
     'CHECK ((pending_base_energy IS NULL AND base_energy_effective_life_day IS NULL) OR (pending_base_energy IS NOT NULL AND base_energy_effective_life_day IS NOT NULL))',
+    'CHECK ((pending_rule_version IS NULL AND pending_rule_effective_life_day IS NULL) OR (pending_rule_version IS NOT NULL AND pending_rule_effective_life_day IS NOT NULL))',
     'FOREIGN KEY (active_rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
     'FOREIGN KEY (pending_rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
   ];

@@ -12,6 +12,7 @@ final class AppSettings {
     required this.baseEnergyEffectiveLifeDay,
     required this.activeRuleVersion,
     required this.pendingRuleVersion,
+    required this.pendingRuleEffectiveLifeDay,
     required this.onboardingCompleted,
     required this.createdAt,
     required this.updatedAt,
@@ -22,6 +23,7 @@ final class AppSettings {
   final LifeDay? baseEnergyEffectiveLifeDay;
   final String activeRuleVersion;
   final String? pendingRuleVersion;
+  final LifeDay? pendingRuleEffectiveLifeDay;
   final bool onboardingCompleted;
   final DateTime createdAt;
   final DateTime updatedAt;

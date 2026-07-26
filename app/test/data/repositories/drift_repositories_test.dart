@@ -68,6 +68,7 @@ void main() {
         baseEnergyEffectiveLifeDay: LifeDay(2026, 7, 27),
         activeRuleVersion: original.activeRuleVersion,
         pendingRuleVersion: null,
+        pendingRuleEffectiveLifeDay: null,
         onboardingCompleted: true,
         createdAt: original.createdAt,
         updatedAt: DateTime.utc(2026, 7, 26, 13),

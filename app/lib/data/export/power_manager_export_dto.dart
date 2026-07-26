@@ -55,6 +55,8 @@ Map<String, Object?> _settingsJson(AppSettings settings) {
         ?.toString(),
     'activeRuleVersion': settings.activeRuleVersion,
     'pendingRuleVersion': settings.pendingRuleVersion,
+    'pendingRuleEffectiveLifeDay': settings.pendingRuleEffectiveLifeDay
+        ?.toString(),
     'onboardingCompleted': settings.onboardingCompleted,
     'createdAt': _utc(settings.createdAt),
     'updatedAt': _utc(settings.updatedAt),

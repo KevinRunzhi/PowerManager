@@ -25,6 +25,9 @@ final class DriftAppSettingsRepository implements AppSettingsRepository {
         baseEnergyEffectiveLifeDay: Value(settings.baseEnergyEffectiveLifeDay),
         activeRuleVersion: Value(settings.activeRuleVersion),
         pendingRuleVersion: Value(settings.pendingRuleVersion),
+        pendingRuleEffectiveLifeDay: Value(
+          settings.pendingRuleEffectiveLifeDay,
+        ),
         onboardingCompleted: Value(settings.onboardingCompleted),
         updatedAt: Value(settings.updatedAt.toUtc()),
       ),
@@ -301,6 +304,7 @@ AppSettings _mapSettings(AppSettingsRow row) {
     baseEnergyEffectiveLifeDay: row.baseEnergyEffectiveLifeDay,
     activeRuleVersion: row.activeRuleVersion,
     pendingRuleVersion: row.pendingRuleVersion,
+    pendingRuleEffectiveLifeDay: row.pendingRuleEffectiveLifeDay,
     onboardingCompleted: row.onboardingCompleted,
     createdAt: row.createdAt.toUtc(),
     updatedAt: row.updatedAt.toUtc(),

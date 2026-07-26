@@ -288,6 +288,14 @@ void main() {
       throwsA(isA<Exception>()),
     );
     await expectLater(
+      database.appSettingsDao.updateSettings(
+        const AppSettingsTableCompanion(
+          pendingRuleVersion: Value(energyRulesV2MvpAVersion),
+        ),
+      ),
+      throwsA(isA<Exception>()),
+    );
+    await expectLater(
       database.delete(database.appSettingsTable).go(),
       throwsA(isA<Exception>()),
     );

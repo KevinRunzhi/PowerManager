@@ -68,6 +68,7 @@ lib/
 | baseEnergyEffectiveLifeDay | 生效生活日 |
 | activeRuleVersion | 当前规则版本 |
 | pendingRuleVersion | 下一生活日待生效规则 |
+| pendingRuleEffectiveLifeDay | 待生效规则对应的生活日；与 pendingRuleVersion 成对为空或成对有值 |
 | onboardingCompleted | 首次说明完成状态 |
 | createdAt / updatedAt | UTC 时间 |
 

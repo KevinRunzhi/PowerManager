@@ -351,6 +351,18 @@ class $AppSettingsTableTable extends AppSettingsTable
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  @override
+  late final GeneratedColumnWithTypeConverter<LifeDay?, String>
+  pendingRuleEffectiveLifeDay =
+      GeneratedColumn<String>(
+        'pending_rule_effective_life_day',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<LifeDay?>(
+        $AppSettingsTableTable.$converterpendingRuleEffectiveLifeDayn,
+      );
   static const VerificationMeta _onboardingCompletedMeta =
       const VerificationMeta('onboardingCompleted');
   @override
@@ -395,6 +407,7 @@ class $AppSettingsTableTable extends AppSettingsTable
     baseEnergyEffectiveLifeDay,
     activeRuleVersion,
     pendingRuleVersion,
+    pendingRuleEffectiveLifeDay,
     onboardingCompleted,
     createdAt,
     updatedAt,
@@ -514,6 +527,14 @@ class $AppSettingsTableTable extends AppSettingsTable
         DriftSqlType.string,
         data['${effectivePrefix}pending_rule_version'],
       ),
+      pendingRuleEffectiveLifeDay: $AppSettingsTableTable
+          .$converterpendingRuleEffectiveLifeDayn
+          .fromSql(
+            attachedDatabase.typeMapping.read(
+              DriftSqlType.string,
+              data['${effectivePrefix}pending_rule_effective_life_day'],
+            ),
+          ),
       onboardingCompleted: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}onboarding_completed'],
@@ -540,6 +561,12 @@ class $AppSettingsTableTable extends AppSettingsTable
   $converterbaseEnergyEffectiveLifeDayn = NullAwareTypeConverter.wrap(
     $converterbaseEnergyEffectiveLifeDay,
   );
+  static TypeConverter<LifeDay, String> $converterpendingRuleEffectiveLifeDay =
+      const LifeDayConverter();
+  static TypeConverter<LifeDay?, String?>
+  $converterpendingRuleEffectiveLifeDayn = NullAwareTypeConverter.wrap(
+    $converterpendingRuleEffectiveLifeDay,
+  );
 }
 
 class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
@@ -549,6 +576,7 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
   final LifeDay? baseEnergyEffectiveLifeDay;
   final String activeRuleVersion;
   final String? pendingRuleVersion;
+  final LifeDay? pendingRuleEffectiveLifeDay;
   final bool onboardingCompleted;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -559,6 +587,7 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
     this.baseEnergyEffectiveLifeDay,
     required this.activeRuleVersion,
     this.pendingRuleVersion,
+    this.pendingRuleEffectiveLifeDay,
     required this.onboardingCompleted,
     required this.createdAt,
     required this.updatedAt,
@@ -582,6 +611,13 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
     if (!nullToAbsent || pendingRuleVersion != null) {
       map['pending_rule_version'] = Variable<String>(pendingRuleVersion);
     }
+    if (!nullToAbsent || pendingRuleEffectiveLifeDay != null) {
+      map['pending_rule_effective_life_day'] = Variable<String>(
+        $AppSettingsTableTable.$converterpendingRuleEffectiveLifeDayn.toSql(
+          pendingRuleEffectiveLifeDay,
+        ),
+      );
+    }
     map['onboarding_completed'] = Variable<bool>(onboardingCompleted);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -604,6 +640,10 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
       pendingRuleVersion: pendingRuleVersion == null && nullToAbsent
           ? const Value.absent()
           : Value(pendingRuleVersion),
+      pendingRuleEffectiveLifeDay:
+          pendingRuleEffectiveLifeDay == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pendingRuleEffectiveLifeDay),
       onboardingCompleted: Value(onboardingCompleted),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
@@ -630,6 +670,9 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
       pendingRuleVersion: serializer.fromJson<String?>(
         json['pendingRuleVersion'],
       ),
+      pendingRuleEffectiveLifeDay: serializer.fromJson<LifeDay?>(
+        json['pendingRuleEffectiveLifeDay'],
+      ),
       onboardingCompleted: serializer.fromJson<bool>(
         json['onboardingCompleted'],
       ),
@@ -651,6 +694,9 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
       ),
       'activeRuleVersion': serializer.toJson<String>(activeRuleVersion),
       'pendingRuleVersion': serializer.toJson<String?>(pendingRuleVersion),
+      'pendingRuleEffectiveLifeDay': serializer.toJson<LifeDay?>(
+        pendingRuleEffectiveLifeDay,
+      ),
       'onboardingCompleted': serializer.toJson<bool>(onboardingCompleted),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
@@ -664,6 +710,7 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
     Value<LifeDay?> baseEnergyEffectiveLifeDay = const Value.absent(),
     String? activeRuleVersion,
     Value<String?> pendingRuleVersion = const Value.absent(),
+    Value<LifeDay?> pendingRuleEffectiveLifeDay = const Value.absent(),
     bool? onboardingCompleted,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -680,6 +727,9 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
     pendingRuleVersion: pendingRuleVersion.present
         ? pendingRuleVersion.value
         : this.pendingRuleVersion,
+    pendingRuleEffectiveLifeDay: pendingRuleEffectiveLifeDay.present
+        ? pendingRuleEffectiveLifeDay.value
+        : this.pendingRuleEffectiveLifeDay,
     onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -702,6 +752,9 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
       pendingRuleVersion: data.pendingRuleVersion.present
           ? data.pendingRuleVersion.value
           : this.pendingRuleVersion,
+      pendingRuleEffectiveLifeDay: data.pendingRuleEffectiveLifeDay.present
+          ? data.pendingRuleEffectiveLifeDay.value
+          : this.pendingRuleEffectiveLifeDay,
       onboardingCompleted: data.onboardingCompleted.present
           ? data.onboardingCompleted.value
           : this.onboardingCompleted,
@@ -719,6 +772,7 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
           ..write('baseEnergyEffectiveLifeDay: $baseEnergyEffectiveLifeDay, ')
           ..write('activeRuleVersion: $activeRuleVersion, ')
           ..write('pendingRuleVersion: $pendingRuleVersion, ')
+          ..write('pendingRuleEffectiveLifeDay: $pendingRuleEffectiveLifeDay, ')
           ..write('onboardingCompleted: $onboardingCompleted, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
@@ -734,6 +788,7 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
     baseEnergyEffectiveLifeDay,
     activeRuleVersion,
     pendingRuleVersion,
+    pendingRuleEffectiveLifeDay,
     onboardingCompleted,
     createdAt,
     updatedAt,
@@ -748,6 +803,8 @@ class AppSettingsRow extends DataClass implements Insertable<AppSettingsRow> {
           other.baseEnergyEffectiveLifeDay == this.baseEnergyEffectiveLifeDay &&
           other.activeRuleVersion == this.activeRuleVersion &&
           other.pendingRuleVersion == this.pendingRuleVersion &&
+          other.pendingRuleEffectiveLifeDay ==
+              this.pendingRuleEffectiveLifeDay &&
           other.onboardingCompleted == this.onboardingCompleted &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
@@ -760,6 +817,7 @@ class AppSettingsTableCompanion extends UpdateCompanion<AppSettingsRow> {
   final Value<LifeDay?> baseEnergyEffectiveLifeDay;
   final Value<String> activeRuleVersion;
   final Value<String?> pendingRuleVersion;
+  final Value<LifeDay?> pendingRuleEffectiveLifeDay;
   final Value<bool> onboardingCompleted;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
@@ -770,6 +828,7 @@ class AppSettingsTableCompanion extends UpdateCompanion<AppSettingsRow> {
     this.baseEnergyEffectiveLifeDay = const Value.absent(),
     this.activeRuleVersion = const Value.absent(),
     this.pendingRuleVersion = const Value.absent(),
+    this.pendingRuleEffectiveLifeDay = const Value.absent(),
     this.onboardingCompleted = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -781,6 +840,7 @@ class AppSettingsTableCompanion extends UpdateCompanion<AppSettingsRow> {
     this.baseEnergyEffectiveLifeDay = const Value.absent(),
     required String activeRuleVersion,
     this.pendingRuleVersion = const Value.absent(),
+    this.pendingRuleEffectiveLifeDay = const Value.absent(),
     this.onboardingCompleted = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
@@ -794,6 +854,7 @@ class AppSettingsTableCompanion extends UpdateCompanion<AppSettingsRow> {
     Expression<String>? baseEnergyEffectiveLifeDay,
     Expression<String>? activeRuleVersion,
     Expression<String>? pendingRuleVersion,
+    Expression<String>? pendingRuleEffectiveLifeDay,
     Expression<bool>? onboardingCompleted,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -808,6 +869,8 @@ class AppSettingsTableCompanion extends UpdateCompanion<AppSettingsRow> {
       if (activeRuleVersion != null) 'active_rule_version': activeRuleVersion,
       if (pendingRuleVersion != null)
         'pending_rule_version': pendingRuleVersion,
+      if (pendingRuleEffectiveLifeDay != null)
+        'pending_rule_effective_life_day': pendingRuleEffectiveLifeDay,
       if (onboardingCompleted != null)
         'onboarding_completed': onboardingCompleted,
       if (createdAt != null) 'created_at': createdAt,
@@ -822,6 +885,7 @@ class AppSettingsTableCompanion extends UpdateCompanion<AppSettingsRow> {
     Value<LifeDay?>? baseEnergyEffectiveLifeDay,
     Value<String>? activeRuleVersion,
     Value<String?>? pendingRuleVersion,
+    Value<LifeDay?>? pendingRuleEffectiveLifeDay,
     Value<bool>? onboardingCompleted,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
@@ -835,6 +899,8 @@ class AppSettingsTableCompanion extends UpdateCompanion<AppSettingsRow> {
           baseEnergyEffectiveLifeDay ?? this.baseEnergyEffectiveLifeDay,
       activeRuleVersion: activeRuleVersion ?? this.activeRuleVersion,
       pendingRuleVersion: pendingRuleVersion ?? this.pendingRuleVersion,
+      pendingRuleEffectiveLifeDay:
+          pendingRuleEffectiveLifeDay ?? this.pendingRuleEffectiveLifeDay,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -868,6 +934,13 @@ class AppSettingsTableCompanion extends UpdateCompanion<AppSettingsRow> {
     if (pendingRuleVersion.present) {
       map['pending_rule_version'] = Variable<String>(pendingRuleVersion.value);
     }
+    if (pendingRuleEffectiveLifeDay.present) {
+      map['pending_rule_effective_life_day'] = Variable<String>(
+        $AppSettingsTableTable.$converterpendingRuleEffectiveLifeDayn.toSql(
+          pendingRuleEffectiveLifeDay.value,
+        ),
+      );
+    }
     if (onboardingCompleted.present) {
       map['onboarding_completed'] = Variable<bool>(onboardingCompleted.value);
     }
@@ -889,6 +962,7 @@ class AppSettingsTableCompanion extends UpdateCompanion<AppSettingsRow> {
           ..write('baseEnergyEffectiveLifeDay: $baseEnergyEffectiveLifeDay, ')
           ..write('activeRuleVersion: $activeRuleVersion, ')
           ..write('pendingRuleVersion: $pendingRuleVersion, ')
+          ..write('pendingRuleEffectiveLifeDay: $pendingRuleEffectiveLifeDay, ')
           ..write('onboardingCompleted: $onboardingCompleted, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
