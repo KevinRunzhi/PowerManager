@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
+import 'package:power_manager/application/home_view_model.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
+import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
 import 'package:power_manager/features/activity/presentation/activity_record_sheet.dart';
 import 'package:power_manager/features/wellbeing/presentation/actual_state_sheet.dart';
@@ -55,6 +57,7 @@ class _LoadedHome extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projection = result.current.projection;
+    final viewModel = HomeViewModel.fromProjection(result.current);
     final morningStatus = switch (ref.watch(morningCompletionStatusProvider)) {
       AsyncData(:final value) => value,
       _ =>
@@ -64,6 +67,12 @@ class _LoadedHome extends ConsumerWidget {
     };
     final canSupplementYesterday =
         ref.watch(canSupplementYesterdayProvider).value ?? false;
+    final reminderMessage = ref.watch(energyReminderMessageProvider);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!ref.read(undoWindowActiveProvider)) {
+        _maybeShowReminder(ref, viewModel);
+      }
+    });
     return CustomScrollView(
       slivers: [
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x4)),
@@ -80,6 +89,21 @@ class _LoadedHome extends ConsumerWidget {
             estimate: projection.currentEstimate,
             morningCompleted:
                 morningStatus == MorningCompletionStatus.completed,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Center(
+            child: Text(
+              '初始 ${viewModel.initialEstimate} · ${viewModel.bandLabel}',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: _ReminderBar(
+            message: reminderMessage,
+            onDismiss: () =>
+                ref.read(energyReminderMessageProvider.notifier).dismiss(),
           ),
         ),
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x4)),
@@ -125,6 +149,7 @@ class _LoadedHome extends ConsumerWidget {
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x6)),
         SliverToBoxAdapter(
           child: _WellbeingTools(
+            onOverview: () => _showOverview(context, viewModel),
             hasCurrentActual:
                 ref.watch(currentDailyObservationProvider).value != null,
             canSupplementYesterday: canSupplementYesterday,
@@ -144,8 +169,10 @@ class _LoadedHome extends ConsumerWidget {
   }
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
+    ref.read(undoWindowActiveProvider.notifier).setActive(true);
     final result = await ActivityRecordSheet.show(context);
     if (result == null || !context.mounted) {
+      ref.read(undoWindowActiveProvider.notifier).setActive(false);
       return;
     }
     _showUndo(context, ref, result);
@@ -156,7 +183,13 @@ class _LoadedHome extends ConsumerWidget {
     WidgetRef ref,
     EstimatedActivityRecord activity,
   ) async {
-    await ActivityRecordSheet.show(context, initial: activity);
+    final result = await ActivityRecordSheet.show(context, initial: activity);
+    if (result != null) {
+      await _maybeShowReminder(
+        ref,
+        HomeViewModel.fromProjection(result.current),
+      );
+    }
   }
 
   Future<void> _delete(
@@ -182,6 +215,7 @@ class _LoadedHome extends ConsumerWidget {
     ActivityMutationResult result,
   ) {
     final activity = result.activity;
+    ref.read(undoWindowActiveProvider.notifier).setActive(true);
     Timer? closeTimer;
     final controller = ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -194,13 +228,45 @@ class _LoadedHome extends ConsumerWidget {
           label: '撤销',
           onPressed: () async {
             closeTimer?.cancel();
+            ref.read(undoWindowActiveProvider.notifier).setActive(false);
             await ref.read(activityUseCasesProvider).delete(activity.id);
             ref.invalidate(currentPreparationProvider);
           },
         ),
       ),
     );
-    closeTimer = Timer(const Duration(seconds: 5), controller.close);
+    closeTimer = Timer(const Duration(seconds: 5), () async {
+      controller.close();
+      ref.read(undoWindowActiveProvider.notifier).setActive(false);
+      final current = await ref.read(currentPreparationProvider.future);
+      await _maybeShowReminder(
+        ref,
+        HomeViewModel.fromProjection(current.current),
+      );
+    });
+  }
+
+  Future<void> _maybeShowReminder(
+    WidgetRef ref,
+    HomeViewModel viewModel,
+  ) async {
+    if (viewModel.band == EstimatedEnergyBand.estimatedNormal) {
+      return;
+    }
+    final message = await ref
+        .read(energyReminderServiceProvider)
+        .createOnce(lifeDay: result.current.lifeDay, band: viewModel.band);
+    if (message != null) {
+      ref.read(energyReminderMessageProvider.notifier).show(message);
+    }
+  }
+
+  Future<void> _showOverview(BuildContext context, HomeViewModel viewModel) {
+    return showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (_) => _TodayOverviewSheet(viewModel: viewModel),
+    );
   }
 
   String _signed(int value) => value > 0 ? '+$value' : '$value';
@@ -249,23 +315,30 @@ class _EnergyBall extends StatelessWidget {
               ),
             ],
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                morningCompleted ? '估计精力' : '估计精力 · 未晨间确认',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelMedium?.copyWith(letterSpacing: 2.2),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: SizedBox(
+              width: diameter * 0.8,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    morningCompleted ? '估计精力' : '估计精力 · 未晨间确认',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelMedium?.copyWith(letterSpacing: 2.2),
+                  ),
+                  const SizedBox(height: AppSpacing.unit),
+                  Text(
+                    '$estimate',
+                    style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                      fontSize: diameter < 160 ? 42 : 64,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: AppSpacing.unit),
-              Text(
-                '$estimate',
-                style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                  fontSize: diameter < 160 ? 42 : 64,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -365,6 +438,7 @@ class _MorningHint extends StatelessWidget {
 
 class _WellbeingTools extends StatelessWidget {
   const _WellbeingTools({
+    required this.onOverview,
     required this.hasCurrentActual,
     required this.canSupplementYesterday,
     required this.onActual,
@@ -377,6 +451,7 @@ class _WellbeingTools extends StatelessWidget {
   final VoidCallback onActual;
   final VoidCallback onCorrection;
   final VoidCallback onYesterday;
+  final VoidCallback onOverview;
 
   @override
   Widget build(BuildContext context) {
@@ -388,6 +463,11 @@ class _WellbeingTools extends StatelessWidget {
           spacing: AppSpacing.x2,
           runSpacing: AppSpacing.x2,
           children: [
+            OutlinedButton(
+              key: const Key('today-overview-button'),
+              onPressed: onOverview,
+              child: const Text('今日概览'),
+            ),
             OutlinedButton(
               key: const Key('actual-state-button'),
               onPressed: onActual,
@@ -406,6 +486,91 @@ class _WellbeingTools extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ReminderBar extends StatelessWidget {
+  const _ReminderBar({required this.message, required this.onDismiss});
+
+  final String? message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      child: message == null
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.x3),
+              child: Material(
+                color: AppColors.energyMediumLow.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+                child: ListTile(
+                  key: const Key('energy-reminder-bar'),
+                  title: Text(message!),
+                  trailing: IconButton(
+                    tooltip: '关闭提醒',
+                    onPressed: onDismiss,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class _TodayOverviewSheet extends StatelessWidget {
+  const _TodayOverviewSheet({required this.viewModel});
+
+  final HomeViewModel viewModel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '今日概览',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.x4),
+          if (viewModel.categories.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(AppSpacing.page),
+              child: Text('今天还没有活动记录。', textAlign: TextAlign.center),
+            )
+          else
+            for (final item in viewModel.categories)
+              Card(
+                key: Key('overview-${item.category.code}'),
+                child: ListTile(
+                  title: Text(item.category.label),
+                  subtitle: Text(
+                    '${item.durationMinutes} 分钟 · 变化总量 ${item.grossDelta}',
+                  ),
+                  trailing: Text(
+                    item.netDelta > 0
+                        ? '+${item.netDelta}'
+                        : '${item.netDelta}',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ),
+          const SizedBox(height: AppSpacing.x3),
+          Text(
+            '按变化总量排序，右侧展示估计精力净变化。',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ],
       ),
     );
   }

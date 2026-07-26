@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
+import 'package:power_manager/application/energy_reminder_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
@@ -193,3 +194,34 @@ final canSupplementYesterdayProvider = FutureProvider<bool>((ref) async {
     (item) => item.type == EnergyObservationType.dailyAbsolute,
   );
 });
+
+final energyReminderServiceProvider = Provider<EnergyReminderService>((ref) {
+  return EnergyReminderService(
+    clock: ref.watch(clockProvider),
+    receipts: ref.watch(receiptsRepositoryProvider),
+  );
+});
+
+final energyReminderMessageProvider =
+    NotifierProvider<EnergyReminderNotifier, String?>(
+      EnergyReminderNotifier.new,
+    );
+
+final undoWindowActiveProvider = NotifierProvider<UndoWindowNotifier, bool>(
+  UndoWindowNotifier.new,
+);
+
+final class EnergyReminderNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void show(String message) => state = message;
+  void dismiss() => state = null;
+}
+
+final class UndoWindowNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setActive(bool value) => state = value;
+}

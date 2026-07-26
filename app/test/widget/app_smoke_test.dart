@@ -179,12 +179,39 @@ void main() {
     expect(find.text('88'), findsOneWidget);
     expect(find.textContaining('不会覆盖估计'), findsOneWidget);
   });
+
+  testWidgets('today overview is hidden by default and opens as a sheet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+    expect(find.text('今天还没有活动记录。'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('today-overview-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('今日概览'), findsWidgets);
+    expect(find.text('今天还没有活动记录。'), findsOneWidget);
+    expect(find.textContaining('按变化总量排序'), findsOneWidget);
+  });
+
+  testWidgets('core home content survives 200 percent text scaling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp(textScaler: const TextScaler.linear(2)));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(HomePage.energyBallKey), findsOneWidget);
+    expect(find.text('100'), findsOneWidget);
+    expect(find.byKey(HomePage.recordButtonKey), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Widget _testApp({
   ActivityMutator? mutator,
   MorningCompletionStatus morningStatus = MorningCompletionStatus.notAnswered,
   WellbeingMutator? wellbeing,
+  TextScaler textScaler = TextScaler.noScaling,
 }) {
   return ProviderScope(
     overrides: [
@@ -199,7 +226,10 @@ Widget _testApp({
       if (wellbeing != null)
         wellbeingUseCasesProvider.overrideWithValue(wellbeing),
     ],
-    child: const PowerManagerApp(),
+    child: MediaQuery(
+      data: MediaQueryData(size: const Size(800, 600), textScaler: textScaler),
+      child: const PowerManagerApp(),
+    ),
   );
 }
 
