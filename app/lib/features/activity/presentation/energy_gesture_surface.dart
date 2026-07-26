@@ -416,8 +416,10 @@ class _GestureOverlay extends StatelessWidget {
                     _stageTip(state.phase),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
+                      inherit: false,
                       color: Color(0xFF8A93A6),
                       fontSize: 12.5,
+                      decoration: TextDecoration.none,
                     ),
                   ),
                 ),
@@ -553,10 +555,12 @@ class _GestureLayerState extends State<_GestureLayer>
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
+                        inherit: false,
                         color: Color(0xFFE8ECF4),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                         height: 1.1,
+                        decoration: TextDecoration.none,
                       ),
                     ),
                   ),

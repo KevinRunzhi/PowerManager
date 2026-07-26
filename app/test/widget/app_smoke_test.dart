@@ -360,6 +360,30 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('energy gesture text does not inherit debug underlines', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+
+    final center = tester.getCenter(
+      find.byKey(const Key('energy-gesture-surface')),
+    );
+    final gesture = await tester.startGesture(center);
+    await tester.pump(const Duration(milliseconds: 150));
+
+    final overlay = find.byKey(const Key('record-gesture-overlay'));
+    final texts = tester.widgetList<Text>(
+      find.descendant(of: overlay, matching: find.byType(Text)),
+    );
+    expect(texts, isNotEmpty);
+    for (final text in texts) {
+      expect(text.style?.inherit, isFalse);
+      expect(text.style?.decoration, TextDecoration.none);
+    }
+    await gesture.up();
+  });
+
   testWidgets('incomplete energy gesture and timeout never write', (
     tester,
   ) async {

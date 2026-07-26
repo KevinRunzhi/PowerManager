@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
+import 'package:power_manager/app/theme/energy_palette.dart';
 import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/home_view_model.dart';
@@ -75,6 +76,10 @@ class _LoadedHome extends ConsumerWidget {
     };
     final canSupplementYesterday =
         ref.watch(canSupplementYesterdayProvider).value ?? false;
+    final energyActivated = EnergyPalette.shouldActivate(
+      morningHandled: morningStatus != MorningCompletionStatus.notAnswered,
+      hasActivities: projection.activities.isNotEmpty,
+    );
     final reminderMessage = ref.watch(energyReminderMessageProvider);
     final history = ref.watch(historyReviewProvider).value;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -100,6 +105,7 @@ class _LoadedHome extends ConsumerWidget {
             child: _EnergyBall(
               estimate: projection.currentEstimate,
               initialEstimate: viewModel.initialEstimate,
+              energyActivated: energyActivated,
               morningCompleted:
                   morningStatus == MorningCompletionStatus.completed,
             ),
@@ -563,11 +569,13 @@ class _EnergyBall extends StatefulWidget {
   const _EnergyBall({
     required this.estimate,
     required this.initialEstimate,
+    required this.energyActivated,
     required this.morningCompleted,
   });
 
   final int estimate;
   final int initialEstimate;
+  final bool energyActivated;
   final bool morningCompleted;
 
   @override
@@ -630,7 +638,7 @@ class _EnergyBallState extends State<_EnergyBall>
                     diameter: diameter,
                     estimate: widget.estimate,
                     initialEstimate: widget.initialEstimate,
-                    morningCompleted: widget.morningCompleted,
+                    energyActivated: widget.energyActivated,
                   ),
                 ),
               ),
@@ -702,32 +710,33 @@ class _EnergyBallPainter extends CustomPainter {
     required this.diameter,
     required this.estimate,
     required this.initialEstimate,
-    required this.morningCompleted,
+    required this.energyActivated,
   }) : super(repaint: animation);
 
   final Animation<double> animation;
   final double diameter;
   final int estimate;
   final int initialEstimate;
-  final bool morningCompleted;
+  final bool energyActivated;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final time = animation.value * math.pi * 2;
     final ratio = initialEstimate == 0 ? 0.0 : estimate / initialEstimate;
-    final colors = morningCompleted
-        ? _energyColors(ratio)
-        : (const Color(0xFF3A4152), const Color(0xFF262C3A));
+    final palette = energyActivated
+        ? EnergyPalette.forRatio(ratio)
+        : EnergyPalette.dormant;
+    final colors = (palette.primary, palette.secondary);
     final overdrawn = ratio < 0;
-    final flow = morningCompleted ? (0.35 + 0.65 * ratio.clamp(0, 1)) : 0.18;
+    final flow = energyActivated ? (0.35 + 0.65 * ratio.clamp(0, 1)) : 0.18;
     final breathAmplitude = overdrawn ? 0.008 : 0.018;
     final breathCycles = overdrawn ? 1.5 : 12 / 5.5;
     final radius =
         diameter / 2 * (1 + breathAmplitude * math.sin(time * breathCycles));
     final mist = overdrawn ? 0.45 : 1.0;
     final glowAlpha =
-        (morningCompleted ? 0.12 + 0.23 * ratio.clamp(0, 1) : 0.10) * mist;
+        (energyActivated ? 0.12 + 0.23 * ratio.clamp(0, 1) : 0.10) * mist;
 
     final glowRect = Rect.fromCircle(center: center, radius: radius * 1.65);
     canvas.drawRect(
@@ -752,7 +761,7 @@ class _EnergyBallPainter extends CustomPainter {
         ..color = Color.lerp(
           AppColors.backgroundBase,
           colors.$1,
-          morningCompleted ? 0.16 * mist : 0.08,
+          energyActivated ? 0.16 * mist : 0.08,
         )!,
     );
     _drawBlob(
@@ -795,7 +804,7 @@ class _EnergyBallPainter extends CustomPainter {
       radius,
       Paint()
         ..color = colors.$1.withValues(
-          alpha: morningCompleted ? 0.22 * mist : 0.08,
+          alpha: energyActivated ? 0.22 * mist : 0.08,
         )
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
@@ -824,36 +833,11 @@ class _EnergyBallPainter extends CustomPainter {
     );
   }
 
-  (Color, Color) _energyColors(double ratio) {
-    const stops = <(double, Color, Color)>[
-      (0.80, Color(0xFF5EEAD4), Color(0xFFA7F3D0)),
-      (0.50, Color(0xFF7DD3FC), Color(0xFF5EEAD4)),
-      (0.25, Color(0xFFFCD34D), Color(0xFF7DD3FC)),
-      (0.00, Color(0xFFF0A868), Color(0xFFB08968)),
-      (-0.30, Color(0xFF9B8AB8), Color(0xFF6E6284)),
-    ];
-    if (ratio >= stops.first.$1) {
-      return (stops.first.$2, stops.first.$3);
-    }
-    for (var index = 0; index < stops.length - 1; index++) {
-      final upper = stops[index];
-      final lower = stops[index + 1];
-      if (ratio <= upper.$1 && ratio >= lower.$1) {
-        final t = (upper.$1 - ratio) / (upper.$1 - lower.$1);
-        return (
-          Color.lerp(upper.$2, lower.$2, t)!,
-          Color.lerp(upper.$3, lower.$3, t)!,
-        );
-      }
-    }
-    return (stops.last.$2, stops.last.$3);
-  }
-
   @override
   bool shouldRepaint(_EnergyBallPainter oldDelegate) =>
       oldDelegate.estimate != estimate ||
       oldDelegate.initialEstimate != initialEstimate ||
-      oldDelegate.morningCompleted != morningCompleted ||
+      oldDelegate.energyActivated != energyActivated ||
       oldDelegate.diameter != diameter;
 }
 
