@@ -5,6 +5,7 @@ import 'package:power_manager/app/app.dart';
 import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
+import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
@@ -205,6 +206,56 @@ void main() {
     expect(find.byKey(HomePage.recordButtonKey), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'history review distinguishes estimate, actual and partial window',
+    (tester) async {
+      final day = LifeDay(2026, 7, 25);
+      final summary = _dailySummary(day);
+      final review = HistoricalDayReview(
+        summary: summary,
+        actualState: null,
+        corrections: const CorrectionCounts(lower: 1, aboutRight: 0, higher: 0),
+      );
+      await tester.pumpWidget(
+        _testApp(
+          history: HistoryReview(
+            latest: review,
+            rolling: RollingReview(
+              days: [review],
+              totalConsumption: summary.totalConsumption,
+              totalRecovery: summary.totalRecovery,
+              corrections: review.corrections,
+              categorySummaries: summary.categorySummaries,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('history-review-card')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('昨日总结'), findsOneWidget);
+      expect(find.textContaining('实际 未确认'), findsOneWidget);
+      await tester.tap(find.text('昨日总结'));
+      await tester.pumpAndSettle();
+      expect(find.text('系统估计'), findsOneWidget);
+      expect(find.text('实际状态'), findsOneWidget);
+      expect(find.text('未确认'), findsOneWidget);
+      expect(find.textContaining('系统估计不代表'), findsOneWidget);
+
+      Navigator.of(tester.element(find.text('系统估计'))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('rolling-review-button')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('不足 7 个有效日'), findsOneWidget);
+      expect(find.textContaining('调整建议'), findsOneWidget);
+      expect(find.textContaining('自动调整'), findsNothing);
+    },
+  );
 }
 
 Widget _testApp({
@@ -212,6 +263,7 @@ Widget _testApp({
   MorningCompletionStatus morningStatus = MorningCompletionStatus.notAnswered,
   WellbeingMutator? wellbeing,
   TextScaler textScaler = TextScaler.noScaling,
+  HistoryReview? history,
 }) {
   return ProviderScope(
     overrides: [
@@ -222,6 +274,24 @@ Widget _testApp({
       currentMorningCheckInProvider.overrideWith((ref) async => null),
       currentDailyObservationProvider.overrideWith((ref) async => null),
       canSupplementYesterdayProvider.overrideWith((ref) async => false),
+      historyReviewProvider.overrideWith(
+        (ref) async =>
+            history ??
+            HistoryReview(
+              latest: null,
+              rolling: RollingReview(
+                days: const [],
+                totalConsumption: 0,
+                totalRecovery: 0,
+                corrections: const CorrectionCounts(
+                  lower: 0,
+                  aboutRight: 0,
+                  higher: 0,
+                ),
+                categorySummaries: const {},
+              ),
+            ),
+      ),
       if (mutator != null) activityUseCasesProvider.overrideWithValue(mutator),
       if (wellbeing != null)
         wellbeingUseCasesProvider.overrideWithValue(wellbeing),
@@ -409,5 +479,30 @@ StoredEstimatedActivity _storedActivity({
     ruleVersion: 'test-rules',
     status: status,
     deletedAt: status == ActivityRecordStatus.deleted ? utc : null,
+  );
+}
+
+DailySummary _dailySummary(LifeDay day) {
+  return DailySummary(
+    lifeDay: day,
+    baseEstimatedEnergy: 100,
+    ruleVersion: 'test-rules',
+    morningAdjustment: 0,
+    shortTermAdjustment: 0,
+    initialEstimatedEnergy: 100,
+    finalEstimatedEnergy: 92,
+    totalConsumption: 10,
+    totalRecovery: 2,
+    categorySummaries: const {
+      ActivityCategory.study: CategoryEstimatedSummary(
+        category: ActivityCategory.study,
+        durationMinutes: 30,
+        netDelta: -8,
+        grossDelta: 8,
+      ),
+    },
+    isStandardEffectiveDay: true,
+    isWeakEffectiveDay: false,
+    settledAt: DateTime.utc(2026, 7, 26, 4),
   );
 }

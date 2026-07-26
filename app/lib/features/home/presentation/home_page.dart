@@ -7,11 +7,14 @@ import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/home_view_model.dart';
+import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
+import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
+import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/activity/presentation/activity_record_sheet.dart';
 import 'package:power_manager/features/wellbeing/presentation/actual_state_sheet.dart';
 import 'package:power_manager/features/wellbeing/presentation/morning_check_in_sheet.dart';
@@ -68,6 +71,7 @@ class _LoadedHome extends ConsumerWidget {
     final canSupplementYesterday =
         ref.watch(canSupplementYesterdayProvider).value ?? false;
     final reminderMessage = ref.watch(energyReminderMessageProvider);
+    final history = ref.watch(historyReviewProvider).value;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!ref.read(undoWindowActiveProvider)) {
         _maybeShowReminder(ref, viewModel);
@@ -163,6 +167,16 @@ class _LoadedHome extends ConsumerWidget {
             ),
           ),
         ),
+        if (history != null &&
+            (history.latest != null || history.rolling.days.isNotEmpty)) ...[
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x3)),
+          SliverToBoxAdapter(
+            child: _HistoryTools(
+              history: history,
+              currentLifeDay: result.current.lifeDay,
+            ),
+          ),
+        ],
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x12)),
       ],
     );
@@ -270,6 +284,234 @@ class _LoadedHome extends ConsumerWidget {
   }
 
   String _signed(int value) => value > 0 ? '+$value' : '$value';
+}
+
+class _HistoryTools extends StatelessWidget {
+  const _HistoryTools({required this.history, required this.currentLifeDay});
+
+  final HistoryReview history;
+  final LifeDay currentLifeDay;
+
+  @override
+  Widget build(BuildContext context) {
+    final latest = history.latest;
+    return Card(
+      key: const Key('history-review-card'),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (latest != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(latest.titleFor(currentLifeDay)),
+                subtitle: Text(
+                  '${latest.summary.lifeDay} · '
+                  '最终估计 ${latest.summary.finalEstimatedEnergy} · '
+                  '实际 ${latest.actualStateLabel}',
+                ),
+                trailing: const Icon(Icons.expand_more_rounded),
+                onTap: () => _showDay(context, latest),
+              ),
+            if (history.rolling.days.isNotEmpty)
+              OutlinedButton(
+                key: const Key('rolling-review-button'),
+                onPressed: () => _showRolling(context, history.rolling),
+                child: Text(history.rolling.windowLabel),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDay(BuildContext context, HistoricalDayReview review) {
+    return showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (_) => _HistoricalDaySheet(
+        review: review,
+        title: review.titleFor(currentLifeDay),
+      ),
+    );
+  }
+
+  Future<void> _showRolling(BuildContext context, RollingReview rolling) {
+    return showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (_) => _RollingReviewSheet(rolling: rolling),
+    );
+  }
+}
+
+class _HistoricalDaySheet extends StatelessWidget {
+  const _HistoricalDaySheet({required this.review, required this.title});
+
+  final HistoricalDayReview review;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = review.summary;
+    return _ReviewSheetFrame(
+      title: title,
+      children: [
+        Text('${summary.lifeDay}', textAlign: TextAlign.center),
+        const SizedBox(height: AppSpacing.x4),
+        _ReviewFact(
+          label: '系统估计',
+          value:
+              '初始 ${summary.initialEstimatedEnergy} → '
+              '最终 ${summary.finalEstimatedEnergy}',
+        ),
+        _ReviewFact(label: '实际状态', value: review.actualStateLabel),
+        _ReviewFact(
+          label: '总消耗 / 总恢复',
+          value: '${summary.totalConsumption} / ${summary.totalRecovery}',
+        ),
+        _ReviewFact(label: '此刻校正', value: _correctionText(review.corrections)),
+        if (review.categories.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.x3),
+          Text('分类分布', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.x2),
+          for (final item in review.categories) _CategoryFact(item: item),
+        ],
+        const SizedBox(height: AppSpacing.x3),
+        Text(
+          '以上为当日记录的描述性复盘；系统估计不代表你的实际状态。',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+}
+
+class _RollingReviewSheet extends StatelessWidget {
+  const _RollingReviewSheet({required this.rolling});
+
+  final RollingReview rolling;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = rolling.categorySummaries.values.toList()
+      ..sort((left, right) {
+        final gross = right.grossDelta.compareTo(left.grossDelta);
+        return gross != 0
+            ? gross
+            : left.category.index.compareTo(right.category.index);
+      });
+    return _ReviewSheetFrame(
+      title: rolling.windowLabel,
+      children: [
+        Text(
+          '${rolling.days.first.summary.lifeDay} 至 '
+          '${rolling.days.last.summary.lifeDay}',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: AppSpacing.x4),
+        _ReviewFact(
+          label: '总消耗 / 总恢复',
+          value: '${rolling.totalConsumption} / ${rolling.totalRecovery}',
+        ),
+        _ReviewFact(
+          label: '实际状态已确认',
+          value: '${rolling.confirmedActualDays} / ${rolling.days.length} 天',
+        ),
+        _ReviewFact(label: '此刻校正', value: _correctionText(rolling.corrections)),
+        if (categories.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.x3),
+          Text('分类累计', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.x2),
+          for (final item in categories) _CategoryFact(item: item),
+        ],
+        const SizedBox(height: AppSpacing.x3),
+        Text(
+          rolling.days.length < 7
+              ? '当前不足 7 个有效日，先展示已有记录；不会据此生成能力判断或调整建议。'
+              : '这是最近 7 个有效日的描述性汇总，不生成能力判断或调整建议。',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+}
+
+class _ReviewSheetFrame extends StatelessWidget {
+  const _ReviewSheetFrame({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: 0.86,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewFact extends StatelessWidget {
+  const _ReviewFact({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      trailing: SizedBox(
+        width: MediaQuery.sizeOf(context).width * 0.48,
+        child: Text(value, textAlign: TextAlign.end),
+      ),
+    );
+  }
+}
+
+class _CategoryFact extends StatelessWidget {
+  const _CategoryFact({required this.item});
+
+  final CategoryEstimatedSummary item;
+
+  @override
+  Widget build(BuildContext context) {
+    final net = item.netDelta > 0 ? '+${item.netDelta}' : '${item.netDelta}';
+    return Card(
+      child: ListTile(
+        title: Text(item.category.label),
+        subtitle: Text('${item.durationMinutes} 分钟 · 变化总量 ${item.grossDelta}'),
+        trailing: Text(net),
+      ),
+    );
+  }
+}
+
+String _correctionText(CorrectionCounts counts) {
+  if (counts.total == 0) {
+    return '无';
+  }
+  return '${counts.total} 次'
+      '（偏低 ${counts.lower} · 相符 ${counts.aboutRight} · '
+      '偏高 ${counts.higher}）';
 }
 
 class _EnergyBall extends StatelessWidget {

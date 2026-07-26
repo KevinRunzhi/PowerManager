@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/energy_reminder_service.dart';
+import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
@@ -200,6 +201,20 @@ final energyReminderServiceProvider = Provider<EnergyReminderService>((ref) {
     clock: ref.watch(clockProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
   );
+});
+
+final historyReviewServiceProvider = Provider<HistoryReviewService>((ref) {
+  return HistoryReviewService(
+    summaries: ref.watch(summariesRepositoryProvider),
+    observations: ref.watch(observationsRepositoryProvider),
+  );
+});
+
+final historyReviewProvider = FutureProvider<HistoryReview>((ref) async {
+  final prepared = await ref.watch(currentPreparationProvider.future);
+  return ref
+      .watch(historyReviewServiceProvider)
+      .load(currentLifeDay: prepared.current.lifeDay);
 });
 
 final energyReminderMessageProvider =
