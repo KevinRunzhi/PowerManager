@@ -1,3 +1,4 @@
+import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
@@ -204,6 +205,171 @@ void main() {
       expect(after.finalEstimatedEnergy, before.finalEstimatedEnergy);
     },
   );
+  test(
+    'all 24 subcategories can be created through the same use case',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 12);
+      final useCases = harness.activityUseCases();
+      for (var index = 0; index < ActivitySubcategory.values.length; index++) {
+        final subcategory = ActivitySubcategory.values[index];
+        await useCases.create(
+          ActivityDraft(
+            operationId: 'subcategory-${subcategory.code}',
+            category: subcategory.category,
+            subcategory: subcategory,
+            duration: DurationSlot.minutes15,
+            completedAt: DateTime(2026, 7, 26, 8, index),
+          ),
+        );
+      }
+      expect(
+        await harness.activities.listActiveForLifeDay(LifeDay(2026, 7, 26)),
+        hasLength(24),
+      );
+    },
+  );
+
+  test(
+    'the four other subcategories use their exact configured rules',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 12);
+      final useCases = harness.activityUseCases();
+      final others = [
+        ActivitySubcategory.otherStudy,
+        ActivitySubcategory.otherPractice,
+        ActivitySubcategory.otherRecovery,
+        ActivitySubcategory.otherLeisure,
+      ];
+      for (var index = 0; index < others.length; index++) {
+        final subcategory = others[index];
+        await useCases.create(
+          ActivityDraft(
+            operationId: 'other-${subcategory.code}',
+            category: subcategory.category,
+            subcategory: subcategory,
+            duration: DurationSlot.minutes15,
+            completedAt: DateTime(2026, 7, 26, 9, index),
+          ),
+        );
+      }
+      final stored = await harness.activities.listActiveForLifeDay(
+        LifeDay(2026, 7, 26),
+      );
+      expect(stored.map((item) => item.theoreticalDelta), [-5, -5, 5, 0]);
+    },
+  );
+
+  test(
+    'editing the earliest consumption recomputes later recovery cap',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 12);
+      final useCases = harness.activityUseCases();
+      await useCases.create(
+        ActivityDraft(
+          operationId: 'consumption',
+          category: ActivityCategory.study,
+          subcategory: ActivitySubcategory.classAttendance,
+          duration: DurationSlot.minutes60,
+          completedAt: DateTime(2026, 7, 26, 8),
+        ),
+      );
+      await useCases.create(
+        ActivityDraft(
+          operationId: 'recovery',
+          category: ActivityCategory.recovery,
+          subcategory: ActivitySubcategory.nap,
+          duration: DurationSlot.minutes60,
+          completedAt: DateTime(2026, 7, 26, 9),
+        ),
+      );
+      expect((await harness.activities.find('recovery'))!.appliedDelta, 12);
+
+      final result = await useCases.edit(
+        activityId: 'consumption',
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.classAttendance,
+        duration: DurationSlot.minutes15,
+        completedAt: DateTime(2026, 7, 26, 8),
+      );
+      expect((await harness.activities.find('recovery'))!.appliedDelta, 5);
+      expect(result.current.projection.currentEstimate, 100);
+    },
+  );
+
+  test('duplicate create and repeated delete are idempotent', () async {
+    clock.value = DateTime(2026, 7, 26, 12);
+    final useCases = harness.activityUseCases();
+    final draft = ActivityDraft(
+      operationId: 'single-operation',
+      category: ActivityCategory.study,
+      subcategory: ActivitySubcategory.homework,
+      duration: DurationSlot.minutes30,
+      completedAt: DateTime(2026, 7, 26, 10),
+    );
+    final created = await Future.wait([
+      useCases.create(draft),
+      useCases.create(draft),
+    ]);
+    final deleted = await Future.wait([
+      useCases.delete(draft.operationId),
+      useCases.delete(draft.operationId),
+    ]);
+    expect(created.where((result) => !result.wasAlreadyApplied), hasLength(1));
+    expect(deleted.where((result) => !result.wasAlreadyApplied), hasLength(1));
+    expect(
+      await harness.activities.listActiveForLifeDay(LifeDay(2026, 7, 26)),
+      isEmpty,
+    );
+    expect(
+      (await harness.activities.find(draft.operationId))!.status,
+      ActivityRecordStatus.deleted,
+    );
+  });
+
+  test(
+    'future, cross-life-day, and settled-history edits are rejected',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 5);
+      final useCases = harness.activityUseCases();
+      await expectLater(
+        useCases.create(
+          ActivityDraft(
+            operationId: 'future',
+            category: ActivityCategory.study,
+            subcategory: ActivitySubcategory.homework,
+            duration: DurationSlot.minutes15,
+            completedAt: DateTime(2026, 7, 26, 6),
+          ),
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        useCases.create(
+          ActivityDraft(
+            operationId: 'previous-life-day',
+            category: ActivityCategory.study,
+            subcategory: ActivitySubcategory.homework,
+            duration: DurationSlot.minutes15,
+            completedAt: DateTime(2026, 7, 26, 3, 30),
+          ),
+        ),
+        throwsStateError,
+      );
+      await harness.activities.insert(
+        _activity('historical', LifeDay(2026, 7, 25), minute: 10),
+      );
+      await expectLater(
+        useCases.edit(
+          activityId: 'historical',
+          category: ActivityCategory.study,
+          subcategory: ActivitySubcategory.homework,
+          duration: DurationSlot.minutes30,
+          completedAt: DateTime(2026, 7, 25, 8),
+        ),
+        throwsStateError,
+      );
+    },
+  );
 }
 
 final class MutableClock implements Clock {
@@ -266,6 +432,38 @@ final class _Harness {
       ),
       projectionService: projection,
     ).prepare(trigger);
+  }
+
+  ActivityUseCases activityUseCases() {
+    final projection = CurrentDayProjectionService(
+      morningCheckIns: mornings,
+      activities: activities,
+      summaries: summaries,
+    );
+    final preparer = OperationPreparationService(
+      clock: clock,
+      lifeDayCalculator: LifeDayCalculator(),
+      transactionRunner: DriftTransactionRunner(database),
+      settings: settings,
+      settlementService: SettlementService(
+        morningCheckIns: mornings,
+        activities: activities,
+        observations: observations,
+        summaries: summaries,
+        projectionService: projection,
+      ),
+      projectionService: projection,
+    );
+    return ActivityUseCases(
+      clock: clock,
+      lifeDayCalculator: LifeDayCalculator(),
+      transactionRunner: DriftTransactionRunner(database),
+      preparer: preparer,
+      activities: activities,
+      rules: rules,
+      summaries: summaries,
+      projectionService: projection,
+    );
   }
 }
 

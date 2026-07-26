@@ -12,7 +12,6 @@ abstract final class AppRoutes {
       debugEnvironment => (_) => const DebugEnvironmentPage(),
       _ => (_) => const _UnknownRoutePage(),
     };
-
     return MaterialPageRoute<void>(builder: builder, settings: settings);
   }
 }

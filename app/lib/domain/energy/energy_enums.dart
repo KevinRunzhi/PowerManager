@@ -173,7 +173,6 @@ enum SleepRecovery {
   good('good');
 
   const SleepRecovery(this.code);
-
   final String code;
 }
 
@@ -183,7 +182,6 @@ enum FreeTimeLevel {
   high('high');
 
   const FreeTimeLevel(this.code);
-
   final String code;
 }
 
@@ -194,7 +192,6 @@ enum PressureSource {
   low('low');
 
   const PressureSource(this.code);
-
   final String code;
 }
 
@@ -206,7 +203,6 @@ enum AbsoluteEnergyState {
   full('full');
 
   const AbsoluteEnergyState(this.code);
-
   final String code;
 }
 
@@ -215,7 +211,6 @@ enum EnergyObservationType {
   relativeCorrection('relativeCorrection');
 
   const EnergyObservationType(this.code);
-
   final String code;
 }
 
@@ -225,7 +220,6 @@ enum RelativeCorrection {
   higherThanEstimate('higher');
 
   const RelativeCorrection(this.code);
-
   final String code;
 }
 
@@ -237,7 +231,6 @@ enum PromptReceiptType {
   energyBand('energyBand');
 
   const PromptReceiptType(this.code);
-
   final String code;
 }
 
@@ -247,7 +240,6 @@ enum PromptReceiptAction {
   dismissed('dismissed');
 
   const PromptReceiptAction(this.code);
-
   final String code;
 }
 
@@ -258,7 +250,6 @@ enum EstimatedEnergyBand {
   estimatedNormal('estimatedNormal');
 
   const EstimatedEnergyBand(this.code);
-
   final String code;
 }
 
@@ -267,6 +258,5 @@ enum ActivityRecordStatus {
   deleted('deleted');
 
   const ActivityRecordStatus(this.code);
-
   final String code;
 }
