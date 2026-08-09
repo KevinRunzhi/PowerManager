@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/energy_reminder_service.dart';
+import 'package:power_manager/application/energy_rule_config_loader.dart';
 import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/json_export_service.dart';
 import 'package:power_manager/application/json_backup_codec.dart';
@@ -130,6 +132,26 @@ final activityUseCasesProvider = Provider<ActivityMutator>((ref) {
     projectionService: ref.watch(projectionServiceProvider),
   );
 });
+
+final activityImpactPreviewServiceProvider = Provider<ActivityImpactPreviewer>((
+  ref,
+) {
+  return ActivityImpactPreviewService(
+    activities: ref.watch(activitiesRepositoryProvider),
+    ruleLoader: EnergyRuleConfigLoader(ref.watch(rulesRepositoryProvider)),
+  );
+});
+
+final currentActivityImpactCatalogProvider =
+    FutureProvider<ActivityImpactCatalog>((ref) async {
+      final prepared = await ref.watch(currentPreparationProvider.future);
+      return ref
+          .watch(activityImpactPreviewServiceProvider)
+          .previewCatalog(
+            current: prepared.current,
+            completedAt: ref.watch(clockProvider).now(),
+          );
+    });
 
 final wellbeingUseCasesProvider = Provider<WellbeingMutator>((ref) {
   final database = ref.watch(appDatabaseProvider);

@@ -66,6 +66,8 @@ class _LoadedHome extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projection = result.current.projection;
+    final impactPreviews =
+        ref.watch(currentActivityImpactCatalogProvider).value ?? const {};
     final viewModel = HomeViewModel.fromProjection(result.current);
     final morningStatus = switch (ref.watch(morningCompletionStatusProvider)) {
       AsyncData(:final value) => value,
@@ -102,6 +104,7 @@ class _LoadedHome extends ConsumerWidget {
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x8)),
         SliverToBoxAdapter(
           child: EnergyGestureSurface(
+            impactPreviews: impactPreviews,
             onConfirmed: (selection) =>
                 _createFromGesture(context, ref, selection),
             child: _EnergyBall(

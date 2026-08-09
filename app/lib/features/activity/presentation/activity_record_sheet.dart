@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:power_manager/app/theme/app_colors.dart';
+import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
@@ -38,6 +40,9 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
   late DateTime _completedAt;
   var _step = 0;
   var _saving = false;
+  var _previewLoading = false;
+  var _previewRequest = 0;
+  ActivityImpactCatalog? _previews;
   String? _error;
 
   bool get _isEditing => widget.initial != null;
@@ -53,6 +58,7 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
     _subcategory = initial?.subcategory;
     _duration = initial?.duration;
     _completedAt = initial?.completedAt.toLocal() ?? DateTime.now();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshPreviews());
   }
 
   @override
@@ -192,6 +198,7 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
                   _subcategory = subcategory;
                   _step = 2;
                 });
+                _refreshPreviews();
               },
             ),
       ],
@@ -207,6 +214,8 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
           _ChoiceTile(
             key: Key('duration-${duration.minutes}'),
             label: '${duration.minutes} 分钟',
+            detail: _durationDetail(duration),
+            semanticLabel: _durationSemanticLabel(duration),
             selected: _duration == duration,
             onTap: () {
               setState(() {
@@ -236,6 +245,13 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_subcategory != null && _duration != null) ...[
+          _ImpactSummary(
+            preview: _previews?[_subcategory]?[_duration],
+            loading: _previewLoading,
+          ),
+          const SizedBox(height: 12),
+        ],
         Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -246,7 +262,10 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
                 selected: _sameMinute(_completedAt, preset.$2),
                 onSelected: _saving
                     ? null
-                    : (_) => setState(() => _completedAt = preset.$2),
+                    : (_) {
+                        setState(() => _completedAt = preset.$2);
+                        _refreshPreviews();
+                      },
               ),
           ],
         ),
@@ -282,7 +301,67 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
         selected.minute,
       );
     });
+    await _refreshPreviews();
   }
+
+  Future<void> _refreshPreviews() async {
+    final request = ++_previewRequest;
+    if (mounted) {
+      setState(() => _previewLoading = true);
+    }
+    try {
+      final prepared = await ref.read(currentPreparationProvider.future);
+      final previews = await ref
+          .read(activityImpactPreviewServiceProvider)
+          .previewCatalog(
+            current: prepared.current,
+            completedAt: _completedAt,
+            editingActivityId: widget.initial?.id,
+          );
+      if (mounted && request == _previewRequest) {
+        setState(() {
+          _previews = previews;
+          _previewLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted && request == _previewRequest) {
+        setState(() {
+          _previews = null;
+          _previewLoading = false;
+        });
+      }
+    }
+  }
+
+  String _durationDetail(DurationSlot duration) {
+    if (_previewLoading && _previews == null) return '估计 …';
+    final preview = _subcategory == null
+        ? null
+        : _previews?[_subcategory]?[duration];
+    if (preview == null) return '暂时无法预估';
+    final value = _signed(preview.projectedAppliedDelta);
+    if (!preview.isRecoveryLimited) return '估计 $value';
+    final reason = preview.projectedAppliedDelta == 0 ? '已到恢复上限' : '受恢复上限影响';
+    return '估计 $value\n规则 ${_signed(preview.theoreticalDelta)} · $reason';
+  }
+
+  String _durationSemanticLabel(DurationSlot duration) {
+    final preview = _subcategory == null
+        ? null
+        : _previews?[_subcategory]?[duration];
+    if (preview == null) return '${duration.minutes} 分钟，暂时无法预估';
+    final delta = preview.projectedAppliedDelta;
+    final direction = delta > 0
+        ? '增加 $delta'
+        : delta < 0
+        ? '减少 ${delta.abs()}'
+        : '无变化';
+    final limited = preview.isRecoveryLimited ? '，受今日恢复上限影响' : '';
+    return '${duration.minutes} 分钟，估计$direction$limited';
+  }
+
+  String _signed(int value) => value > 0 ? '+$value' : '$value';
 
   Future<void> _submit() async {
     if (_category == null || _subcategory == null || _duration == null) {
@@ -351,11 +430,15 @@ class _ChoiceTile extends StatelessWidget {
   const _ChoiceTile({
     super.key,
     required this.label,
+    this.detail,
+    this.semanticLabel,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
+  final String? detail;
+  final String? semanticLabel;
   final bool selected;
   final VoidCallback onTap;
 
@@ -363,20 +446,105 @@ class _ChoiceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: (MediaQuery.sizeOf(context).width - 52) / 2,
-      child: Material(
-        color: selected
-            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.18)
-            : Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: semanticLabel,
+        onTap: onTap,
+        excludeSemantics: semanticLabel != null,
+        child: Material(
+          color: selected
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.18)
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            child: Text(label, textAlign: TextAlign.center),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onTap,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: detail == null ? 52 : 88),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 12,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(label, textAlign: TextAlign.center),
+                    if (detail case final detail?) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        detail,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: AppColors.textSecondary,
+                              height: 1.25,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _ImpactSummary extends StatelessWidget {
+  const _ImpactSummary({required this.preview, required this.loading});
+
+  final ActivityImpactPreview? preview;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = preview == null
+        ? loading
+              ? '正在计算估计变化…'
+              : '暂时无法预估，仍可继续记录'
+        : '${preview!.subcategory.label} ${preview!.duration.minutes} 分钟'
+              ' · 估计 ${_signed(preview!.projectedAppliedDelta)}';
+    final detail = preview?.isRecoveryLimited == true
+        ? preview!.projectedAppliedDelta == 0
+              ? '规则估计 ${_signed(preview!.theoreticalDelta)}，但已到今日恢复上限。'
+              : '规则估计 ${_signed(preview!.theoreticalDelta)}，预计受今日恢复上限影响。'
+        : null;
+    return Semantics(
+      liveRegion: true,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.backgroundOverlay,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(value, key: const Key('activity-impact-summary')),
+              if (detail != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  detail,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _signed(int value) => value > 0 ? '+$value' : '$value';
 }

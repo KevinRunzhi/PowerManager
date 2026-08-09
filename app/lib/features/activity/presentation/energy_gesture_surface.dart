@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/features/activity/application/record_gesture_controller.dart';
 
@@ -14,11 +15,13 @@ class EnergyGestureSurface extends StatefulWidget {
   const EnergyGestureSurface({
     required this.child,
     required this.onConfirmed,
+    this.impactPreviews = const {},
     super.key,
   });
 
   final Widget child;
   final GestureRecordCallback onConfirmed;
+  final ActivityImpactCatalog impactPreviews;
 
   @override
   State<EnergyGestureSurface> createState() => _EnergyGestureSurfaceState();
@@ -104,6 +107,7 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
           completionOrigin: _completionOrigin,
           reduceMotion:
               MediaQuery.maybeOf(overlayContext)?.disableAnimations ?? false,
+          impactPreviews: widget.impactPreviews,
         ),
       ),
     );
@@ -143,6 +147,7 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
       center: _center,
       ballRadius: _ballRadius,
       viewport: MediaQuery.sizeOf(context),
+      impactPreviews: widget.impactPreviews,
     );
     final nextHot = _hitTest(pointer, nodes);
     if (nextHot != _hotIndex) {
@@ -203,6 +208,7 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
       center: _center,
       ballRadius: _ballRadius,
       viewport: MediaQuery.sizeOf(context),
+      impactPreviews: widget.impactPreviews,
     );
     final origin = _hotIndex != null && _hotIndex! < nodes.length
         ? nodes[_hotIndex!].center
@@ -278,8 +284,12 @@ final class _RecordGestureLayout {
     required Offset center,
     required double ballRadius,
     required Size viewport,
+    ActivityImpactCatalog impactPreviews = const {},
   }) {
-    final (labels, diameter, radialOffset, spread) = _items(state);
+    final (labels, diameter, radialOffset, spread) = _items(
+      state,
+      impactPreviews,
+    );
     final radius = ballRadius + radialOffset;
     return List.generate(labels.length, (index) {
       final fraction = labels.length == 1 ? 0.5 : index / (labels.length - 1);
@@ -300,6 +310,7 @@ final class _RecordGestureLayout {
 
   static (List<String>, double, double, double) _items(
     RecordGestureState state,
+    ActivityImpactCatalog impactPreviews,
   ) {
     if (state.phase == RecordGesturePhase.selectingCategory) {
       return (
@@ -316,12 +327,22 @@ final class _RecordGestureLayout {
       return (items.map((item) => item.label).toList(), 58, 92, 172);
     }
     return (
-      DurationSlot.values.map((item) => '${item.minutes} 分').toList(),
-      54,
+      DurationSlot.values.map((item) {
+        final preview = state.subcategory == null
+            ? null
+            : impactPreviews[state.subcategory]?[item];
+        final impact = preview == null
+            ? '—'
+            : _signed(preview.projectedAppliedDelta);
+        return '${item.minutes} 分\n$impact';
+      }).toList(),
+      58,
       96,
       172,
     );
   }
+
+  static String _signed(int value) => value > 0 ? '+$value' : '$value';
 }
 
 class _GestureOverlay extends StatelessWidget {
@@ -334,6 +355,7 @@ class _GestureOverlay extends StatelessWidget {
     required this.visible,
     required this.completionOrigin,
     required this.reduceMotion,
+    required this.impactPreviews,
     super.key,
   });
 
@@ -345,6 +367,7 @@ class _GestureOverlay extends StatelessWidget {
   final bool visible;
   final Offset? completionOrigin;
   final bool reduceMotion;
+  final ActivityImpactCatalog impactPreviews;
 
   @override
   Widget build(BuildContext context) {
@@ -354,6 +377,7 @@ class _GestureOverlay extends StatelessWidget {
       center: center,
       ballRadius: ballRadius,
       viewport: viewport,
+      impactPreviews: impactPreviews,
     );
     final layerKey =
         '${state.phase.name}:${state.category?.code}:${state.subcategory?.code}';
@@ -413,7 +437,7 @@ class _GestureOverlay extends StatelessWidget {
                     vertical: 6,
                   ),
                   child: Text(
-                    _stageTip(state.phase),
+                    _stageTip(state, hotIndex, impactPreviews),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       inherit: false,
@@ -437,13 +461,36 @@ class _GestureOverlay extends StatelessWidget {
     );
   }
 
-  static String _stageTip(RecordGesturePhase phase) => switch (phase) {
-    RecordGesturePhase.selectingCategory => '滑向大类，停留确认',
-    RecordGesturePhase.selectingSubcategory => '滑向子类，停留确认',
-    RecordGesturePhase.selectingDuration => '滑向时长，短暂停留后松手',
-    RecordGesturePhase.ready => '松手完成 · 滑回球心返回上一层',
-    _ => '',
-  };
+  static String _stageTip(
+    RecordGestureState state,
+    int? hotIndex,
+    ActivityImpactCatalog impactPreviews,
+  ) {
+    if ((state.phase == RecordGesturePhase.selectingDuration ||
+            state.phase == RecordGesturePhase.ready) &&
+        state.subcategory != null &&
+        hotIndex != null &&
+        hotIndex >= 0 &&
+        hotIndex < DurationSlot.values.length) {
+      final duration = DurationSlot.values[hotIndex];
+      final preview = impactPreviews[state.subcategory]?[duration];
+      if (preview != null) {
+        final value = preview.projectedAppliedDelta > 0
+            ? '+${preview.projectedAppliedDelta}'
+            : '${preview.projectedAppliedDelta}';
+        final limited = preview.isRecoveryLimited ? ' · 受恢复上限影响' : '';
+        return '${state.subcategory!.label} ${duration.minutes} 分钟'
+            ' · 估计 $value$limited';
+      }
+    }
+    return switch (state.phase) {
+      RecordGesturePhase.selectingCategory => '滑向大类，停留确认',
+      RecordGesturePhase.selectingSubcategory => '滑向子类，停留确认',
+      RecordGesturePhase.selectingDuration => '滑向时长，短暂停留后松手',
+      RecordGesturePhase.ready => '松手完成 · 滑回球心返回上一层',
+      _ => '',
+    };
+  }
 }
 
 class _GestureLayer extends StatefulWidget {

@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:power_manager/application/current_day_projection_service.dart';
+import 'package:power_manager/application/energy_rule_config_loader.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/domain/energy/energy_calculator.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
-import 'package:power_manager/domain/energy/energy_rule_config.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
@@ -59,21 +59,21 @@ final class ActivityUseCases implements ActivityMutator {
     required this.transactionRunner,
     required this.preparer,
     required this.activities,
-    required this.rules,
+    required RuleConfigVersionsRepository rules,
     required this.summaries,
     required this.projectionService,
     this.calculator = const EnergyCalculator(),
-  });
+  }) : ruleLoader = EnergyRuleConfigLoader(rules);
 
   final Clock clock;
   final LifeDayCalculator lifeDayCalculator;
   final TransactionRunner transactionRunner;
   final OperationPreparer preparer;
   final ActivityRecordsRepository activities;
-  final RuleConfigVersionsRepository rules;
   final DailySummariesRepository summaries;
   final CurrentDayProjectionService projectionService;
   final EnergyCalculator calculator;
+  final EnergyRuleConfigLoader ruleLoader;
 
   Future<void> _tail = Future.value();
 
@@ -93,7 +93,7 @@ final class ActivityUseCases implements ActivityMutator {
         }
         final completedAt = _validateCompletion(draft.completedAt, prepared);
         await _ensureWritable(prepared);
-        final config = await _loadRule(prepared.current.ruleVersion);
+        final config = await ruleLoader.load(prepared.current.ruleVersion);
         final theoreticalDelta = calculator.calculateTheoreticalDelta(
           config: config,
           subcategory: draft.subcategory,
@@ -142,7 +142,7 @@ final class ActivityUseCases implements ActivityMutator {
         final existing = await activities.find(activityId);
         _ensureActiveCurrent(existing, prepared);
         final validatedCompletion = _validateCompletion(completedAt, prepared);
-        final config = await _loadRule(prepared.current.ruleVersion);
+        final config = await ruleLoader.load(prepared.current.ruleVersion);
         final theoreticalDelta = calculator.calculateTheoreticalDelta(
           config: config,
           subcategory: subcategory,
@@ -273,48 +273,6 @@ final class ActivityUseCases implements ActivityMutator {
     if (activity.lifeDay != prepared.current.lifeDay) {
       throw StateError('Settled history is read-only');
     }
-  }
-
-  Future<EnergyRuleConfig> _loadRule(String version) async {
-    final stored = await rules.find(version);
-    if (stored == null) {
-      throw StateError('Rule version $version does not exist');
-    }
-    final rawRules = stored.values['activityRules'];
-    if (rawRules is! Map<String, Object?>) {
-      throw FormatException('Rule version $version has no activityRules');
-    }
-    return EnergyRuleConfig(
-      ruleVersion: version,
-      rules: [
-        for (final subcategory in ActivitySubcategory.values)
-          SubcategoryEnergyRule(
-            subcategory: subcategory,
-            deltas: {
-              for (final duration in DurationSlot.values)
-                duration: _readDelta(rawRules, subcategory, duration),
-            },
-          ),
-      ],
-    )..validateOrThrow();
-  }
-
-  int _readDelta(
-    Map<String, Object?> rawRules,
-    ActivitySubcategory subcategory,
-    DurationSlot duration,
-  ) {
-    final rawRow = rawRules[subcategory.code];
-    if (rawRow is! Map<String, Object?>) {
-      throw FormatException('Missing rule row ${subcategory.code}');
-    }
-    final value = rawRow[duration.minutes.toString()];
-    if (value is! int) {
-      throw FormatException(
-        'Missing ${subcategory.code}/${duration.minutes} rule value',
-      );
-    }
-    return value;
   }
 
   Future<CurrentDayProjection> _replayAndPersist(

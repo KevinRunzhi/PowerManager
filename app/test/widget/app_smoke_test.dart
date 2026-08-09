@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:power_manager/app/app.dart';
 import 'package:power_manager/app/app_routes.dart';
+import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/history_review_service.dart';
@@ -113,6 +114,22 @@ void main() {
       expect(mutator.deleteCount, 1);
     },
   );
+
+  testWidgets('duration choices show estimated signed impact', (tester) async {
+    await tester.pumpWidget(_testApp(mutator: _FakeActivityMutator()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(HomePage.recordButtonKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('category-recovery')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('subcategory-nap')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('估计 0\n规则 +5 · 已到恢复上限'), findsOneWidget);
+    expect(find.text('估计 -5'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('undo action disappears after its five-second window', (
     tester,
@@ -474,6 +491,7 @@ void main() {
       tester.getCenter(find.byKey(const Key('gesture-node-0'))),
     );
     await tester.pump(const Duration(milliseconds: 700));
+    expect(find.text('15 分\n-5'), findsOneWidget);
     await gesture.moveTo(
       tester.getCenter(find.byKey(const Key('gesture-node-0'))),
     );
@@ -589,6 +607,12 @@ Widget _testApp({
         settingsMutator ?? _FakeSettingsMutator(),
       ),
       backupSafetyPathProvider.overrideWith((ref) async => null),
+      activityImpactPreviewServiceProvider.overrideWithValue(
+        _FakeActivityImpactPreviewer(),
+      ),
+      currentActivityImpactCatalogProvider.overrideWith(
+        (ref) async => _impactCatalog(),
+      ),
       if (mutator != null) activityUseCasesProvider.overrideWithValue(mutator),
       if (wellbeing != null)
         wellbeingUseCasesProvider.overrideWithValue(wellbeing),
@@ -603,6 +627,42 @@ Widget _testApp({
     ),
   );
 }
+
+final class _FakeActivityImpactPreviewer implements ActivityImpactPreviewer {
+  @override
+  Future<ActivityImpactCatalog> previewCatalog({
+    required CurrentDayProjection current,
+    required DateTime completedAt,
+    String? editingActivityId,
+  }) async => _impactCatalog();
+}
+
+ActivityImpactCatalog _impactCatalog() => {
+  for (final subcategory in ActivitySubcategory.values)
+    subcategory: {
+      for (final duration in DurationSlot.values)
+        duration: ActivityImpactPreview(
+          subcategory: subcategory,
+          duration: duration,
+          theoreticalDelta:
+              subcategory == ActivitySubcategory.nap &&
+                  duration == DurationSlot.minutes15
+              ? 5
+              : -5,
+          projectedAppliedDelta:
+              subcategory == ActivitySubcategory.nap &&
+                  duration == DurationSlot.minutes15
+              ? 0
+              : -5,
+          estimateBefore: 100,
+          estimateAfter:
+              subcategory == ActivitySubcategory.nap &&
+                  duration == DurationSlot.minutes15
+              ? 100
+              : 95,
+        ),
+    },
+};
 
 final class _FakeSettingsMutator implements SettingsMutator {
   final scheduled = <int>[];
