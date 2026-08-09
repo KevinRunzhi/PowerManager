@@ -14,7 +14,11 @@ final class JsonExportResult {
   final String contents;
 }
 
-final class JsonExportService {
+abstract interface class JsonExporter {
+  Future<JsonExportResult> create({required DateTime exportedAt});
+}
+
+final class JsonExportService implements JsonExporter {
   const JsonExportService({
     required this.settings,
     required this.rules,
@@ -37,6 +41,7 @@ final class JsonExportService {
   final PromptReceiptsRepository receipts;
   final AppVersionLoader appVersionLoader;
 
+  @override
   Future<JsonExportResult> create({required DateTime exportedAt}) async {
     final values = await Future.wait<Object>([
       settings.get(),

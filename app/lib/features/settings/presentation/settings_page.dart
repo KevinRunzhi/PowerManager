@@ -51,6 +51,7 @@ class _SettingsContent extends ConsumerStatefulWidget {
 class _SettingsContentState extends ConsumerState<_SettingsContent> {
   late final TextEditingController _controller;
   bool _saving = false;
+  bool _savingLocalBackup = false;
   bool _exporting = false;
   bool _restoring = false;
   bool _writingRestore = false;
@@ -74,6 +75,8 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
   @override
   Widget build(BuildContext context) {
     final settings = widget.settings;
+    final localBackup = ref.watch(localBackupMetadataProvider).value;
+    final dataBusy = _savingLocalBackup || _exporting || _restoring;
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.page),
       children: [
@@ -110,16 +113,49 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
         Text('数据', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: AppSpacing.x2),
         FilledButton.tonalIcon(
+          key: const Key('save-local-backup-button'),
+          onPressed: dataBusy ? null : _saveLocalBackup,
+          icon: const Icon(Icons.save_outlined),
+          label: Text(_savingLocalBackup ? '正在保存…' : '保存本机备份'),
+        ),
+        if (localBackup != null) ...[
+          const SizedBox(height: AppSpacing.x2),
+          Text(
+            '最近保存：${_formatLocalTime(localBackup.modifiedAt)}'
+            ' · ${_formatFileSize(localBackup.byteLength)}',
+            key: const Key('local-backup-metadata-label'),
+          ),
+          TextButton.icon(
+            key: const Key('share-local-backup-button'),
+            onPressed: dataBusy
+                ? null
+                : () => _shareLocalBackup(localBackup.path),
+            icon: const Icon(Icons.ios_share_rounded),
+            label: const Text('分享最近本机备份'),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.x3),
+        OutlinedButton.icon(
           key: const Key('export-json-button'),
-          onPressed: _exporting || _restoring ? null : _export,
+          onPressed: dataBusy ? null : _export,
           icon: const Icon(Icons.ios_share_rounded),
-          label: Text(_exporting ? '正在准备…' : '导出并分享 JSON'),
+          label: Text(_exporting ? '正在准备…' : '分享 JSON'),
         ),
         const Text('导出包含七类 MVP-A 数据、规则版本和逻辑删除记录。'),
         const SizedBox(height: AppSpacing.x3),
         OutlinedButton.icon(
+          key: const Key('data-health-button'),
+          onPressed: dataBusy
+              ? null
+              : () => Navigator.of(context).pushNamed(AppRoutes.dataHealth),
+          icon: const Icon(Icons.health_and_safety_outlined),
+          label: const Text('数据体检'),
+        ),
+        const Text('只检查聚合数据、实际状态覆盖和备份状态，不展示活动明细。'),
+        const SizedBox(height: AppSpacing.x3),
+        OutlinedButton.icon(
           key: const Key('restore-json-button'),
-          onPressed: _exporting || _restoring ? null : _restore,
+          onPressed: dataBusy ? null : _restore,
           icon: const Icon(Icons.restore_rounded),
           label: Text(
             _restoring ? (_writingRestore ? '正在恢复…' : '正在检查…') : '从 JSON 备份恢复',
@@ -130,9 +166,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
           const SizedBox(height: AppSpacing.x3),
           TextButton.icon(
             key: const Key('share-safety-backup-button'),
-            onPressed: _exporting || _restoring
-                ? null
-                : () => _shareSafetyBackup(path),
+            onPressed: dataBusy ? null : () => _shareSafetyBackup(path),
             icon: const Icon(Icons.shield_outlined),
             label: const Text('分享上次恢复前备份'),
           ),
@@ -207,6 +241,30 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     }
   }
 
+  Future<void> _saveLocalBackup() async {
+    setState(() => _savingLocalBackup = true);
+    try {
+      await ref.read(localBackupServiceProvider).saveLatest();
+      ref.invalidate(localBackupMetadataProvider);
+      ref.invalidate(dataHealthReportProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('本机备份已保存并通过检查。')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('本机备份保存失败，旧备份未改变。')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _savingLocalBackup = false);
+      }
+    }
+  }
+
   Future<void> _restore() async {
     setState(() {
       _restoring = true;
@@ -275,6 +333,27 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     ref.invalidate(canSupplementYesterdayProvider);
     ref.invalidate(historyReviewProvider);
     ref.invalidate(backupSafetyPathProvider);
+    ref.invalidate(localBackupMetadataProvider);
+    ref.invalidate(dataHealthReportProvider);
+  }
+
+  Future<void> _shareLocalBackup(String path) async {
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          title: 'PowerManager 本机备份',
+          text: 'PowerManager 最近一次本机 JSON 备份',
+          files: [XFile(path, mimeType: 'application/json')],
+          fileNameOverrides: const ['powermanager-latest-backup.json'],
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('分享失败，请重试。')));
+      }
+    }
   }
 
   Future<void> _shareSafetyBackup(String path) async {
@@ -295,6 +374,18 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
       }
     }
   }
+}
+
+String _formatLocalTime(DateTime value) {
+  final local = value.toLocal();
+  String two(int part) => part.toString().padLeft(2, '0');
+  return '${local.year}-${two(local.month)}-${two(local.day)} '
+      '${two(local.hour)}:${two(local.minute)}';
+}
+
+String _formatFileSize(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  return '${(bytes / 1024).toStringAsFixed(1)} KiB';
 }
 
 class BackupPreviewSheet extends StatelessWidget {

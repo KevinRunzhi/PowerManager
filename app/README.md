@@ -2,7 +2,7 @@
 
 PowerManager MVP-A 的 Android Flutter 应用。
 
-当前阶段：Stage 15 活动记录变化值可理解性。
+当前阶段：Stage 16 数据体检与本机备份可见性。
 
 ## 常用命令
 

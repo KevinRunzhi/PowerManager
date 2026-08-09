@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
+import 'package:power_manager/application/data_health_service.dart';
 import 'package:power_manager/application/energy_reminder_service.dart';
 import 'package:power_manager/application/energy_rule_config_loader.dart';
 import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/json_export_service.dart';
+import 'package:power_manager/application/local_backup_service.dart';
 import 'package:power_manager/application/json_backup_codec.dart';
 import 'package:power_manager/application/json_backup_restore_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
@@ -19,6 +21,7 @@ import 'package:power_manager/data/db/app_database.dart';
 import 'package:power_manager/data/db/app_database_connection.dart';
 import 'package:power_manager/data/db/drift_transaction_runner.dart';
 import 'package:power_manager/data/backup/local_backup_safety_store.dart';
+import 'package:power_manager/data/backup/local_backup_store.dart';
 import 'package:power_manager/data/repositories/drift_repositories.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
@@ -275,6 +278,40 @@ final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
 
 final backupSafetyStoreProvider = Provider<BackupSafetyStore>((ref) {
   return LocalBackupSafetyStore();
+});
+
+final localBackupStoreProvider = Provider<LocalBackupStore>((ref) {
+  return FileLocalBackupStore();
+});
+
+final localBackupServiceProvider = Provider<LocalBackupSaver>((ref) {
+  return LocalBackupService(
+    exportService: ref.watch(jsonExportServiceProvider),
+    codec: const JsonBackupCodec(),
+    store: ref.watch(localBackupStoreProvider),
+    clock: ref.watch(clockProvider),
+  );
+});
+
+final localBackupMetadataProvider = FutureProvider<LocalBackupMetadata?>((ref) {
+  return ref.watch(localBackupStoreProvider).metadata();
+});
+
+final dataHealthServiceProvider = Provider<DataHealthService>((ref) {
+  return DataHealthService(
+    exportService: ref.watch(jsonExportServiceProvider),
+    codec: const JsonBackupCodec(),
+    clock: ref.watch(clockProvider),
+    mornings: ref.watch(morningsRepositoryProvider),
+    activities: ref.watch(activitiesRepositoryProvider),
+    observations: ref.watch(observationsRepositoryProvider),
+    summaries: ref.watch(summariesRepositoryProvider),
+    localBackupStore: ref.watch(localBackupStoreProvider),
+  );
+});
+
+final dataHealthReportProvider = FutureProvider<DataHealthReport>((ref) {
+  return ref.watch(dataHealthServiceProvider).check();
 });
 
 final jsonBackupRestoreServiceProvider = Provider<JsonBackupRestoreService>((

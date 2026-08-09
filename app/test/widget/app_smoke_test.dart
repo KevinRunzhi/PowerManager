@@ -6,10 +6,13 @@ import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
+import 'package:power_manager/application/data_health_service.dart';
 import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/application/settings_service.dart';
+import 'package:power_manager/application/local_backup_service.dart';
+import 'package:power_manager/data/backup/local_backup_store.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
@@ -19,6 +22,7 @@ import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/debug/presentation/debug_environment_page.dart';
 import 'package:power_manager/features/home/presentation/home_page.dart';
 import 'package:power_manager/features/settings/presentation/settings_page.dart';
+import 'package:power_manager/features/settings/presentation/data_health_page.dart';
 
 void main() {
   testWidgets('app starts inside ProviderScope and renders the home shell', (
@@ -440,6 +444,104 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('settings separates local save, share, health and restore', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+
+    final list = find.descendant(
+      of: find.byKey(SettingsPage.pageKey),
+      matching: find.byType(ListView),
+    );
+    await tester.drag(list, const Offset(0, -900));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('save-local-backup-button')), findsOneWidget);
+    expect(find.text('分享 JSON'), findsOneWidget);
+    expect(find.byKey(const Key('data-health-button')), findsOneWidget);
+    expect(find.byKey(const Key('restore-json-button')), findsOneWidget);
+  });
+
+  testWidgets('data health shows aggregate coverage without private details', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.dataHealth);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(DataHealthPage.pageKey), findsOneWidget);
+    expect(find.text('完整性检查通过'), findsOneWidget);
+    expect(find.text('0 / 6'), findsOneWidget);
+    expect(find.text('0%'), findsOneWidget);
+    expect(find.textContaining('还需 14 个'), findsOneWidget);
+    expect(find.textContaining('activity-'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('data health survives 200 percent text scaling', (tester) async {
+    await tester.pumpWidget(_testApp(textScaler: const TextScaler.linear(2)));
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.dataHealth);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(DataHealthPage.pageKey), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('local-backup-health-card')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('data health failure hides internal details and can retry', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp(dataHealthFails: true));
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.dataHealth);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('当前数据没有改变'), findsOneWidget);
+    expect(find.textContaining('private-record-id'), findsNothing);
+    expect(find.byKey(const Key('retry-data-health-button')), findsOneWidget);
+  });
+
+  testWidgets('existing local backup metadata is visible in settings', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        localBackupMetadata: LocalBackupMetadata(
+          path: 'backup.json',
+          modifiedAt: DateTime.utc(2026, 8, 9, 12),
+          byteLength: 4096,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+    final list = find.descendant(
+      of: find.byKey(SettingsPage.pageKey),
+      matching: find.byType(ListView),
+    );
+    await tester.drag(list, const Offset(0, -900));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('local-backup-metadata-label')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('4.0 KiB'), findsOneWidget);
+    expect(find.byKey(const Key('share-local-backup-button')), findsOneWidget);
+  });
+
   testWidgets('first explanation completes once and settings can reopen it', (
     tester,
   ) async {
@@ -460,6 +562,12 @@ void main() {
 
     final context = tester.element(find.byKey(HomePage.pageKey));
     Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+    final settingsList = find.descendant(
+      of: find.byKey(SettingsPage.pageKey),
+      matching: find.byType(ListView),
+    );
+    await tester.drag(settingsList, const Offset(0, -1600));
     await tester.pumpAndSettle();
     final review = find.byKey(const Key('review-onboarding-button'));
     await tester.ensureVisible(review);
@@ -568,6 +676,10 @@ Widget _testApp({
   SettingsMutator? settingsMutator,
   EnergyObservation? currentActual,
   bool canSupplementYesterday = false,
+  LocalBackupSaver? localBackupSaver,
+  LocalBackupMetadata? localBackupMetadata,
+  DataHealthReport? dataHealthReport,
+  bool dataHealthFails = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -607,6 +719,18 @@ Widget _testApp({
         settingsMutator ?? _FakeSettingsMutator(),
       ),
       backupSafetyPathProvider.overrideWith((ref) async => null),
+      localBackupServiceProvider.overrideWithValue(
+        localBackupSaver ?? _FakeLocalBackupSaver(),
+      ),
+      localBackupMetadataProvider.overrideWith(
+        (ref) async => localBackupMetadata,
+      ),
+      dataHealthReportProvider.overrideWith((ref) async {
+        if (dataHealthFails) {
+          throw StateError('private-record-id must not be shown');
+        }
+        return dataHealthReport ?? _dataHealthReport();
+      }),
       activityImpactPreviewServiceProvider.overrideWithValue(
         _FakeActivityImpactPreviewer(),
       ),
@@ -627,6 +751,30 @@ Widget _testApp({
     ),
   );
 }
+
+final class _FakeLocalBackupSaver implements LocalBackupSaver {
+  @override
+  Future<LocalBackupMetadata> saveLatest() async => LocalBackupMetadata(
+    path: 'backup.json',
+    modifiedAt: DateTime.utc(2026, 8, 9, 12),
+    byteLength: 4096,
+  );
+}
+
+DataHealthReport _dataHealthReport() => DataHealthReport(
+  checkedAt: DateTime.utc(2026, 8, 9, 12),
+  integrityPassed: true,
+  settledDays: 8,
+  standardEffectiveDays: 5,
+  weakEffectiveDays: 1,
+  effectiveDaysWithActualState: 0,
+  morningCheckIns: 7,
+  activityRecords: 27,
+  deletedActivityRecords: 0,
+  dailyActualStates: 0,
+  relativeCorrections: 1,
+  localBackup: null,
+);
 
 final class _FakeActivityImpactPreviewer implements ActivityImpactPreviewer {
   @override
