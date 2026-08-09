@@ -2,11 +2,13 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:power_manager/core/time/clock.dart';
+import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 
 part 'app_database.g.dart';
+part 'backup_restore.dart';
 part 'converters.dart';
 part 'daos.dart';
 part 'tables.dart';
@@ -62,29 +64,33 @@ final class AppDatabase extends _$AppDatabase {
       ON energy_observations (life_day)
       WHERE type = 'dailyAbsolute'
     ''');
+    await _createProtectionTriggers();
+  }
+
+  Future<void> _createProtectionTriggers() async {
     await customStatement('''
-      CREATE TRIGGER daily_summaries_reject_update
+      CREATE TRIGGER IF NOT EXISTS daily_summaries_reject_update
       BEFORE UPDATE ON daily_summaries
       BEGIN
         SELECT RAISE(ABORT, 'daily summaries are immutable');
       END
     ''');
     await customStatement('''
-      CREATE TRIGGER app_settings_reject_delete
+      CREATE TRIGGER IF NOT EXISTS app_settings_reject_delete
       BEFORE DELETE ON app_settings
       BEGIN
         SELECT RAISE(ABORT, 'app settings row must exist');
       END
     ''');
     await customStatement('''
-      CREATE TRIGGER daily_summaries_reject_delete
+      CREATE TRIGGER IF NOT EXISTS daily_summaries_reject_delete
       BEFORE DELETE ON daily_summaries
       BEGIN
         SELECT RAISE(ABORT, 'daily summaries are immutable');
       END
     ''');
     await customStatement('''
-      CREATE TRIGGER referenced_rule_versions_reject_update
+      CREATE TRIGGER IF NOT EXISTS referenced_rule_versions_reject_update
       BEFORE UPDATE ON rule_config_versions
       WHEN
         EXISTS (

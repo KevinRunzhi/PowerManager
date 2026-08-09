@@ -403,6 +403,26 @@ void main() {
     expect(find.textContaining('规则编辑或迁移入口'), findsOneWidget);
   });
 
+  testWidgets('backup controls survive 200 percent text scaling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp(textScaler: const TextScaler.linear(2)));
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+
+    final settingsList = find.descendant(
+      of: find.byKey(SettingsPage.pageKey),
+      matching: find.byType(ListView),
+    );
+    expect(settingsList, findsOneWidget);
+    await tester.drag(settingsList, const Offset(0, -1200));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('restore-json-button')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('first explanation completes once and settings can reopen it', (
     tester,
   ) async {
@@ -424,7 +444,10 @@ void main() {
     final context = tester.element(find.byKey(HomePage.pageKey));
     Navigator.of(context).pushNamed(AppRoutes.settings);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('review-onboarding-button')));
+    final review = find.byKey(const Key('review-onboarding-button'));
+    await tester.ensureVisible(review);
+    await tester.pumpAndSettle();
+    await tester.tap(review);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('onboarding-dialog')), findsOneWidget);
   });
@@ -565,6 +588,7 @@ Widget _testApp({
       settingsServiceProvider.overrideWithValue(
         settingsMutator ?? _FakeSettingsMutator(),
       ),
+      backupSafetyPathProvider.overrideWith((ref) async => null),
       if (mutator != null) activityUseCasesProvider.overrideWithValue(mutator),
       if (wellbeing != null)
         wellbeingUseCasesProvider.overrideWithValue(wellbeing),

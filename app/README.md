@@ -2,7 +2,7 @@
 
 PowerManager MVP-A 的 Android Flutter 应用。
 
-当前阶段：Stage 1 工程骨架。
+当前阶段：Stage 14 本地备份恢复闭环。
 
 ## 常用命令
 

@@ -1,22 +1,24 @@
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 
-/// Serializable shape for the future JSON export service.
-///
-/// Stage 3 defines this transport contract only. Reading repositories, writing
-/// a file, and presenting export UI belong to the later export stage.
+/// Canonical schema-v1 transport shape shared by JSON export and restore.
 final class PowerManagerExportDto {
   PowerManagerExportDto({
     required this.schemaVersion,
     required this.exportedAt,
     required this.appVersion,
     required this.appSettings,
-    required this.ruleVersions,
-    required this.morningCheckIns,
-    required this.activityRecords,
-    required this.energyObservations,
-    required this.dailySummaries,
-    required this.promptReceipts,
-  });
+    required List<RuleConfigVersion> ruleVersions,
+    required List<MorningCheckIn> morningCheckIns,
+    required List<StoredEstimatedActivity> activityRecords,
+    required List<EnergyObservation> energyObservations,
+    required List<DailySummary> dailySummaries,
+    required List<PromptReceipt> promptReceipts,
+  }) : ruleVersions = List.unmodifiable(ruleVersions),
+       morningCheckIns = List.unmodifiable(morningCheckIns),
+       activityRecords = List.unmodifiable(activityRecords),
+       energyObservations = List.unmodifiable(energyObservations),
+       dailySummaries = List.unmodifiable(dailySummaries),
+       promptReceipts = List.unmodifiable(promptReceipts);
 
   final int schemaVersion;
   final DateTime exportedAt;

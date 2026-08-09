@@ -6,6 +6,8 @@ import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/energy_reminder_service.dart';
 import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/json_export_service.dart';
+import 'package:power_manager/application/json_backup_codec.dart';
+import 'package:power_manager/application/json_backup_restore_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
 import 'package:power_manager/application/settings_service.dart';
@@ -14,6 +16,7 @@ import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/db/app_database.dart';
 import 'package:power_manager/data/db/app_database_connection.dart';
 import 'package:power_manager/data/db/drift_transaction_runner.dart';
+import 'package:power_manager/data/backup/local_backup_safety_store.dart';
 import 'package:power_manager/data/repositories/drift_repositories.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
@@ -246,6 +249,32 @@ final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
       return '${info.version}+${info.buildNumber}';
     },
   );
+});
+
+final backupSafetyStoreProvider = Provider<BackupSafetyStore>((ref) {
+  return LocalBackupSafetyStore();
+});
+
+final jsonBackupRestoreServiceProvider = Provider<JsonBackupRestoreService>((
+  ref,
+) {
+  return JsonBackupRestoreService(
+    codec: const JsonBackupCodec(),
+    exportService: ref.watch(jsonExportServiceProvider),
+    database: ref.watch(appDatabaseProvider),
+    safetyStore: ref.watch(backupSafetyStoreProvider),
+    clock: ref.watch(clockProvider),
+    rules: ref.watch(rulesRepositoryProvider),
+    mornings: ref.watch(morningsRepositoryProvider),
+    activities: ref.watch(activitiesRepositoryProvider),
+    observations: ref.watch(observationsRepositoryProvider),
+    summaries: ref.watch(summariesRepositoryProvider),
+    receipts: ref.watch(receiptsRepositoryProvider),
+  );
+});
+
+final backupSafetyPathProvider = FutureProvider<String?>((ref) {
+  return ref.watch(backupSafetyStoreProvider).existingPath();
 });
 
 final energyReminderMessageProvider =
