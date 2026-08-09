@@ -12,6 +12,7 @@ import 'package:power_manager/application/settings_service.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
+import 'package:power_manager/domain/energy/estimated_activity.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/debug/presentation/debug_environment_page.dart';
@@ -213,6 +214,67 @@ void main() {
     expect(find.textContaining('按变化总量排序'), findsOneWidget);
   });
 
+  testWidgets('activity makes the daily actual-state nudge discoverable', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp(preparer: _ActivityPreparer()));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('current-actual-state-nudge')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('今天结束前，留一次实际感受'), findsOneWidget);
+    final action = find.byKey(const Key('current-actual-state-nudge-button'));
+    await tester.ensureVisible(action);
+    await tester.pumpAndSettle();
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('actual-state-selection')), findsOneWidget);
+    expect(find.byKey(const Key('revealed-system-estimate')), findsNothing);
+  });
+
+  testWidgets('daily actual-state nudge stays hidden without an activity', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('current-actual-state-nudge')), findsNothing);
+  });
+
+  testWidgets('completed daily state hides the activity nudge', (tester) async {
+    await tester.pumpWidget(
+      _testApp(
+        preparer: _ActivityPreparer(),
+        currentActual: _dailyObservation(LifeDay(2026, 7, 26)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('current-actual-state-nudge')), findsNothing);
+  });
+
+  testWidgets('daily actual-state nudge survives 200 percent text scaling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        preparer: _ActivityPreparer(),
+        textScaler: const TextScaler.linear(2),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('current-actual-state-nudge')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('core home content survives 200 percent text scaling', (
     tester,
   ) async {
@@ -274,6 +336,48 @@ void main() {
       expect(find.textContaining('自动调整'), findsNothing);
     },
   );
+
+  testWidgets('yesterday supplement action lives inside the history card', (
+    tester,
+  ) async {
+    final day = LifeDay(2026, 7, 25);
+    final summary = _dailySummary(day);
+    final review = HistoricalDayReview(
+      summary: summary,
+      actualState: null,
+      corrections: const CorrectionCounts(lower: 0, aboutRight: 0, higher: 0),
+    );
+    await tester.pumpWidget(
+      _testApp(
+        canSupplementYesterday: true,
+        history: HistoryReview(
+          latest: review,
+          rolling: RollingReview(
+            days: [review],
+            totalConsumption: summary.totalConsumption,
+            totalRecovery: summary.totalRecovery,
+            corrections: review.corrections,
+            categorySummaries: summary.categorySummaries,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final historyCard = find.byKey(const Key('history-review-card'));
+    await tester.scrollUntilVisible(
+      historyCard,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final action = find.byKey(const Key('yesterday-actual-button'));
+    expect(action, findsOneWidget);
+    expect(find.descendant(of: historyCard, matching: action), findsOneWidget);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.text('补充昨日实际状态'), findsWidgets);
+    expect(find.byKey(const Key('actual-state-selection')), findsOneWidget);
+  });
 
   testWidgets('settings validates base range and schedules valid boundary', (
     tester,
@@ -421,6 +525,8 @@ Widget _testApp({
   HistoryReview? history,
   AppSettings? appSettings,
   SettingsMutator? settingsMutator,
+  EnergyObservation? currentActual,
+  bool canSupplementYesterday = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -429,8 +535,12 @@ Widget _testApp({
         (ref) async => morningStatus,
       ),
       currentMorningCheckInProvider.overrideWith((ref) async => null),
-      currentDailyObservationProvider.overrideWith((ref) async => null),
-      canSupplementYesterdayProvider.overrideWith((ref) async => false),
+      currentDailyObservationProvider.overrideWith(
+        (ref) async => currentActual,
+      ),
+      canSupplementYesterdayProvider.overrideWith(
+        (ref) async => canSupplementYesterday,
+      ),
       historyReviewProvider.overrideWith(
         (ref) async =>
             history ??
@@ -621,6 +731,22 @@ final class _FakePreparer implements OperationPreparer {
   }
 }
 
+final class _ActivityPreparer implements OperationPreparer {
+  @override
+  Future<OperationPreparationResult> prepare(PreparationTrigger trigger) async {
+    final current = _currentProjectionWithActivity();
+    return OperationPreparationResult(
+      trigger: trigger,
+      nowLocal: DateTime(2026, 7, 26, 12),
+      nowUtc: DateTime.utc(2026, 7, 26, 4),
+      current: current,
+      settledSummaries: const [],
+      appliedPendingBaseEnergy: false,
+      appliedPendingRuleVersion: false,
+    );
+  }
+}
+
 final class _FailingPreparer implements OperationPreparer {
   var attempts = 0;
 
@@ -653,6 +779,53 @@ CurrentDayProjection _currentProjection() {
       categorySummaries: const {},
       effectiveDayKind: EffectiveDayKind.none,
     ),
+  );
+}
+
+CurrentDayProjection _currentProjectionWithActivity() {
+  final stored = _storedActivity(
+    id: 'existing-activity',
+    category: ActivityCategory.study,
+    subcategory: ActivitySubcategory.homework,
+    duration: DurationSlot.minutes30,
+    completedAt: DateTime.utc(2026, 7, 26, 4),
+  );
+  return CurrentDayProjection(
+    lifeDay: LifeDay(2026, 7, 26),
+    baseEstimatedEnergy: 100,
+    ruleVersion: 'test-rules',
+    morningAdjustment: 0,
+    shortTermAdjustment: 0,
+    previousFinalEstimate: null,
+    morningCheckInCompleted: false,
+    projection: EstimatedDayProjection(
+      initialEstimate: 100,
+      currentEstimate: 92,
+      band: EstimatedEnergyBand.estimatedNormal,
+      activities: [
+        ProjectedEstimatedActivity(
+          record: stored.toReplayRecord(),
+          appliedDelta: -8,
+          estimateAfter: 92,
+        ),
+      ],
+      totalConsumption: 8,
+      totalRecovery: 0,
+      categorySummaries: const {},
+      effectiveDayKind: EffectiveDayKind.weak,
+    ),
+  );
+}
+
+EnergyObservation _dailyObservation(LifeDay day) {
+  return EnergyObservation(
+    id: 'daily-observation',
+    lifeDay: day,
+    type: EnergyObservationType.dailyAbsolute,
+    absoluteState: AbsoluteEnergyState.okay,
+    relativeState: null,
+    estimateAtObservation: null,
+    observedAt: DateTime.utc(2026, 7, 26, 12),
   );
 }
 

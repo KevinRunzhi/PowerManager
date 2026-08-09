@@ -76,6 +76,8 @@ class _LoadedHome extends ConsumerWidget {
     };
     final canSupplementYesterday =
         ref.watch(canSupplementYesterdayProvider).value ?? false;
+    final hasCurrentActual =
+        ref.watch(currentDailyObservationProvider).value != null;
     final energyActivated = EnergyPalette.shouldActivate(
       morningHandled: morningStatus != MorningCompletionStatus.notAnswered,
       hasActivities: projection.activities.isNotEmpty,
@@ -166,21 +168,25 @@ class _LoadedHome extends ConsumerWidget {
               );
             },
           ),
+        if (projection.activities.isNotEmpty && !hasCurrentActual) ...[
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x4)),
+          SliverToBoxAdapter(
+            child: _ActualStateNudge(
+              onPressed: () => ActualStateSheet.show(
+                context,
+                lifeDay: result.current.lifeDay,
+              ),
+            ),
+          ),
+        ],
         const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x6)),
         SliverToBoxAdapter(
           child: _WellbeingTools(
             onOverview: () => _showOverview(context, viewModel),
-            hasCurrentActual:
-                ref.watch(currentDailyObservationProvider).value != null,
-            canSupplementYesterday: canSupplementYesterday,
+            hasCurrentActual: hasCurrentActual,
             onActual: () =>
                 ActualStateSheet.show(context, lifeDay: result.current.lifeDay),
             onCorrection: () => RelativeCorrectionSheet.show(context),
-            onYesterday: () => ActualStateSheet.show(
-              context,
-              lifeDay: result.current.lifeDay.previous,
-              isYesterday: true,
-            ),
             onSettings: () =>
                 Navigator.of(context).pushNamed(AppRoutes.settings),
           ),
@@ -192,6 +198,12 @@ class _LoadedHome extends ConsumerWidget {
             child: _HistoryTools(
               history: history,
               currentLifeDay: result.current.lifeDay,
+              canSupplementYesterday: canSupplementYesterday,
+              onSupplementYesterday: () => ActualStateSheet.show(
+                context,
+                lifeDay: result.current.lifeDay.previous,
+                isYesterday: true,
+              ),
             ),
           ),
         ],
@@ -338,10 +350,17 @@ class _LoadedHome extends ConsumerWidget {
 }
 
 class _HistoryTools extends StatelessWidget {
-  const _HistoryTools({required this.history, required this.currentLifeDay});
+  const _HistoryTools({
+    required this.history,
+    required this.currentLifeDay,
+    required this.canSupplementYesterday,
+    required this.onSupplementYesterday,
+  });
 
   final HistoryReview history;
   final LifeDay currentLifeDay;
+  final bool canSupplementYesterday;
+  final VoidCallback onSupplementYesterday;
 
   @override
   Widget build(BuildContext context) {
@@ -364,6 +383,15 @@ class _HistoryTools extends StatelessWidget {
                 ),
                 trailing: const Icon(Icons.expand_more_rounded),
                 onTap: () => _showDay(context, latest),
+              ),
+            if (latest != null &&
+                canSupplementYesterday &&
+                latest.summary.lifeDay == currentLifeDay.previous &&
+                latest.actualState == null)
+              FilledButton.tonal(
+                key: const Key('yesterday-actual-button'),
+                onPressed: onSupplementYesterday,
+                child: const Text('补充昨日实际状态'),
               ),
             if (history.rolling.days.isNotEmpty)
               OutlinedButton(
@@ -931,22 +959,55 @@ class _MorningHint extends StatelessWidget {
   }
 }
 
+class _ActualStateNudge extends StatelessWidget {
+  const _ActualStateNudge({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const Key('current-actual-state-nudge'),
+      color: AppColors.backgroundOverlay,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '今天结束前，留一次实际感受',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: AppSpacing.x2),
+            Text(
+              '先按自己的感受选择，保存后才显示系统估计。',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.x3),
+            FilledButton.tonal(
+              key: const Key('current-actual-state-nudge-button'),
+              onPressed: onPressed,
+              child: const Text('记录实际状态'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _WellbeingTools extends StatelessWidget {
   const _WellbeingTools({
     required this.onOverview,
     required this.hasCurrentActual,
-    required this.canSupplementYesterday,
     required this.onActual,
     required this.onCorrection,
-    required this.onYesterday,
     required this.onSettings,
   });
 
   final bool hasCurrentActual;
-  final bool canSupplementYesterday;
   final VoidCallback onActual;
   final VoidCallback onCorrection;
-  final VoidCallback onYesterday;
   final VoidCallback onOverview;
   final VoidCallback onSettings;
 
@@ -975,12 +1036,6 @@ class _WellbeingTools extends StatelessWidget {
               onPressed: onCorrection,
               child: const Text('此刻校正'),
             ),
-            if (canSupplementYesterday)
-              OutlinedButton(
-                key: const Key('yesterday-actual-button'),
-                onPressed: onYesterday,
-                child: const Text('补充昨日实际状态'),
-              ),
             OutlinedButton(
               key: const Key('settings-button'),
               onPressed: onSettings,

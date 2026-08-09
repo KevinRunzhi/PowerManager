@@ -144,6 +144,7 @@ class _ActualStateSheetState extends ConsumerState<ActualStateSheet> {
           );
       ref.invalidate(currentDailyObservationProvider);
       ref.invalidate(canSupplementYesterdayProvider);
+      ref.invalidate(historyReviewProvider);
       if (mounted) {
         setState(() {
           _saving = false;
