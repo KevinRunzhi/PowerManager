@@ -1,8 +1,12 @@
+import 'dart:async';
+import 'dart:ui' show SemanticsAction, Tristate;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:power_manager/app/app.dart';
 import 'package:power_manager/app/app_routes.dart';
+import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
@@ -219,6 +223,77 @@ void main() {
     expect(find.byKey(const Key('revealed-system-estimate')), findsOneWidget);
     expect(find.text('88'), findsOneWidget);
     expect(find.textContaining('不会覆盖估计'), findsOneWidget);
+  });
+
+  testWidgets('actual-state choices use neutral and semantic energy colors', (
+    tester,
+  ) async {
+    final wellbeing = _FakeWellbeingMutator()..actualGate = Completer<void>();
+    await tester.pumpWidget(_testApp(wellbeing: wellbeing));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('actual-state-button')));
+    await tester.pumpAndSettle();
+
+    final lowFinder = find.byKey(const Key('actual-low'));
+    final fullFinder = find.byKey(const Key('actual-full'));
+    final initialLow = tester.widget<OutlinedButton>(lowFinder);
+    expect(
+      initialLow.style?.backgroundColor?.resolve({}),
+      AppColors.backgroundOverlay,
+    );
+
+    final semantics = tester.ensureSemantics();
+    expect(
+      tester
+          .getSemantics(find.bySemanticsLabel('偏低，实际状态'))
+          .getSemanticsData()
+          .hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    await tester.tap(lowFinder);
+    await tester.pump();
+
+    final selectedLow = tester.widget<OutlinedButton>(lowFinder);
+    final unselectedFull = tester.widget<OutlinedButton>(fullFinder);
+    expect(
+      selectedLow.style?.backgroundColor?.resolve({}),
+      AppColors.energyLow.withValues(alpha: 0.16),
+    );
+    expect(
+      unselectedFull.style?.backgroundColor?.resolve({}),
+      AppColors.backgroundOverlay,
+    );
+    expect(
+      tester
+          .getSemantics(find.bySemanticsLabel('偏低，实际状态'))
+          .flagsCollection
+          .isSelected,
+      Tristate.isTrue,
+    );
+
+    wellbeing.actualGate!.complete();
+    await tester.pumpAndSettle();
+    semantics.dispose();
+  });
+
+  testWidgets('actual-state choices remain reachable at 200 percent text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp(textScaler: const TextScaler.linear(2)));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('actual-state-button')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const Key('actual-state-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('actual-exhausted')), findsOneWidget);
+    expect(find.byKey(const Key('actual-full')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('today overview is hidden by default and opens as a sheet', (
@@ -588,7 +663,7 @@ void main() {
       find.byKey(const Key('energy-gesture-surface')),
     );
     final gesture = await tester.startGesture(center);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 220));
     expect(find.byKey(const Key('record-gesture-overlay')), findsOneWidget);
 
     await gesture.moveTo(
@@ -603,7 +678,7 @@ void main() {
     await gesture.moveTo(
       tester.getCenter(find.byKey(const Key('gesture-node-0'))),
     );
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 350));
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 600));
 
@@ -623,7 +698,7 @@ void main() {
       find.byKey(const Key('energy-gesture-surface')),
     );
     final gesture = await tester.startGesture(center);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 220));
 
     final overlay = find.byKey(const Key('record-gesture-overlay'));
     final texts = tester.widgetList<Text>(
@@ -637,6 +712,97 @@ void main() {
     await gesture.up();
   });
 
+  testWidgets('energy gesture waits 200ms before activation', (tester) async {
+    await tester.pumpWidget(_testApp(disableAnimations: false));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.byKey(HomePage.pageKey), findsOneWidget);
+
+    final center = tester.getCenter(
+      find.byKey(const Key('energy-gesture-surface')),
+    );
+    final gesture = await tester.startGesture(center);
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(find.byKey(const Key('record-gesture-overlay')), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(find.byKey(const Key('record-gesture-overlay')), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 360));
+    expect(tester.takeException(), isNull);
+    await gesture.up();
+    await tester.pump();
+  });
+
+  testWidgets('20 quick radial passes never confirm a node', (tester) async {
+    final mutator = _FakeActivityMutator();
+    await tester.pumpWidget(_testApp(mutator: mutator));
+    await tester.pumpAndSettle();
+
+    final surface = find.byKey(const Key('energy-gesture-surface'));
+    final center = tester.getCenter(surface);
+    for (var index = 0; index < 20; index += 1) {
+      final gesture = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 220));
+      final node = tester.getCenter(
+        find.byKey(Key('gesture-node-${index % 4}')),
+      );
+      await gesture.moveTo(node);
+      await tester.pump(const Duration(milliseconds: 80));
+      await gesture.moveTo(center + const Offset(0, -90));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('滑向大类，停留确认'), findsOneWidget);
+      expect(mutator.createCount, 0);
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 260));
+    }
+
+    expect(mutator.createCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('radial node keeps sticky selection and uses energy semantics', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(morningStatus: MorningCompletionStatus.completed),
+    );
+    await tester.pumpAndSettle();
+
+    final center = tester.getCenter(
+      find.byKey(const Key('energy-gesture-surface')),
+    );
+    final gesture = await tester.startGesture(center);
+    await tester.pump(const Duration(milliseconds: 220));
+    final nodeFinder = find.byKey(const Key('gesture-node-0'));
+    final nodeCenter = tester.getCenter(nodeFinder);
+    await gesture.moveTo(nodeCenter);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final semantics = tester.ensureSemantics();
+    expect(
+      tester
+          .getSemantics(find.bySemanticsLabel('学习'))
+          .flagsCollection
+          .isSelected,
+      Tristate.isTrue,
+    );
+    final container = tester.widget<AnimatedContainer>(
+      find.descendant(of: nodeFinder, matching: find.byType(AnimatedContainer)),
+    );
+    final decoration = container.decoration! as BoxDecoration;
+    final border = decoration.border! as Border;
+    expect(border.top.color, AppColors.energyHigh);
+
+    await gesture.moveTo(nodeCenter + const Offset(50, 0));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('上课'), findsOneWidget);
+
+    await gesture.up();
+    await tester.pump();
+    semantics.dispose();
+  });
+
   testWidgets('incomplete energy gesture and timeout never write', (
     tester,
   ) async {
@@ -648,14 +814,14 @@ void main() {
     );
 
     final incomplete = await tester.startGesture(center);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 220));
     await incomplete.moveBy(const Offset(0, -60));
     await incomplete.up();
     await tester.pump();
     expect(mutator.createCount, 0);
 
     final timedOut = await tester.startGesture(center);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 220));
     expect(find.byKey(const Key('record-gesture-overlay')), findsOneWidget);
     await tester.pump(const Duration(seconds: 11));
     expect(find.byKey(const Key('record-gesture-overlay')), findsNothing);
@@ -680,6 +846,7 @@ Widget _testApp({
   LocalBackupMetadata? localBackupMetadata,
   DataHealthReport? dataHealthReport,
   bool dataHealthFails = false,
+  bool disableAnimations = true,
 }) {
   return ProviderScope(
     overrides: [
@@ -745,7 +912,7 @@ Widget _testApp({
       data: MediaQueryData(
         size: const Size(800, 600),
         textScaler: textScaler,
-        disableAnimations: true,
+        disableAnimations: disableAnimations,
       ),
       child: const PowerManagerApp(),
     ),
@@ -885,6 +1052,7 @@ final class _FakeWellbeingMutator implements WellbeingMutator {
   MorningCheckIn? savedMorning;
   AbsoluteEnergyState? savedActual;
   RelativeCorrection? savedCorrection;
+  Completer<void>? actualGate;
 
   @override
   Future<CurrentDayProjection> saveMorningCheckIn(
@@ -904,6 +1072,7 @@ final class _FakeWellbeingMutator implements WellbeingMutator {
     required AbsoluteEnergyState state,
   }) async {
     savedActual = state;
+    await actualGate?.future;
     final observation = EnergyObservation(
       id: observationId,
       lifeDay: targetLifeDay,

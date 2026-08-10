@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
@@ -84,6 +85,12 @@ class _LoadedHome extends ConsumerWidget {
       morningHandled: morningStatus != MorningCompletionStatus.notAnswered,
       hasActivities: projection.activities.isNotEmpty,
     );
+    final energyRatio = viewModel.initialEstimate == 0
+        ? 0.0
+        : projection.currentEstimate / viewModel.initialEstimate;
+    final gestureColors = energyActivated
+        ? EnergyPalette.forRatio(energyRatio)
+        : EnergyPalette.dormant;
     final reminderMessage = ref.watch(energyReminderMessageProvider);
     final history = ref.watch(historyReviewProvider).value;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -105,6 +112,7 @@ class _LoadedHome extends ConsumerWidget {
         SliverToBoxAdapter(
           child: EnergyGestureSurface(
             impactPreviews: impactPreviews,
+            accentColor: gestureColors.primary,
             onConfirmed: (selection) =>
                 _createFromGesture(context, ref, selection),
             child: _EnergyBall(
@@ -310,6 +318,7 @@ class _LoadedHome extends ConsumerWidget {
             closeTimer?.cancel();
             ref.read(undoWindowActiveProvider.notifier).setActive(false);
             await ref.read(activityUseCasesProvider).delete(activity.id);
+            HapticFeedback.lightImpact();
             ref.invalidate(currentPreparationProvider);
           },
         ),
@@ -337,6 +346,10 @@ class _LoadedHome extends ConsumerWidget {
         .read(energyReminderServiceProvider)
         .createOnce(lifeDay: result.current.lifeDay, band: viewModel.band);
     if (message != null) {
+      if (viewModel.band == EstimatedEnergyBand.estimatedLow ||
+          viewModel.band == EstimatedEnergyBand.estimatedOverdraft) {
+        HapticFeedback.heavyImpact();
+      }
       ref.read(energyReminderMessageProvider.notifier).show(message);
     }
   }
@@ -1089,7 +1102,9 @@ class _ReminderBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedSize(
-      duration: const Duration(milliseconds: 220),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
       child: message == null
           ? const SizedBox.shrink()
           : Padding(

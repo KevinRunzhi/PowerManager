@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/features/activity/application/record_gesture_controller.dart';
+import 'package:power_manager/features/activity/application/record_gesture_tuning.dart';
 
 typedef GestureRecordCallback =
     Future<void> Function(RecordGestureSelection selection);
@@ -15,33 +16,41 @@ class EnergyGestureSurface extends StatefulWidget {
   const EnergyGestureSurface({
     required this.child,
     required this.onConfirmed,
+    required this.accentColor,
     this.impactPreviews = const {},
+    this.tuning = RecordGestureTuning.defaults,
     super.key,
   });
 
   final Widget child;
   final GestureRecordCallback onConfirmed;
+  final Color accentColor;
   final ActivityImpactCatalog impactPreviews;
+  final RecordGestureTuning tuning;
 
   @override
   State<EnergyGestureSurface> createState() => _EnergyGestureSurfaceState();
 }
 
 class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
-  static const _categoryDwell = Duration(milliseconds: 280);
-  static const _durationDwell = Duration(milliseconds: 160);
-  static const _backCooldown = Duration(milliseconds: 220);
-
   final _controller = RecordGestureController();
   OverlayEntry? _overlay;
   Timer? _timeout;
   Timer? _dwell;
+  Timer? _stabilization;
+  Timer? _backCooldownTimer;
   Timer? _cleanupTimer;
   Offset _center = Offset.zero;
   double _ballRadius = 116;
   int? _hotIndex;
-  DateTime _lastLayerChange = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _announcedHotKey;
+  bool _dwellActive = false;
+  int _dwellCycle = 0;
+  Offset? _lastPointer;
+  DateTime? _lastPointerTime;
+  bool _canGoBack = false;
   bool _visible = true;
+  bool _reduceMotion = false;
   Offset? _completionOrigin;
   RecordGestureState _displayState = const RecordGestureState.idle();
 
@@ -49,6 +58,8 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
   void dispose() {
     _timeout?.cancel();
     _dwell?.cancel();
+    _stabilization?.cancel();
+    _backCooldownTimer?.cancel();
     _cleanupTimer?.cancel();
     _overlay?.remove();
     super.dispose();
@@ -63,7 +74,7 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
         LongPressGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
               () => LongPressGestureRecognizer(
-                duration: const Duration(milliseconds: 120),
+                duration: widget.tuning.activationDelay,
               ),
               (recognizer) {
                 recognizer
@@ -90,10 +101,14 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
     _controller.start();
     _displayState = _controller.state;
     _hotIndex = null;
+    _announcedHotKey = null;
+    _dwellActive = false;
+    _lastPointer = details.globalPosition;
+    _lastPointerTime = DateTime.now();
     _visible = true;
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
     _completionOrigin = null;
-    _lastLayerChange = DateTime.now();
-    HapticFeedback.lightImpact();
+    _armBackCooldown();
     _overlay = OverlayEntry(
       builder: (overlayContext) => IgnorePointer(
         child: _GestureOverlay(
@@ -103,10 +118,12 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
           state: _displayState,
           hotIndex: _hotIndex,
           dwellDuration: _dwellDuration,
+          dwellActive: _dwellActive,
+          dwellCycle: _dwellCycle,
           visible: _visible,
           completionOrigin: _completionOrigin,
-          reduceMotion:
-              MediaQuery.maybeOf(overlayContext)?.disableAnimations ?? false,
+          reduceMotion: _reduceMotion,
+          accentColor: widget.accentColor,
           impactPreviews: widget.impactPreviews,
         ),
       ),
@@ -118,25 +135,31 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
   Duration get _dwellDuration =>
       _displayState.phase == RecordGesturePhase.selectingDuration ||
           _displayState.phase == RecordGesturePhase.ready
-      ? _durationDwell
-      : _categoryDwell;
+      ? widget.tuning.durationDwell
+      : widget.tuning.categoryDwell;
 
   void _update(LongPressMoveUpdateDetails details) {
     if (_overlay == null) {
       return;
     }
     final pointer = details.globalPosition;
+    final movingFast = _isMovingFast(pointer);
     final distanceFromCenter = (pointer - _center).distance;
-    final canGoBack =
-        DateTime.now().difference(_lastLayerChange) >= _backCooldown;
-    if (distanceFromCenter < _ballRadius * 0.55 && canGoBack) {
+    if (distanceFromCenter < _ballRadius * widget.tuning.centerBackRatio &&
+        _canGoBack) {
       if (_controller.back()) {
         _dwell?.cancel();
+        _stabilization?.cancel();
+        _dwellActive = false;
         _hotIndex = null;
+        _announcedHotKey = null;
         _displayState = _controller.state;
-        _lastLayerChange = DateTime.now();
-        HapticFeedback.selectionClick();
+        _armBackCooldown();
         _overlay?.markNeedsBuild();
+      } else if (_controller.state.phase ==
+          RecordGesturePhase.selectingCategory) {
+        _controller.cancel();
+        _dismissAnimated();
       }
       _restartTimeout();
       return;
@@ -151,9 +174,37 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
     );
     final nextHot = _hitTest(pointer, nodes);
     if (nextHot != _hotIndex) {
-      _setHot(nextHot);
+      _setHot(nextHot, deferDwell: movingFast);
+    } else if (nextHot != null && movingFast) {
+      _deferDwell(nextHot);
+    } else if (nextHot != null &&
+        _dwell == null &&
+        _stabilization == null &&
+        _controller.state.phase != RecordGesturePhase.ready) {
+      _startDwell(nextHot);
     }
     _restartTimeout();
+  }
+
+  bool _isMovingFast(Offset pointer) {
+    final now = DateTime.now();
+    final previousPointer = _lastPointer;
+    final previousTime = _lastPointerTime;
+    _lastPointer = pointer;
+    _lastPointerTime = now;
+    if (previousPointer == null || previousTime == null) {
+      return false;
+    }
+    final elapsedMicros = now.difference(previousTime).inMicroseconds;
+    final distance = (pointer - previousPointer).distance;
+    if (distance == 0) {
+      return false;
+    }
+    if (elapsedMicros <= 0) {
+      return true;
+    }
+    final logicalPixelsPerMillisecond = distance * 1000 / elapsedMicros;
+    return logicalPixelsPerMillisecond > widget.tuning.maxDwellStartSpeed;
   }
 
   int? _hitTest(Offset pointer, List<_GestureNode> nodes) {
@@ -161,47 +212,97 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
     if (current != null && current < nodes.length) {
       final stickyNode = nodes[current];
       if ((pointer - stickyNode.center).distance <=
-          stickyNode.diameter / 2 + 30) {
+          stickyNode.diameter / 2 + widget.tuning.stickyNodeHitSlop) {
         return current;
       }
     }
     for (final node in nodes) {
-      if ((pointer - node.center).distance <= node.diameter / 2 + 16) {
+      if ((pointer - node.center).distance <=
+          node.diameter / 2 + widget.tuning.newNodeHitSlop) {
         return node.index;
       }
     }
     return null;
   }
 
-  void _setHot(int? index) {
+  void _setHot(int? index, {required bool deferDwell}) {
     _dwell?.cancel();
+    _stabilization?.cancel();
+    _dwell = null;
+    _stabilization = null;
+    _dwellActive = false;
     _hotIndex = index;
     _controller.setHotIndex(index);
     _displayState = _controller.state;
     _overlay?.markNeedsBuild();
     if (index == null) {
+      _announcedHotKey = null;
       return;
     }
-    HapticFeedback.selectionClick();
+    if (deferDwell) {
+      _scheduleStabilization(index);
+    } else {
+      _startDwell(index);
+    }
+  }
+
+  void _deferDwell(int index) {
+    if (_controller.state.phase == RecordGesturePhase.ready) {
+      return;
+    }
+    _dwell?.cancel();
+    _dwell = null;
+    _dwellActive = false;
+    _scheduleStabilization(index);
+    _overlay?.markNeedsBuild();
+  }
+
+  void _scheduleStabilization(int index) {
+    _stabilization?.cancel();
+    final phaseAtStart = _controller.state.phase;
+    _stabilization = Timer(widget.tuning.stabilizationDelay, () {
+      _stabilization = null;
+      if (_hotIndex != index || _controller.state.phase != phaseAtStart) {
+        return;
+      }
+      _startDwell(index);
+    });
+  }
+
+  void _startDwell(int index) {
+    _stabilization?.cancel();
+    _stabilization = null;
+    _dwell?.cancel();
+    _dwellActive = true;
+    _dwellCycle += 1;
+    final hotKey = '${_controller.state.phase.name}:$index';
+    if (_announcedHotKey != hotKey) {
+      _announcedHotKey = hotKey;
+      HapticFeedback.selectionClick();
+    }
+    _overlay?.markNeedsBuild();
     final phaseAtStart = _controller.state.phase;
     final duration = _dwellDuration;
     _dwell = Timer(duration, () {
+      _dwell = null;
       if (_hotIndex != index || _controller.state.phase != phaseAtStart) {
         return;
       }
       _controller.confirmHot();
       _displayState = _controller.state;
+      _dwellActive = false;
       if (_controller.state.phase != RecordGesturePhase.ready) {
         _hotIndex = null;
-        _lastLayerChange = DateTime.now();
+        _announcedHotKey = null;
+        _armBackCooldown();
       }
       _overlay?.markNeedsBuild();
-      HapticFeedback.selectionClick();
     });
   }
 
   void _finish(LongPressEndDetails details) {
     _dwell?.cancel();
+    _stabilization?.cancel();
     final stateBeforeFinish = _controller.state;
     final nodes = _RecordGestureLayout.nodes(
       state: stateBeforeFinish,
@@ -223,7 +324,10 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
     _overlay?.markNeedsBuild();
     HapticFeedback.mediumImpact();
     unawaited(widget.onConfirmed(selection));
-    _cleanupTimer = Timer(const Duration(milliseconds: 540), _cleanup);
+    _cleanupTimer = Timer(
+      _reduceMotion ? Duration.zero : const Duration(milliseconds: 540),
+      _cleanup,
+    );
   }
 
   void _cancel() {
@@ -233,33 +337,56 @@ class _EnergyGestureSurfaceState extends State<EnergyGestureSurface> {
 
   void _restartTimeout() {
     _timeout?.cancel();
-    _timeout = Timer(const Duration(seconds: 10), () {
+    _timeout = Timer(widget.tuning.timeout, () {
       _controller.cancel();
       _dismissAnimated();
     });
   }
 
+  void _armBackCooldown() {
+    _backCooldownTimer?.cancel();
+    _canGoBack = false;
+    _backCooldownTimer = Timer(widget.tuning.backCooldown, () {
+      _backCooldownTimer = null;
+      _canGoBack = true;
+    });
+  }
+
   void _dismissAnimated() {
     _dwell?.cancel();
+    _stabilization?.cancel();
+    _backCooldownTimer?.cancel();
     _timeout?.cancel();
     _visible = false;
     _overlay?.markNeedsBuild();
     _cleanupTimer?.cancel();
-    _cleanupTimer = Timer(const Duration(milliseconds: 240), _cleanup);
+    _cleanupTimer = Timer(
+      _reduceMotion ? Duration.zero : const Duration(milliseconds: 240),
+      _cleanup,
+    );
   }
 
   void _cleanup() {
     _timeout?.cancel();
     _dwell?.cancel();
+    _stabilization?.cancel();
+    _backCooldownTimer?.cancel();
     _cleanupTimer?.cancel();
     _timeout = null;
     _dwell = null;
+    _stabilization = null;
+    _backCooldownTimer = null;
     _cleanupTimer = null;
     _overlay?.remove();
     _overlay = null;
     _controller.reset();
     _displayState = const RecordGestureState.idle();
     _hotIndex = null;
+    _announcedHotKey = null;
+    _dwellActive = false;
+    _lastPointer = null;
+    _lastPointerTime = null;
+    _canGoBack = false;
     _completionOrigin = null;
   }
 }
@@ -336,7 +463,7 @@ final class _RecordGestureLayout {
             : _signed(preview.projectedAppliedDelta);
         return '${item.minutes} 分\n$impact';
       }).toList(),
-      58,
+      54,
       96,
       172,
     );
@@ -352,9 +479,12 @@ class _GestureOverlay extends StatelessWidget {
     required this.state,
     required this.hotIndex,
     required this.dwellDuration,
+    required this.dwellActive,
+    required this.dwellCycle,
     required this.visible,
     required this.completionOrigin,
     required this.reduceMotion,
+    required this.accentColor,
     required this.impactPreviews,
     super.key,
   });
@@ -364,9 +494,12 @@ class _GestureOverlay extends StatelessWidget {
   final RecordGestureState state;
   final int? hotIndex;
   final Duration dwellDuration;
+  final bool dwellActive;
+  final int dwellCycle;
   final bool visible;
   final Offset? completionOrigin;
   final bool reduceMotion;
+  final Color accentColor;
   final ActivityImpactCatalog impactPreviews;
 
   @override
@@ -402,12 +535,15 @@ class _GestureOverlay extends StatelessWidget {
                 state.phase == RecordGesturePhase.selectingSubcategory ||
                 state.phase == RecordGesturePhase.selectingDuration ||
                 state.phase == RecordGesturePhase.ready,
+            reduceMotion: reduceMotion,
           ),
           AnimatedSwitcher(
             duration: reduceMotion
                 ? Duration.zero
                 : const Duration(milliseconds: 350),
-            switchInCurve: Curves.easeOutBack,
+            // Opacity animations must stay in [0, 1]. The individual nodes
+            // retain the overshooting scale, so the menu still feels springy.
+            switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             transitionBuilder: (child, animation) => FadeTransition(
               opacity: animation,
@@ -418,7 +554,11 @@ class _GestureOverlay extends StatelessWidget {
               nodes: nodes,
               hotIndex: hotIndex,
               dwellDuration: dwellDuration,
+              dwellActive: dwellActive,
+              dwellCycle: dwellCycle,
               reduceMotion: reduceMotion,
+              accentColor: accentColor,
+              ready: state.phase == RecordGesturePhase.ready,
             ),
           ),
           Positioned(
@@ -436,14 +576,17 @@ class _GestureOverlay extends StatelessWidget {
                     horizontal: 14,
                     vertical: 6,
                   ),
-                  child: Text(
-                    _stageTip(state, hotIndex, impactPreviews),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      inherit: false,
-                      color: Color(0xFF8A93A6),
-                      fontSize: 12.5,
-                      decoration: TextDecoration.none,
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      _stageTip(state, hotIndex, impactPreviews),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        inherit: false,
+                        color: Color(0xFF8A93A6),
+                        fontSize: 12.5,
+                        decoration: TextDecoration.none,
+                      ),
                     ),
                   ),
                 ),
@@ -455,6 +598,7 @@ class _GestureOverlay extends StatelessWidget {
               origin: completionOrigin!,
               target: center,
               reduceMotion: reduceMotion,
+              color: accentColor,
             ),
         ],
       ),
@@ -498,14 +642,22 @@ class _GestureLayer extends StatefulWidget {
     required this.nodes,
     required this.hotIndex,
     required this.dwellDuration,
+    required this.dwellActive,
+    required this.dwellCycle,
     required this.reduceMotion,
+    required this.accentColor,
+    required this.ready,
     super.key,
   });
 
   final List<_GestureNode> nodes;
   final int? hotIndex;
   final Duration dwellDuration;
+  final bool dwellActive;
+  final int dwellCycle;
   final bool reduceMotion;
+  final Color accentColor;
+  final bool ready;
 
   @override
   State<_GestureLayer> createState() => _GestureLayerState();
@@ -547,6 +699,7 @@ class _GestureLayerState extends State<_GestureLayer>
     final start = node.index * 0.065;
     final raw = ((_entrance.value - start) / (0.76 - start)).clamp(0.0, 1.0);
     final entrance = Curves.easeOutBack.transform(raw);
+    final entranceOpacity = entrance.clamp(0.0, 1.0);
     final hot = widget.hotIndex == node.index;
     final faded = widget.hotIndex != null && !hot;
     return Positioned(
@@ -555,64 +708,85 @@ class _GestureLayerState extends State<_GestureLayer>
       top: node.center.dy - node.diameter / 2,
       width: node.diameter,
       height: node.diameter,
-      child: Opacity(
-        opacity: entrance * (faded ? 0.56 : 1),
-        child: Transform.scale(
-          scale: entrance * (hot ? 1.11 : 1),
-          child: AnimatedContainer(
-            duration: widget.reduceMotion
-                ? Duration.zero
-                : const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: hot ? const Color(0xFF232B3C) : const Color(0xF21C2230),
-              border: Border.all(
-                color: hot ? const Color(0xFF7DD3FC) : const Color(0x14FFFFFF),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: hot
-                      ? const Color(0x667DD3FC)
-                      : const Color(0x59000000),
-                  blurRadius: hot ? 22 : 18,
-                  offset: hot ? Offset.zero : const Offset(0, 4),
+      child: Semantics(
+        container: true,
+        excludeSemantics: true,
+        label: node.label.replaceAll('\n', '，'),
+        selected: hot,
+        value: hot
+            ? widget.ready
+                  ? '已确认，松手完成记录'
+                  : widget.dwellActive
+                  ? '已吸附，正在确认'
+                  : '已命中，等待稳定'
+            : null,
+        child: Opacity(
+          opacity: entranceOpacity * (faded ? 0.75 : 1),
+          child: Transform.scale(
+            scale: (0.6 + entrance * 0.4) * (hot ? 1.12 : 1),
+            child: AnimatedContainer(
+              duration: widget.reduceMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: hot ? const Color(0xFF232B3C) : const Color(0xF21C2230),
+                border: Border.all(
+                  color: hot ? widget.accentColor : const Color(0x14FFFFFF),
                 ),
-              ],
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (hot)
-                  TweenAnimationBuilder<double>(
-                    key: ValueKey('dwell-${node.index}'),
-                    tween: Tween(begin: 0, end: 1),
-                    duration: widget.reduceMotion
-                        ? Duration.zero
-                        : widget.dwellDuration,
-                    builder: (context, progress, child) =>
-                        CustomPaint(painter: _DwellRingPainter(progress)),
+                boxShadow: [
+                  BoxShadow(
+                    color: hot
+                        ? widget.accentColor.withValues(alpha: 0.4)
+                        : const Color(0x59000000),
+                    blurRadius: hot ? 22 : 18,
+                    offset: hot ? Offset.zero : const Offset(0, 4),
                   ),
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(5),
-                    child: Text(
-                      node.label,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        inherit: false,
-                        color: Color(0xFFE8ECF4),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        height: 1.1,
-                        decoration: TextDecoration.none,
+                ],
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (hot && widget.ready)
+                    CustomPaint(
+                      painter: _DwellRingPainter(1, widget.accentColor),
+                    )
+                  else if (hot && widget.dwellActive)
+                    TweenAnimationBuilder<double>(
+                      key: ValueKey('dwell-${node.index}-${widget.dwellCycle}'),
+                      tween: Tween(begin: 0, end: 1),
+                      duration: widget.reduceMotion
+                          ? Duration.zero
+                          : widget.dwellDuration,
+                      builder: (context, progress, child) => CustomPaint(
+                        painter: _DwellRingPainter(
+                          progress,
+                          widget.accentColor,
+                        ),
+                      ),
+                    ),
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(5),
+                      child: Text(
+                        node.label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          inherit: false,
+                          color: Color(0xFFE8ECF4),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          height: 1.1,
+                          decoration: TextDecoration.none,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -622,9 +796,10 @@ class _GestureLayerState extends State<_GestureLayer>
 }
 
 class _DwellRingPainter extends CustomPainter {
-  const _DwellRingPainter(this.progress);
+  const _DwellRingPainter(this.progress, this.color);
 
   final double progress;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -634,7 +809,7 @@ class _DwellRingPainter extends CustomPainter {
       math.pi * 2 * progress,
       false,
       Paint()
-        ..color = const Color(0xFF7DD3FC)
+        ..color = color
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.2
         ..strokeCap = StrokeCap.round,
@@ -643,7 +818,7 @@ class _DwellRingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DwellRingPainter oldDelegate) =>
-      oldDelegate.progress != progress;
+      oldDelegate.progress != progress || oldDelegate.color != color;
 }
 
 class _BreadcrumbRing extends StatelessWidget {
@@ -651,16 +826,20 @@ class _BreadcrumbRing extends StatelessWidget {
     required this.center,
     required this.radius,
     required this.visible,
+    required this.reduceMotion,
   });
 
   final Offset center;
   final double radius;
   final bool visible;
+  final bool reduceMotion;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedPositioned(
-      duration: const Duration(milliseconds: 420),
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 420),
       curve: Curves.easeOutBack,
       left: center.dx - radius,
       top: center.dy - radius,
@@ -668,7 +847,9 @@ class _BreadcrumbRing extends StatelessWidget {
       height: radius * 2,
       child: AnimatedOpacity(
         opacity: visible ? 0.6 : 0,
-        duration: const Duration(milliseconds: 260),
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 260),
         child: DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
@@ -685,11 +866,13 @@ class _FlyingDot extends StatefulWidget {
     required this.origin,
     required this.target,
     required this.reduceMotion,
+    required this.color,
   });
 
   final Offset origin;
   final Offset target;
   final bool reduceMotion;
+  final Color color;
 
   @override
   State<_FlyingDot> createState() => _FlyingDotState();
@@ -732,11 +915,14 @@ class _FlyingDotState extends State<_FlyingDot>
           child: Transform.scale(
             scale: scale,
             child: DecoratedBox(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Color(0xFF7DD3FC),
+                color: widget.color,
                 boxShadow: [
-                  BoxShadow(color: Color(0xAA7DD3FC), blurRadius: 18),
+                  BoxShadow(
+                    color: widget.color.withValues(alpha: 0.67),
+                    blurRadius: 18,
+                  ),
                 ],
               ),
             ),

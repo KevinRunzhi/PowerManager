@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
@@ -35,6 +37,7 @@ class ActualStateSheet extends ConsumerStatefulWidget {
 
 class _ActualStateSheetState extends ConsumerState<ActualStateSheet> {
   DailyObservationResult? _revealed;
+  AbsoluteEnergyState? _selectedState;
   var _saving = false;
   String? _error;
 
@@ -42,9 +45,13 @@ class _ActualStateSheetState extends ConsumerState<ActualStateSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
-        child: _revealed == null ? _selection() : _reveal(),
+      child: SingleChildScrollView(
+        child: AnimatedSwitcher(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 250),
+          child: _revealed == null ? _selection() : _reveal(),
+        ),
       ),
     );
   }
@@ -68,10 +75,18 @@ class _ActualStateSheetState extends ConsumerState<ActualStateSheet> {
         ),
         const SizedBox(height: 18),
         for (final state in AbsoluteEnergyState.values) ...[
-          FilledButton.tonal(
-            key: Key('actual-${state.code}'),
-            onPressed: _saving ? null : () => _save(state),
-            child: Text(_stateLabel(state)),
+          Semantics(
+            button: true,
+            excludeSemantics: true,
+            selected: _selectedState == state,
+            label: '${_stateLabel(state)}，实际状态',
+            onTap: _saving ? null : () => _save(state),
+            child: OutlinedButton(
+              key: Key('actual-${state.code}'),
+              onPressed: _saving ? null : () => _save(state),
+              style: _stateButtonStyle(state),
+              child: Text(_stateLabel(state)),
+            ),
           ),
           const SizedBox(height: 8),
         ],
@@ -95,7 +110,9 @@ class _ActualStateSheetState extends ConsumerState<ActualStateSheet> {
       children: [
         Text(
           _stateLabel(result.observation.absoluteState!),
-          style: Theme.of(context).textTheme.headlineMedium,
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+            color: _stateColor(result.observation.absoluteState!),
+          ),
         ),
         const SizedBox(height: 18),
         const Divider(),
@@ -130,6 +147,7 @@ class _ActualStateSheetState extends ConsumerState<ActualStateSheet> {
 
   Future<void> _save(AbsoluteEnergyState state) async {
     setState(() {
+      _selectedState = state;
       _saving = true;
       _error = null;
     });
@@ -146,6 +164,7 @@ class _ActualStateSheetState extends ConsumerState<ActualStateSheet> {
       ref.invalidate(canSupplementYesterdayProvider);
       ref.invalidate(historyReviewProvider);
       if (mounted) {
+        HapticFeedback.lightImpact();
         setState(() {
           _saving = false;
           _revealed = result;
@@ -167,6 +186,27 @@ class _ActualStateSheetState extends ConsumerState<ActualStateSheet> {
     AbsoluteEnergyState.okay => '尚可',
     AbsoluteEnergyState.good => '良好',
     AbsoluteEnergyState.full => '充足',
+  };
+
+  ButtonStyle _stateButtonStyle(AbsoluteEnergyState state) {
+    final selected = _selectedState == state;
+    final color = _stateColor(state);
+    return OutlinedButton.styleFrom(
+      foregroundColor: selected ? color : AppColors.textPrimary,
+      backgroundColor: selected
+          ? color.withValues(alpha: 0.16)
+          : AppColors.backgroundOverlay,
+      side: BorderSide(color: selected ? color : AppColors.line),
+      minimumSize: const Size.fromHeight(48),
+    );
+  }
+
+  Color _stateColor(AbsoluteEnergyState state) => switch (state) {
+    AbsoluteEnergyState.exhausted => AppColors.energyOverdraft,
+    AbsoluteEnergyState.low => AppColors.energyLow,
+    AbsoluteEnergyState.okay => AppColors.energyMediumLow,
+    AbsoluteEnergyState.good => AppColors.energyCalm,
+    AbsoluteEnergyState.full => AppColors.energyHigh,
   };
 }
 

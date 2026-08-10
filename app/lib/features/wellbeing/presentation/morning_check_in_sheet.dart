@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
@@ -64,6 +65,7 @@ class _MorningCheckInSheetState extends ConsumerState<MorningCheckInSheet> {
             Row(
               children: [
                 IconButton(
+                  tooltip: '返回上一题',
                   onPressed: _step == 0 || _saving
                       ? null
                       : () => setState(() => _step--),
@@ -77,6 +79,7 @@ class _MorningCheckInSheetState extends ConsumerState<MorningCheckInSheet> {
                   ),
                 ),
                 IconButton(
+                  tooltip: '关闭晨间确认',
                   onPressed: _saving ? null : () => Navigator.pop(context),
                   icon: const Icon(Icons.close_rounded),
                 ),
@@ -246,6 +249,9 @@ class _MorningCheckInSheetState extends ConsumerState<MorningCheckInSheet> {
             ),
           );
       _refresh();
+      HapticFeedback.lightImpact();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      HapticFeedback.lightImpact();
       if (mounted) Navigator.pop(context);
     } catch (_) {
       if (mounted) {

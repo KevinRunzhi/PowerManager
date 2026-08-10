@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
@@ -80,6 +81,7 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
               children: [
                 if (_step > 0)
                   IconButton(
+                    tooltip: '返回上一步',
                     onPressed: _saving ? null : () => setState(() => _step--),
                     icon: const Icon(Icons.arrow_back_rounded),
                   )
@@ -93,6 +95,7 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
                   ),
                 ),
                 IconButton(
+                  tooltip: '关闭记录活动',
                   onPressed: _saving ? null : () => Navigator.pop(context),
                   icon: const Icon(Icons.close_rounded),
                 ),
@@ -108,7 +111,9 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
             Flexible(
               child: SingleChildScrollView(
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 180),
                   child: KeyedSubtree(key: ValueKey(_step), child: _stepBody()),
                 ),
               ),
@@ -392,6 +397,7 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
             );
       ref.invalidate(currentPreparationProvider);
       if (mounted) {
+        HapticFeedback.mediumImpact();
         Navigator.pop(context, result);
       }
     } catch (error) {

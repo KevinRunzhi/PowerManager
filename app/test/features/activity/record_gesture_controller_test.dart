@@ -1,8 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/features/activity/application/record_gesture_controller.dart';
+import 'package:power_manager/features/activity/application/record_gesture_tuning.dart';
 
 void main() {
+  test('stage 17 gesture tuning centralizes the simulator candidates', () {
+    const tuning = RecordGestureTuning.defaults;
+
+    expect(tuning.activationDelay, const Duration(milliseconds: 200));
+    expect(tuning.categoryDwell, const Duration(milliseconds: 300));
+    expect(tuning.durationDwell, const Duration(milliseconds: 300));
+    expect(tuning.backCooldown, const Duration(milliseconds: 260));
+    expect(tuning.newNodeHitSlop, 12);
+    expect(tuning.stickyNodeHitSlop, 28);
+    expect(tuning.centerBackRatio, 0.48);
+  });
+
   test('a hot preview does not advance until dwell confirmation', () {
     final controller = RecordGestureController()..start();
 
