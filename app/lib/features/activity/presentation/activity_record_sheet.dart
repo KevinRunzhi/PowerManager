@@ -7,6 +7,7 @@ import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
+import 'package:power_manager/domain/life_day/completion_time_resolver.dart';
 import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 
 class ActivityRecordSheet extends ConsumerStatefulWidget {
@@ -33,6 +34,7 @@ class ActivityRecordSheet extends ConsumerStatefulWidget {
 
 class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
   static var _idSequence = 0;
+  final _completionTimeResolver = CompletionTimeResolver();
 
   late final String _operationId;
   ActivityCategory? _category;
@@ -43,6 +45,7 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
   var _saving = false;
   var _previewLoading = false;
   var _previewRequest = 0;
+  var _completionSelectionInvalid = false;
   ActivityImpactCatalog? _previews;
   String? _error;
 
@@ -52,13 +55,14 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
   void initState() {
     super.initState();
     final initial = widget.initial;
+    final now = ref.read(clockProvider).now();
     _operationId =
         initial?.id ??
-        'activity-${DateTime.now().toUtc().microsecondsSinceEpoch}-${_idSequence++}';
+        'activity-${now.toUtc().microsecondsSinceEpoch}-${_idSequence++}';
     _category = initial?.category;
     _subcategory = initial?.subcategory;
     _duration = initial?.duration;
-    _completedAt = initial?.completedAt.toLocal() ?? DateTime.now();
+    _completedAt = initial?.completedAt.toLocal() ?? now;
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshPreviews());
   }
 
@@ -130,7 +134,9 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
               const SizedBox(height: 16),
               FilledButton(
                 key: const Key('activity-submit-button'),
-                onPressed: _saving ? null : _submit,
+                onPressed: _saving || _completionSelectionInvalid
+                    ? null
+                    : _submit,
                 child: _saving
                     ? const SizedBox.square(
                         dimension: 20,
@@ -234,7 +240,7 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
   }
 
   Widget _completionChoices() {
-    final now = DateTime.now();
+    final now = ref.read(clockProvider).now();
     final currentLifeDay = LifeDayCalculator().lifeDayFor(now);
     final presets =
         <(String, DateTime)>[
@@ -268,7 +274,11 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
                 onSelected: _saving
                     ? null
                     : (_) {
-                        setState(() => _completedAt = preset.$2);
+                        setState(() {
+                          _completedAt = preset.$2;
+                          _completionSelectionInvalid = false;
+                          _error = null;
+                        });
                         _refreshPreviews();
                       },
               ),
@@ -291,21 +301,33 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
     final selected = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_completedAt),
-      helpText: '选择今天的大致完成时间',
+      helpText: '选择当前生活日的大致完成时间',
     );
     if (selected == null || !mounted) {
       return;
     }
-    final now = DateTime.now();
-    setState(() {
-      _completedAt = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        selected.hour,
-        selected.minute,
+    final now = ref.read(clockProvider).now();
+    try {
+      final completedAt = _completionTimeResolver.resolve(
+        now: now,
+        hour: selected.hour,
+        minute: selected.minute,
       );
-    });
+      setState(() {
+        _completedAt = completedAt;
+        _completionSelectionInvalid = false;
+        _error = null;
+      });
+    } on CompletionTimeResolutionException catch (error) {
+      setState(() {
+        _completionSelectionInvalid = true;
+        _error = switch (error.failure) {
+          CompletionTimeFailure.future => '完成时间不能晚于现在，请重新选择。',
+          CompletionTimeFailure.outsideCurrentLifeDay => '该时间不属于当前生活日，请重新选择。',
+        };
+      });
+      return;
+    }
     await _refreshPreviews();
   }
 
@@ -411,6 +433,12 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
   }
 
   String _friendlyError(Object error) {
+    if (error case CompletionTimeResolutionException(:final failure)) {
+      return switch (failure) {
+        CompletionTimeFailure.future => '完成时间不能晚于现在，请重新选择。',
+        CompletionTimeFailure.outsideCurrentLifeDay => '该时间不属于当前生活日，请重新选择。',
+      };
+    }
     final message = error.toString();
     if (message.contains('future')) {
       return '完成时间不能晚于现在，请重新选择。';

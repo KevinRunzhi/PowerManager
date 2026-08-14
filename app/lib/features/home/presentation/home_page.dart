@@ -26,6 +26,8 @@ import 'package:power_manager/features/wellbeing/presentation/morning_check_in_s
 import 'package:power_manager/features/settings/presentation/onboarding_dialog.dart';
 import 'package:power_manager/shared/widgets/debug_stage_banner.dart';
 
+enum _ActivityUndoKind { created, deleted }
+
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
@@ -95,7 +97,7 @@ class _LoadedHome extends ConsumerWidget {
     final history = ref.watch(historyReviewProvider).value;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!ref.read(undoWindowActiveProvider)) {
-        _maybeShowReminder(ref, viewModel);
+        _maybeShowReminder(ref, viewModel, lifeDay: result.current.lifeDay);
       }
     });
     return CustomScrollView(
@@ -225,13 +227,23 @@ class _LoadedHome extends ConsumerWidget {
   }
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
-    ref.read(undoWindowActiveProvider.notifier).setActive(true);
-    final result = await ActivityRecordSheet.show(context);
-    if (result == null || !context.mounted) {
-      ref.read(undoWindowActiveProvider.notifier).setActive(false);
-      return;
+    final undoWindow = ref.read(undoWindowActiveProvider.notifier)..begin();
+    ActivityMutationResult? result;
+    try {
+      result = await ActivityRecordSheet.show(context);
+    } finally {
+      undoWindow.end();
     }
-    _showUndo(context, ref, result);
+    if (result != null && context.mounted) {
+      unawaited(
+        _showActivityUndo(
+          context,
+          ref,
+          result,
+          kind: _ActivityUndoKind.created,
+        ),
+      );
+    }
   }
 
   Future<void> _createFromGesture(
@@ -239,10 +251,11 @@ class _LoadedHome extends ConsumerWidget {
     WidgetRef ref,
     RecordGestureSelection selection,
   ) async {
-    ref.read(undoWindowActiveProvider.notifier).setActive(true);
+    final undoWindow = ref.read(undoWindowActiveProvider.notifier)..begin();
+    ActivityMutationResult? result;
     try {
-      final now = DateTime.now();
-      final result = await ref
+      final now = ref.read(clockProvider).now();
+      result = await ref
           .read(activityUseCasesProvider)
           .create(
             ActivityDraft(
@@ -253,17 +266,25 @@ class _LoadedHome extends ConsumerWidget {
               completedAt: now,
             ),
           );
-      if (context.mounted) {
-        ref.invalidate(currentPreparationProvider);
-        _showUndo(context, ref, result);
-      }
     } catch (_) {
-      ref.read(undoWindowActiveProvider.notifier).setActive(false);
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('手势记录失败，可立即使用 + 记录。')));
       }
+    } finally {
+      undoWindow.end();
+    }
+    if (result != null && context.mounted) {
+      ref.invalidate(currentPreparationProvider);
+      unawaited(
+        _showActivityUndo(
+          context,
+          ref,
+          result,
+          kind: _ActivityUndoKind.created,
+        ),
+      );
     }
   }
 
@@ -277,6 +298,7 @@ class _LoadedHome extends ConsumerWidget {
       await _maybeShowReminder(
         ref,
         HomeViewModel.fromProjection(result.current),
+        lifeDay: result.current.lifeDay,
       );
     }
   }
@@ -287,8 +309,20 @@ class _LoadedHome extends ConsumerWidget {
     EstimatedActivityRecord activity,
   ) async {
     try {
-      await ref.read(activityUseCasesProvider).delete(activity.id);
+      final result = await ref
+          .read(activityUseCasesProvider)
+          .delete(activity.id);
       ref.invalidate(currentPreparationProvider);
+      if (context.mounted) {
+        unawaited(
+          _showActivityUndo(
+            context,
+            ref,
+            result,
+            kind: _ActivityUndoKind.deleted,
+          ),
+        );
+      }
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(
@@ -298,54 +332,120 @@ class _LoadedHome extends ConsumerWidget {
     }
   }
 
-  void _showUndo(
+  Future<void> _showActivityUndo(
     BuildContext context,
     WidgetRef ref,
-    ActivityMutationResult result,
-  ) {
+    ActivityMutationResult result, {
+    required _ActivityUndoKind kind,
+  }) async {
     final activity = result.activity;
-    ref.read(undoWindowActiveProvider.notifier).setActive(true);
-    Timer? closeTimer;
-    final controller = ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 5),
-        content: Text(
-          '${activity.subcategory.label} ${activity.duration.minutes} 分钟'
-          ' · 估计 ${_signed(activity.appliedDelta)}',
+    final container = ProviderScope.containerOf(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final undoWindow = container.read(undoWindowActiveProvider.notifier)
+      ..begin();
+    Future<bool>? undoFuture;
+    var undoRequested = false;
+    try {
+      final controller = messenger.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 5),
+          persist: false,
+          content: Text(switch (kind) {
+            _ActivityUndoKind.created =>
+              '${activity.subcategory.label} ${activity.duration.minutes} 分钟'
+                  ' · 估计 ${_signed(activity.appliedDelta)}',
+            _ActivityUndoKind.deleted =>
+              '已删除 ${activity.subcategory.label} '
+                  '${activity.duration.minutes} 分钟',
+          }),
+          action: SnackBarAction(
+            label: '撤销',
+            onPressed: () {
+              undoRequested = true;
+              undoFuture = _applyActivityUndo(
+                container,
+                messenger,
+                activity.id,
+                kind,
+              );
+            },
+          ),
         ),
-        action: SnackBarAction(
-          label: '撤销',
-          onPressed: () async {
-            closeTimer?.cancel();
-            ref.read(undoWindowActiveProvider.notifier).setActive(false);
-            await ref.read(activityUseCasesProvider).delete(activity.id);
-            HapticFeedback.lightImpact();
-            ref.invalidate(currentPreparationProvider);
-          },
-        ),
-      ),
-    );
-    closeTimer = Timer(const Duration(seconds: 5), () async {
-      controller.close();
-      ref.read(undoWindowActiveProvider.notifier).setActive(false);
-      final current = await ref.read(currentPreparationProvider.future);
-      await _maybeShowReminder(
-        ref,
-        HomeViewModel.fromProjection(current.current),
       );
-    });
+      await controller.closed;
+      if (undoFuture case final pending?) {
+        await pending;
+      }
+    } finally {
+      undoWindow.end();
+    }
+    if (kind == _ActivityUndoKind.created && !undoRequested) {
+      await _waitForUndoWindows(container);
+      if (!context.mounted) return;
+      try {
+        final current = await ref.read(currentPreparationProvider.future);
+        await _maybeShowReminder(
+          ref,
+          HomeViewModel.fromProjection(current.current),
+          lifeDay: current.current.lifeDay,
+        );
+      } catch (_) {
+        // The home load state owns preparation errors and exposes retry.
+      }
+    }
+  }
+
+  Future<void> _waitForUndoWindows(ProviderContainer container) async {
+    if (!container.read(undoWindowActiveProvider)) return;
+    final completed = Completer<void>();
+    final subscription = container.listen<bool>(undoWindowActiveProvider, (
+      _,
+      active,
+    ) {
+      if (!active && !completed.isCompleted) {
+        completed.complete();
+      }
+    }, fireImmediately: true);
+    await completed.future;
+    subscription.close();
+  }
+
+  Future<bool> _applyActivityUndo(
+    ProviderContainer container,
+    ScaffoldMessengerState messenger,
+    String activityId,
+    _ActivityUndoKind kind,
+  ) async {
+    try {
+      final mutator = container.read(activityUseCasesProvider);
+      switch (kind) {
+        case _ActivityUndoKind.created:
+          await mutator.delete(activityId);
+        case _ActivityUndoKind.deleted:
+          await mutator.restore(activityId);
+      }
+      HapticFeedback.lightImpact();
+      container.invalidate(currentPreparationProvider);
+      return true;
+    } catch (_) {
+      if (messenger.mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('暂时无法撤销，请重试。')));
+      }
+      return false;
+    }
   }
 
   Future<void> _maybeShowReminder(
     WidgetRef ref,
-    HomeViewModel viewModel,
-  ) async {
+    HomeViewModel viewModel, {
+    required LifeDay lifeDay,
+  }) async {
     if (viewModel.band == EstimatedEnergyBand.estimatedNormal) {
       return;
     }
     final message = await ref
         .read(energyReminderServiceProvider)
-        .createOnce(lifeDay: result.current.lifeDay, band: viewModel.band);
+        .createOnce(lifeDay: lifeDay, band: viewModel.band);
     if (message != null) {
       if (viewModel.band == EstimatedEnergyBand.estimatedLow ||
           viewModel.band == EstimatedEnergyBand.estimatedOverdraft) {

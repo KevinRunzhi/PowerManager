@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:power_manager/application/json_export_service.dart';
+import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/data/db/app_database.dart';
+import 'package:power_manager/data/db/drift_transaction_runner.dart';
 import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/data/repositories/drift_repositories.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
@@ -328,6 +330,9 @@ void main() {
         activity.id,
         DateTime.utc(2026, 7, 26, 11),
       );
+      final transactionRunner = _CountingTransactionRunner(
+        DriftTransactionRunner(database),
+      );
       final service = JsonExportService(
         settings: settingsRepository,
         rules: rulesRepository,
@@ -336,6 +341,7 @@ void main() {
         observations: observationsRepository,
         summaries: summariesRepository,
         receipts: receiptsRepository,
+        transactionRunner: transactionRunner,
         appVersionLoader: () async => '0.1.0+1',
       );
 
@@ -353,8 +359,22 @@ void main() {
       expect(deleted, isNot(contains('rowid')));
       expect(deleted, isNot(contains('internalId')));
       expect(json, isNot(contains('deviceId')));
+      expect(transactionRunner.runs, 1);
     },
   );
+}
+
+final class _CountingTransactionRunner implements TransactionRunner {
+  _CountingTransactionRunner(this.delegate);
+
+  final TransactionRunner delegate;
+  var runs = 0;
+
+  @override
+  Future<T> run<T>(Future<T> Function() action) {
+    runs++;
+    return delegate.run(action);
+  }
 }
 
 MorningCheckIn _checkIn() {

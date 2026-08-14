@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
 import 'package:power_manager/application/json_backup_codec.dart';
@@ -76,7 +75,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
   Widget build(BuildContext context) {
     final settings = widget.settings;
     final localBackup = ref.watch(localBackupMetadataProvider).value;
-    final dataBusy = _savingLocalBackup || _exporting || _restoring;
+    final dataBusy = _saving || _savingLocalBackup || _exporting || _restoring;
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.page),
       children: [
@@ -101,7 +100,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
         const SizedBox(height: AppSpacing.x3),
         FilledButton(
           key: const Key('save-base-estimate-button'),
-          onPressed: _saving ? null : _saveBase,
+          onPressed: dataBusy ? null : _saveBase,
           child: Text(_saving ? '保存中…' : '下一生活日起生效'),
         ),
         const SizedBox(height: AppSpacing.x6),
@@ -212,19 +211,19 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
   }
 
   Future<void> _export() async {
+    final fileStore = ref.read(temporaryExportFileStoreProvider);
+    File? temporaryFile;
     setState(() => _exporting = true);
     try {
       final result = await ref
           .read(jsonExportServiceProvider)
-          .create(exportedAt: DateTime.now());
-      final directory = await getTemporaryDirectory();
-      final file = File('${directory.path}/${result.fileName}');
-      await file.writeAsString(result.contents, flush: true);
+          .create(exportedAt: ref.read(clockProvider).now());
+      temporaryFile = await fileStore.write(result);
       await SharePlus.instance.share(
         ShareParams(
           title: 'PowerManager 数据备份',
           text: 'PowerManager MVP-A JSON 数据备份',
-          files: [XFile(file.path, mimeType: 'application/json')],
+          files: [XFile(temporaryFile.path, mimeType: 'application/json')],
           fileNameOverrides: [result.fileName],
         ),
       );
@@ -235,6 +234,19 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
         ).showSnackBar(const SnackBar(content: Text('导出失败，请重试。')));
       }
     } finally {
+      if (temporaryFile != null) {
+        try {
+          await fileStore.delete(temporaryFile);
+        } catch (error, stackTrace) {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stackTrace,
+              library: 'PowerManager temporary export cleanup',
+            ),
+          );
+        }
+      }
       if (mounted) {
         setState(() => _exporting = false);
       }

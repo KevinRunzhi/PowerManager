@@ -50,6 +50,8 @@ abstract interface class ActivityMutator {
   });
 
   Future<ActivityMutationResult> delete(String activityId);
+
+  Future<ActivityMutationResult> restore(String activityId);
 }
 
 final class ActivityUseCases implements ActivityMutator {
@@ -203,6 +205,48 @@ final class ActivityUseCases implements ActivityMutator {
     });
   }
 
+  @override
+  Future<ActivityMutationResult> restore(String activityId) {
+    return _serialized(() async {
+      return transactionRunner.run(() async {
+        final prepared = await preparer.prepare(PreparationTrigger.beforeWrite);
+        await _ensureWritable(prepared);
+        final existing = await activities.find(activityId);
+        _ensureCurrent(existing, prepared);
+        if (existing!.status == ActivityRecordStatus.active) {
+          return ActivityMutationResult(
+            activity: existing,
+            current: prepared.current,
+            wasAlreadyApplied: true,
+          );
+        }
+        await activities.update(
+          StoredEstimatedActivity(
+            id: existing.id,
+            lifeDay: existing.lifeDay,
+            completedAt: existing.completedAt,
+            createdAt: existing.createdAt,
+            updatedAt: clock.now().toUtc(),
+            category: existing.category,
+            subcategory: existing.subcategory,
+            duration: existing.duration,
+            theoreticalDelta: existing.theoreticalDelta,
+            appliedDelta: existing.appliedDelta,
+            ruleVersion: existing.ruleVersion,
+            status: ActivityRecordStatus.active,
+            deletedAt: null,
+          ),
+        );
+        final current = await _replayAndPersist(prepared.current);
+        return ActivityMutationResult(
+          activity: (await activities.find(activityId))!,
+          current: current,
+          wasAlreadyApplied: false,
+        );
+      });
+    });
+  }
+
   Future<T> _serialized<T>(Future<T> Function() action) {
     final completer = Completer<T>();
     _tail = _tail.then((_) async {
@@ -264,11 +308,18 @@ final class ActivityUseCases implements ActivityMutator {
     StoredEstimatedActivity? activity,
     OperationPreparationResult prepared,
   ) {
+    _ensureCurrent(activity, prepared);
+    if (activity!.status != ActivityRecordStatus.active) {
+      throw StateError('Activity ${activity.id} is already deleted');
+    }
+  }
+
+  void _ensureCurrent(
+    StoredEstimatedActivity? activity,
+    OperationPreparationResult prepared,
+  ) {
     if (activity == null) {
       throw StateError('Activity does not exist');
-    }
-    if (activity.status != ActivityRecordStatus.active) {
-      throw StateError('Activity ${activity.id} is already deleted');
     }
     if (activity.lifeDay != prepared.current.lifeDay) {
       throw StateError('Settled history is read-only');

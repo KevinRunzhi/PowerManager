@@ -22,12 +22,14 @@ import 'package:power_manager/data/db/app_database_connection.dart';
 import 'package:power_manager/data/db/drift_transaction_runner.dart';
 import 'package:power_manager/data/backup/local_backup_safety_store.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
+import 'package:power_manager/data/export/temporary_export_file_store.dart';
 import 'package:power_manager/data/repositories/drift_repositories.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 final clockProvider = Provider<Clock>((ref) => const SystemClock());
 
@@ -114,12 +116,43 @@ final operationPreparerProvider = Provider<OperationPreparer>((ref) {
   );
 });
 
+final currentPreparationRefreshProvider =
+    NotifierProvider<
+      CurrentPreparationRefreshNotifier,
+      PreparationRefreshRequest
+    >(CurrentPreparationRefreshNotifier.new);
+
+final class PreparationRefreshRequest {
+  const PreparationRefreshRequest({
+    required this.revision,
+    required this.trigger,
+  });
+
+  final int revision;
+  final PreparationTrigger trigger;
+}
+
+final class CurrentPreparationRefreshNotifier
+    extends Notifier<PreparationRefreshRequest> {
+  @override
+  PreparationRefreshRequest build() => const PreparationRefreshRequest(
+    revision: 0,
+    trigger: PreparationTrigger.coldStart,
+  );
+
+  void refresh(PreparationTrigger trigger) {
+    state = PreparationRefreshRequest(
+      revision: state.revision + 1,
+      trigger: trigger,
+    );
+  }
+}
+
 final currentPreparationProvider = FutureProvider<OperationPreparationResult>((
   ref,
 ) {
-  return ref
-      .watch(operationPreparerProvider)
-      .prepare(PreparationTrigger.resumed);
+  final request = ref.watch(currentPreparationRefreshProvider);
+  return ref.watch(operationPreparerProvider).prepare(request.trigger);
 });
 
 final activityUseCasesProvider = Provider<ActivityMutator>((ref) {
@@ -249,6 +282,7 @@ final historyReviewProvider = FutureProvider<HistoryReview>((ref) async {
 });
 
 final appSettingsProvider = FutureProvider<AppSettings>((ref) {
+  ref.watch(currentPreparationRefreshProvider);
   return ref.watch(settingsRepositoryProvider).get();
 });
 
@@ -269,11 +303,18 @@ final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
     observations: ref.watch(observationsRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
+    transactionRunner: DriftTransactionRunner(ref.watch(appDatabaseProvider)),
     appVersionLoader: () async {
       final info = await PackageInfo.fromPlatform();
       return '${info.version}+${info.buildNumber}';
     },
   );
+});
+
+final temporaryExportFileStoreProvider = Provider<TemporaryExportFileStore>((
+  ref,
+) {
+  return TemporaryExportFileStore(directoryLoader: getTemporaryDirectory);
 });
 
 final backupSafetyStoreProvider = Provider<BackupSafetyStore>((ref) {
@@ -354,8 +395,23 @@ final class EnergyReminderNotifier extends Notifier<String?> {
 }
 
 final class UndoWindowNotifier extends Notifier<bool> {
-  @override
-  bool build() => false;
+  var _activeCount = 0;
 
-  void setActive(bool value) => state = value;
+  @override
+  bool build() {
+    _activeCount = 0;
+    return false;
+  }
+
+  void begin() {
+    _activeCount++;
+    state = true;
+  }
+
+  void end() {
+    if (_activeCount > 0) {
+      _activeCount--;
+    }
+    state = _activeCount > 0;
+  }
 }

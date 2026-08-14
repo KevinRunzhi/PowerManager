@@ -96,6 +96,32 @@ void main() {
     test('rejects an invalid boundary in every build mode', () {
       expect(() => LifeDayCalculator(boundaryHour: 24), throwsRangeError);
     });
+
+    test('finds the next boundary before, at, and after 04:00', () {
+      expect(
+        calculator.nextBoundaryAfter(DateTime(2026, 7, 26, 3, 59, 59)),
+        DateTime(2026, 7, 26, 4),
+      );
+      expect(
+        calculator.nextBoundaryAfter(DateTime(2026, 7, 26, 4)),
+        DateTime(2026, 7, 27, 4),
+      );
+      expect(
+        calculator.nextBoundaryAfter(DateTime(2026, 7, 26, 18)),
+        DateTime(2026, 7, 27, 4),
+      );
+    });
+
+    test('next boundary crosses month and year boundaries', () {
+      expect(
+        calculator.nextBoundaryAfter(DateTime(2026, 12, 31, 23)),
+        DateTime(2027, 1, 1, 4),
+      );
+      expect(
+        calculator.nextBoundaryAfter(DateTime(2026, 2, 28, 23)),
+        DateTime(2026, 3, 1, 4),
+      );
+    });
   });
 }
 

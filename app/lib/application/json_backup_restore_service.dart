@@ -44,27 +44,29 @@ final class JsonBackupRestoreService {
   }) => codec.inspect(fileName: fileName, bytes: bytes);
 
   Future<BackupDataCounts> currentCounts() async {
-    final values = await Future.wait<List<Object>>([
-      rules.list(),
-      mornings.list(),
-      activities.listAllForExport(),
-      observations.list(),
-      summaries.list(),
-      receipts.list(),
-    ]);
-    return BackupDataCounts(
-      ruleVersions: values[0].length,
-      morningCheckIns: values[1].length,
-      activityRecords: values[2].length,
-      energyObservations: values[3].length,
-      dailySummaries: values[4].length,
-      promptReceipts: values[5].length,
-    );
+    return database.transaction(() async {
+      final ruleVersions = await rules.list();
+      final morningCheckIns = await mornings.list();
+      final activityRecords = await activities.listAllForExport();
+      final energyObservations = await observations.list();
+      final dailySummaries = await summaries.list();
+      final promptReceipts = await receipts.list();
+      return BackupDataCounts(
+        ruleVersions: ruleVersions.length,
+        morningCheckIns: morningCheckIns.length,
+        activityRecords: activityRecords.length,
+        energyObservations: energyObservations.length,
+        dailySummaries: dailySummaries.length,
+        promptReceipts: promptReceipts.length,
+      );
+    });
   }
 
   Future<void> restore(BackupInspection inspection) async {
-    final safety = await exportService.create(exportedAt: clock.now());
-    await safetyStore.save(safety.contents);
-    await database.replaceWithBackup(inspection.backup);
+    await database.transaction(() async {
+      final safety = await exportService.create(exportedAt: clock.now());
+      await safetyStore.save(safety.contents);
+      await database.replaceWithBackup(inspection.backup);
+    });
   }
 }

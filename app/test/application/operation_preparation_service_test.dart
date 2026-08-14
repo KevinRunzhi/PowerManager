@@ -327,6 +327,71 @@ void main() {
     );
   });
 
+  test('deleted activity restores its identity and replays the day', () async {
+    clock.value = DateTime(2026, 7, 26, 12);
+    final useCases = harness.activityUseCases();
+    final created = await useCases.create(
+      ActivityDraft(
+        operationId: 'restore-operation',
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.homework,
+        duration: DurationSlot.minutes30,
+        completedAt: DateTime(2026, 7, 26, 10),
+      ),
+    );
+    final estimateAfterCreate = created.current.projection.currentEstimate;
+    final deleted = await useCases.delete(created.activity.id);
+    expect(
+      deleted.current.projection.currentEstimate,
+      greaterThan(estimateAfterCreate),
+    );
+
+    clock.value = DateTime(2026, 7, 26, 12, 5);
+    final restored = await useCases.restore(created.activity.id);
+    final stored = (await harness.activities.find(created.activity.id))!;
+
+    expect(restored.wasAlreadyApplied, isFalse);
+    expect(restored.current.projection.currentEstimate, estimateAfterCreate);
+    expect(stored.status, ActivityRecordStatus.active);
+    expect(stored.deletedAt, isNull);
+    expect(stored.id, created.activity.id);
+    expect(stored.createdAt, created.activity.createdAt);
+    expect(stored.completedAt, created.activity.completedAt);
+    expect(stored.ruleVersion, created.activity.ruleVersion);
+    expect(stored.updatedAt, clock.value.toUtc());
+
+    final repeated = await useCases.restore(created.activity.id);
+    expect(repeated.wasAlreadyApplied, isTrue);
+    expect(
+      await harness.activities.listActiveForLifeDay(LifeDay(2026, 7, 26)),
+      hasLength(1),
+    );
+  });
+
+  test('restore rejects missing and settled-life-day records', () async {
+    clock.value = DateTime(2026, 7, 26, 12);
+    final useCases = harness.activityUseCases();
+    await expectLater(useCases.restore('missing'), throwsStateError);
+
+    final created = await useCases.create(
+      ActivityDraft(
+        operationId: 'settled-restore',
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.homework,
+        duration: DurationSlot.minutes15,
+        completedAt: DateTime(2026, 7, 26, 10),
+      ),
+    );
+    await useCases.delete(created.activity.id);
+    clock.value = DateTime(2026, 7, 27, 5);
+
+    await expectLater(useCases.restore(created.activity.id), throwsStateError);
+    expect(
+      (await harness.activities.find(created.activity.id))!.status,
+      ActivityRecordStatus.deleted,
+    );
+  });
+
   test(
     'future, cross-life-day, and settled-history edits are rejected',
     () async {

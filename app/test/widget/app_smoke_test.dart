@@ -18,6 +18,7 @@ import 'package:power_manager/application/settings_service.dart';
 import 'package:power_manager/application/local_backup_service.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
+import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
@@ -25,6 +26,7 @@ import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/debug/presentation/debug_environment_page.dart';
 import 'package:power_manager/features/debug/presentation/energy_orb_gallery_page.dart';
+import 'package:power_manager/features/home/presentation/energy_orb/energy_orb.dart';
 import 'package:power_manager/features/home/presentation/home_page.dart';
 import 'package:power_manager/features/settings/presentation/settings_page.dart';
 import 'package:power_manager/features/settings/presentation/data_health_page.dart';
@@ -97,7 +99,53 @@ void main() {
 
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();
-    expect(preparer.attempts, 3);
+    expect(preparer.attempts, 2);
+  });
+
+  testWidgets('cold start prepares once and resumed refreshes cached state', (
+    tester,
+  ) async {
+    final preparer = _RecordingPreparer();
+    await tester.pumpWidget(_testApp(preparer: preparer));
+    await tester.pumpAndSettle();
+
+    expect(preparer.triggers, [PreparationTrigger.coldStart]);
+    expect(
+      tester.widget<EnergyOrb>(find.byKey(HomePage.energyBallKey)).estimate,
+      100,
+    );
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(preparer.triggers, [
+      PreparationTrigger.coldStart,
+      PreparationTrigger.resumed,
+    ]);
+    expect(
+      tester.widget<EnergyOrb>(find.byKey(HomePage.energyBallKey)).estimate,
+      72,
+    );
+  });
+
+  testWidgets('foreground 04:00 boundary refreshes current preparation', (
+    tester,
+  ) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final clock = _MutableClock(DateTime(2026, 8, 14, 3, 59, 59));
+    final preparer = _RecordingPreparer();
+    await tester.pumpWidget(_testApp(preparer: preparer, clock: clock));
+    await tester.pumpAndSettle();
+
+    clock.value = DateTime(2026, 8, 14, 4);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(preparer.triggers, [
+      PreparationTrigger.coldStart,
+      PreparationTrigger.lifeDayBoundary,
+    ]);
   });
 
   testWidgets('home shell does not overflow on a compact landscape viewport', (
@@ -183,6 +231,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('撤销'), findsNothing);
     expect(mutator.deleteCount, 0);
+  });
+
+  testWidgets('activity delete offers undo through restore', (tester) async {
+    final mutator = _FakeActivityMutator();
+    await tester.pumpWidget(
+      _testApp(preparer: _ActivityPreparer(), mutator: mutator),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('删除'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(mutator.deleteCount, 1);
+    expect(find.textContaining('已删除'), findsOneWidget);
+    await tester.tap(find.text('撤销'));
+    await tester.pumpAndSettle();
+
+    expect(mutator.restoreCount, 1);
+  });
+
+  test('undo window remains active until every queued owner ends', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(undoWindowActiveProvider.notifier);
+
+    notifier.begin();
+    notifier.begin();
+    notifier.end();
+    expect(container.read(undoWindowActiveProvider), isTrue);
+
+    notifier.end();
+    expect(container.read(undoWindowActiveProvider), isFalse);
   });
 
   testWidgets('skipped morning still shows estimate and a distinct state', (
@@ -316,6 +397,40 @@ void main() {
     expect(find.byKey(const Key('actual-full')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'relative correction failure stays visible and preserves choice',
+    (tester) async {
+      final wellbeing = _FakeWellbeingMutator()..failRelative = true;
+      await tester.pumpWidget(_testApp(wellbeing: wellbeing));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('relative-correction-button')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byKey(const Key('relative-correction-button')));
+      await tester.pumpAndSettle();
+
+      final lower = find.byKey(const Key('relative-lower'));
+      await tester.tap(lower);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('relative-correction-error')),
+        findsOneWidget,
+      );
+      expect(find.text('保存失败，请重试。'), findsOneWidget);
+      expect(find.text('此刻感觉与估计相比'), findsOneWidget);
+      final selected = tester.widget<FilledButton>(lower);
+      expect(selected.style?.backgroundColor?.resolve({}), isNotNull);
+
+      wellbeing.failRelative = false;
+      await tester.tap(lower);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('已记录：比估计低'), findsOneWidget);
+    },
+  );
 
   testWidgets('today overview is hidden by default and opens as a sheet', (
     tester,
@@ -858,6 +973,7 @@ void main() {
 
 Widget _testApp({
   OperationPreparer? preparer,
+  Clock? clock,
   ActivityMutator? mutator,
   MorningCompletionStatus morningStatus = MorningCompletionStatus.notAnswered,
   WellbeingMutator? wellbeing,
@@ -875,6 +991,7 @@ Widget _testApp({
 }) {
   return ProviderScope(
     overrides: [
+      if (clock != null) clockProvider.overrideWithValue(clock),
       operationPreparerProvider.overrideWithValue(preparer ?? _FakePreparer()),
       morningCompletionStatusProvider.overrideWith(
         (ref) async => morningStatus,
@@ -1027,6 +1144,7 @@ final class _FakeSettingsMutator implements SettingsMutator {
 final class _FakeActivityMutator implements ActivityMutator {
   var createCount = 0;
   var deleteCount = 0;
+  var restoreCount = 0;
 
   @override
   Future<ActivityMutationResult> create(ActivityDraft draft) async {
@@ -1071,6 +1189,22 @@ final class _FakeActivityMutator implements ActivityMutator {
   }) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<ActivityMutationResult> restore(String activityId) async {
+    restoreCount++;
+    return ActivityMutationResult(
+      activity: _storedActivity(
+        id: activityId,
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.homework,
+        duration: DurationSlot.minutes30,
+        completedAt: DateTime(2026, 7, 26, 10),
+      ),
+      current: _currentProjectionWithActivity(),
+      wasAlreadyApplied: false,
+    );
+  }
 }
 
 final class _FakeWellbeingMutator implements WellbeingMutator {
@@ -1078,6 +1212,7 @@ final class _FakeWellbeingMutator implements WellbeingMutator {
   AbsoluteEnergyState? savedActual;
   RelativeCorrection? savedCorrection;
   Completer<void>? actualGate;
+  var failRelative = false;
 
   @override
   Future<CurrentDayProjection> saveMorningCheckIn(
@@ -1120,6 +1255,9 @@ final class _FakeWellbeingMutator implements WellbeingMutator {
     required String observationId,
     required RelativeCorrection correction,
   }) async {
+    if (failRelative) {
+      throw StateError('simulated relative correction failure');
+    }
     savedCorrection = correction;
     return EnergyObservation(
       id: observationId,
@@ -1136,24 +1274,7 @@ final class _FakeWellbeingMutator implements WellbeingMutator {
 final class _FakePreparer implements OperationPreparer {
   @override
   Future<OperationPreparationResult> prepare(PreparationTrigger trigger) async {
-    return OperationPreparationResult(
-      trigger: trigger,
-      nowLocal: DateTime(2026, 7, 26, 12),
-      nowUtc: DateTime.utc(2026, 7, 26, 4),
-      current: CurrentDayProjection(
-        lifeDay: _currentProjection().lifeDay,
-        baseEstimatedEnergy: _currentProjection().baseEstimatedEnergy,
-        ruleVersion: _currentProjection().ruleVersion,
-        morningAdjustment: _currentProjection().morningAdjustment,
-        shortTermAdjustment: _currentProjection().shortTermAdjustment,
-        previousFinalEstimate: _currentProjection().previousFinalEstimate,
-        morningCheckInCompleted: _currentProjection().morningCheckInCompleted,
-        projection: _currentProjection().projection,
-      ),
-      settledSummaries: const [],
-      appliedPendingBaseEnergy: false,
-      appliedPendingRuleVersion: false,
-    );
+    return _preparationResult(trigger, _currentProjection());
   }
 }
 
@@ -1179,14 +1300,54 @@ final class _FailingPreparer implements OperationPreparer {
   @override
   Future<OperationPreparationResult> prepare(PreparationTrigger trigger) async {
     attempts++;
-    if (trigger == PreparationTrigger.coldStart) {
-      return _FakePreparer().prepare(trigger);
+    if (attempts == 1) {
+      throw StateError('database unavailable: internal test detail');
     }
-    throw StateError('database unavailable: internal test detail');
+    return _FakePreparer().prepare(trigger);
   }
 }
 
-CurrentDayProjection _currentProjection() {
+final class _RecordingPreparer implements OperationPreparer {
+  final triggers = <PreparationTrigger>[];
+
+  @override
+  Future<OperationPreparationResult> prepare(PreparationTrigger trigger) {
+    triggers.add(trigger);
+    final estimate = triggers.length == 1 ? 100 : 72;
+    return Future.value(
+      _preparationResult(
+        trigger,
+        _currentProjection(currentEstimate: estimate),
+      ),
+    );
+  }
+}
+
+final class _MutableClock implements Clock {
+  _MutableClock(this.value);
+
+  DateTime value;
+
+  @override
+  DateTime now() => value;
+}
+
+OperationPreparationResult _preparationResult(
+  PreparationTrigger trigger,
+  CurrentDayProjection current,
+) {
+  return OperationPreparationResult(
+    trigger: trigger,
+    nowLocal: DateTime(2026, 7, 26, 12),
+    nowUtc: DateTime.utc(2026, 7, 26, 4),
+    current: current,
+    settledSummaries: const [],
+    appliedPendingBaseEnergy: false,
+    appliedPendingRuleVersion: false,
+  );
+}
+
+CurrentDayProjection _currentProjection({int currentEstimate = 100}) {
   return CurrentDayProjection(
     lifeDay: LifeDay(2026, 7, 26),
     baseEstimatedEnergy: 100,
@@ -1197,7 +1358,7 @@ CurrentDayProjection _currentProjection() {
     morningCheckInCompleted: false,
     projection: EstimatedDayProjection(
       initialEstimate: 100,
-      currentEstimate: 100,
+      currentEstimate: currentEstimate,
       band: EstimatedEnergyBand.estimatedNormal,
       activities: const [],
       totalConsumption: 0,

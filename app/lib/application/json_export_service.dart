@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:isolate';
 
+import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
@@ -28,6 +29,7 @@ final class JsonExportService implements JsonExporter {
     required this.summaries,
     required this.receipts,
     required this.appVersionLoader,
+    required this.transactionRunner,
   });
 
   static const schemaVersion = 1;
@@ -40,39 +42,75 @@ final class JsonExportService implements JsonExporter {
   final DailySummariesRepository summaries;
   final PromptReceiptsRepository receipts;
   final AppVersionLoader appVersionLoader;
+  final TransactionRunner transactionRunner;
 
   @override
   Future<JsonExportResult> create({required DateTime exportedAt}) async {
-    final values = await Future.wait<Object>([
-      settings.get(),
-      rules.list(),
-      mornings.list(),
-      activities.listAllForExport(),
-      observations.list(),
-      summaries.list(),
-      receipts.list(),
-      appVersionLoader(),
-    ]);
+    final appVersion = await appVersionLoader();
+    final snapshot = await transactionRunner.run(() async {
+      final appSettings = await settings.get();
+      final ruleVersions = await rules.list();
+      final morningCheckIns = await mornings.list();
+      final activityRecords = await activities.listAllForExport();
+      final energyObservations = await observations.list();
+      final dailySummaries = await summaries.list();
+      final promptReceipts = await receipts.list();
+      return _ExportSnapshot(
+        appSettings: appSettings,
+        ruleVersions: ruleVersions,
+        morningCheckIns: morningCheckIns,
+        activityRecords: activityRecords,
+        energyObservations: energyObservations,
+        dailySummaries: dailySummaries,
+        promptReceipts: promptReceipts,
+      );
+    });
     final dto = PowerManagerExportDto(
       schemaVersion: schemaVersion,
       exportedAt: exportedAt.toUtc(),
-      appVersion: values[7] as String,
-      appSettings: values[0] as AppSettings,
-      ruleVersions: values[1] as List<RuleConfigVersion>,
-      morningCheckIns: values[2] as List<MorningCheckIn>,
-      activityRecords: values[3] as List<StoredEstimatedActivity>,
-      energyObservations: values[4] as List<EnergyObservation>,
-      dailySummaries: values[5] as List<DailySummary>,
-      promptReceipts: values[6] as List<PromptReceipt>,
+      appVersion: appVersion,
+      appSettings: snapshot.appSettings,
+      ruleVersions: snapshot.ruleVersions,
+      morningCheckIns: snapshot.morningCheckIns,
+      activityRecords: snapshot.activityRecords,
+      energyObservations: snapshot.energyObservations,
+      dailySummaries: snapshot.dailySummaries,
+      promptReceipts: snapshot.promptReceipts,
     );
-    final json = await Isolate.run(
-      () => const JsonEncoder.withIndent('  ').convert(dto.toJson()),
-    );
+    final json = await Isolate.run(_JsonEncodingTask(dto.toJson()).call);
     return JsonExportResult(
       fileName: 'powermanager-${_fileTimestamp(exportedAt.toUtc())}.json',
       contents: json,
     );
   }
+}
+
+final class _JsonEncodingTask {
+  const _JsonEncodingTask(this.value);
+
+  final Map<String, Object?> value;
+
+  String call() => const JsonEncoder.withIndent('  ').convert(value);
+}
+
+final class _ExportSnapshot {
+  const _ExportSnapshot({
+    required this.appSettings,
+    required this.ruleVersions,
+    required this.morningCheckIns,
+    required this.activityRecords,
+    required this.energyObservations,
+    required this.dailySummaries,
+    required this.promptReceipts,
+  });
+
+  final AppSettings appSettings;
+  final List<RuleConfigVersion> ruleVersions;
+  final List<MorningCheckIn> morningCheckIns;
+  final List<StoredEstimatedActivity> activityRecords;
+  final List<EnergyObservation> energyObservations;
+  final List<DailySummary> dailySummaries;
+  final List<PromptReceipt> promptReceipts;
 }
 
 String _fileTimestamp(DateTime value) {

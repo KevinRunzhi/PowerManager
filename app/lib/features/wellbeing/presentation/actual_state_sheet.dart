@@ -216,6 +216,7 @@ class RelativeCorrectionSheet extends ConsumerStatefulWidget {
   static Future<void> show(BuildContext context) {
     return showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       useSafeArea: true,
       builder: (_) => const RelativeCorrectionSheet(),
     );
@@ -229,63 +230,125 @@ class RelativeCorrectionSheet extends ConsumerStatefulWidget {
 class _RelativeCorrectionSheetState
     extends ConsumerState<RelativeCorrectionSheet> {
   var _saving = false;
+  RelativeCorrection? _selectedCorrection;
+  String? _error;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            '此刻感觉与估计相比',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleLarge,
+    return PopScope(
+      canPop: !_saving,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '此刻感觉与估计相比',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '会保存此刻估计快照，不会直接改变估计。',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 18),
+              _button('比估计低', RelativeCorrection.lowerThanEstimate),
+              _button('差不多', RelativeCorrection.aboutRight),
+              _button('比估计高', RelativeCorrection.higherThanEstimate),
+              if (_saving)
+                const Center(
+                  child: SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else if (_error != null)
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    _error!,
+                    key: const Key('relative-correction-error'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            '会保存此刻估计快照，不会直接改变估计。',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 18),
-          _button('比估计低', RelativeCorrection.lowerThanEstimate),
-          _button('差不多', RelativeCorrection.aboutRight),
-          _button('比估计高', RelativeCorrection.higherThanEstimate),
-        ],
+        ),
       ),
     );
   }
 
   Widget _button(String label, RelativeCorrection correction) {
+    final selected = _selectedCorrection == correction;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: FilledButton.tonal(
-        onPressed: _saving ? null : () => _save(correction),
-        child: Text(label),
+      child: Semantics(
+        selected: selected,
+        button: true,
+        child: FilledButton.tonalIcon(
+          key: Key('relative-${correction.code}'),
+          onPressed: _saving ? null : () => _save(correction),
+          style: selected
+              ? FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                )
+              : null,
+          icon: Icon(selected ? Icons.check_rounded : Icons.circle_outlined),
+          label: Text(label),
+        ),
       ),
     );
   }
 
   Future<void> _save(RelativeCorrection correction) async {
-    setState(() => _saving = true);
+    setState(() {
+      _selectedCorrection = correction;
+      _saving = true;
+      _error = null;
+    });
     try {
       await ref
           .read(wellbeingUseCasesProvider)
           .saveRelativeCorrection(
             observationId:
-                'relative-${DateTime.now().toUtc().microsecondsSinceEpoch}',
+                'relative-${ref.read(clockProvider).now().toUtc().microsecondsSinceEpoch}',
             correction: correction,
           );
       if (mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        HapticFeedback.lightImpact();
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已保存感受与当时估计；MVP-A 规则保持不变。')),
+        messenger.showSnackBar(
+          SnackBar(
+            content: Semantics(
+              liveRegion: true,
+              child: Text('已记录：${_correctionLabel(correction)}；MVP-A 规则保持不变。'),
+            ),
+          ),
         );
       }
     } catch (_) {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = '保存失败，请重试。';
+        });
+      }
     }
   }
+
+  String _correctionLabel(RelativeCorrection correction) =>
+      switch (correction) {
+        RelativeCorrection.lowerThanEstimate => '比估计低',
+        RelativeCorrection.aboutRight => '差不多',
+        RelativeCorrection.higherThanEstimate => '比估计高',
+      };
 }

@@ -6,6 +6,7 @@ import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/app/theme/app_theme.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
+import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 
 class PowerManagerApp extends ConsumerStatefulWidget {
   const PowerManagerApp({super.key});
@@ -20,18 +21,23 @@ class _PowerManagerAppState extends ConsumerState<PowerManagerApp>
     'POWER_MANAGER_INITIAL_ROUTE',
     defaultValue: AppRoutes.home,
   );
+  final _lifeDayCalculator = LifeDayCalculator();
+  Timer? _lifeDayBoundaryTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _prepare(PreparationTrigger.coldStart);
+      if (mounted) {
+        _scheduleLifeDayBoundary();
+      }
     });
   }
 
   @override
   void dispose() {
+    _lifeDayBoundaryTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -39,32 +45,38 @@ class _PowerManagerAppState extends ConsumerState<PowerManagerApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _prepare(PreparationTrigger.resumed);
+      _requestPreparation(PreparationTrigger.resumed);
+      _scheduleLifeDayBoundary();
+    } else {
+      _lifeDayBoundaryTimer?.cancel();
+      _lifeDayBoundaryTimer = null;
     }
   }
 
-  void _prepare(PreparationTrigger trigger) {
-    unawaited(
-      ref
-          .read(operationPreparerProvider)
-          .prepare(trigger)
-          .then<void>(
-            (_) {},
-            onError: (Object error, StackTrace stackTrace) {
-              FlutterError.reportError(
-                FlutterErrorDetails(
-                  exception: error,
-                  stack: stackTrace,
-                  library: 'PowerManager preparation',
-                ),
-              );
-            },
-          ),
-    );
+  void _requestPreparation(PreparationTrigger trigger) {
+    ref.read(currentPreparationRefreshProvider.notifier).refresh(trigger);
+  }
+
+  void _scheduleLifeDayBoundary() {
+    _lifeDayBoundaryTimer?.cancel();
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      _lifeDayBoundaryTimer = null;
+      return;
+    }
+    final now = ref.read(clockProvider).now();
+    final nextBoundary = _lifeDayCalculator.nextBoundaryAfter(now);
+    final delay = nextBoundary.difference(now);
+    _lifeDayBoundaryTimer = Timer(delay.isNegative ? Duration.zero : delay, () {
+      if (!mounted) return;
+      ref.read(energyReminderMessageProvider.notifier).dismiss();
+      _requestPreparation(PreparationTrigger.lifeDayBoundary);
+      _scheduleLifeDayBoundary();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(currentPreparationProvider);
     return MaterialApp(
       title: '精力值',
       debugShowCheckedModeBanner: false,
