@@ -16,6 +16,11 @@ class PowerManagerApp extends ConsumerStatefulWidget {
 
 class _PowerManagerAppState extends ConsumerState<PowerManagerApp>
     with WidgetsBindingObserver {
+  static const _initialRoute = String.fromEnvironment(
+    'POWER_MANAGER_INITIAL_ROUTE',
+    defaultValue: AppRoutes.home,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -64,7 +69,7 @@ class _PowerManagerAppState extends ConsumerState<PowerManagerApp>
       title: '精力值',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      initialRoute: AppRoutes.home,
+      initialRoute: _initialRoute,
       onGenerateRoute: AppRoutes.onGenerateRoute,
     );
   }

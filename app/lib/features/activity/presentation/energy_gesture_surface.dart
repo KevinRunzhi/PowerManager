@@ -630,7 +630,7 @@ class _GestureOverlay extends StatelessWidget {
     return switch (state.phase) {
       RecordGesturePhase.selectingCategory => '滑向大类，停留确认',
       RecordGesturePhase.selectingSubcategory => '滑向子类，停留确认',
-      RecordGesturePhase.selectingDuration => '滑向时长，短暂停留后松手',
+      RecordGesturePhase.selectingDuration => '滑向时长，停稳后松手',
       RecordGesturePhase.ready => '松手完成 · 滑回球心返回上一层',
       _ => '',
     };

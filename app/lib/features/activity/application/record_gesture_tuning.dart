@@ -1,8 +1,8 @@
 final class RecordGestureTuning {
   const RecordGestureTuning({
     this.activationDelay = const Duration(milliseconds: 200),
-    this.categoryDwell = const Duration(milliseconds: 300),
-    this.durationDwell = const Duration(milliseconds: 300),
+    this.categoryDwell = const Duration(milliseconds: 500),
+    this.durationDwell = const Duration(milliseconds: 500),
     this.backCooldown = const Duration(milliseconds: 260),
     this.stabilizationDelay = const Duration(milliseconds: 90),
     this.timeout = const Duration(seconds: 10),

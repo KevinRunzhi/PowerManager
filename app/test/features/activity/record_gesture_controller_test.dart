@@ -8,8 +8,8 @@ void main() {
     const tuning = RecordGestureTuning.defaults;
 
     expect(tuning.activationDelay, const Duration(milliseconds: 200));
-    expect(tuning.categoryDwell, const Duration(milliseconds: 300));
-    expect(tuning.durationDwell, const Duration(milliseconds: 300));
+    expect(tuning.categoryDwell, const Duration(milliseconds: 500));
+    expect(tuning.durationDwell, const Duration(milliseconds: 500));
     expect(tuning.backCooldown, const Duration(milliseconds: 260));
     expect(tuning.newNodeHitSlop, 12);
     expect(tuning.stickyNodeHitSlop, 28);

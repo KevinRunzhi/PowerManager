@@ -2,9 +2,10 @@
 
 ## 0. 结论
 
-- 日期：2026-08-10
-- 对应规格：《PowerManager MVP-A 阶段 17：手势、视觉与无障碍优化 Spec v1.1》
-- 验收环境：Pixel_7、Android 14 / API 34、`emulator-5554`、Debug APK `versionCode 6004`
+- 日期：2026-08-12（交互参数二次调优）
+- 对应规格：《PowerManager MVP-A 阶段 17：手势、视觉与无障碍优化 Spec v1.2》
+- 验收环境：Pixel_7、Android 14 / API 34、`emulator-5554`；二次调优使用 Release APK
+  `versionCode 10008`
 - 结果：阶段 17-D 通过
 - 范围裁决：首页结构保持不变；A / B / C 未实施，继续作为后续待办
 - 真机裁决：未向已连接或曾连接的真实手机安装，本阶段真机验收继续延后到 MVP-B 完成后
@@ -18,8 +19,8 @@
 | 参数 | 最终值 |
 |---|---:|
 | 长按激活 | 200ms |
-| 大类 / 子类停留确认 | 300ms |
-| 时长停留确认 | 300ms |
+| 大类 / 子类停留确认 | 500ms |
+| 时长停留确认 | 500ms |
 | 快速移动后的稳定等待 | 90ms |
 | 回滑冷却 | 260ms |
 | 无动作超时 | 10s |
@@ -30,6 +31,8 @@
 
 实现结果：
 
+- 根据 2026-08-12 复测反馈，选中后进入下一层的停留时间由 300ms 提高到
+  500ms，降低手指刚进入节点就跳层的概率；
 - 快速掠过时先等待稳定，不立即开始停留确认；
 - 当前节点使用更大的黏附区，轻微抖动不会切换；
 - 只有 ready 状态松手才调用共享的活动创建用例；
@@ -58,15 +61,16 @@
 
 | 检查 | 结果 |
 |---|---|
-| `dart format --output=none --set-exit-if-changed .` | 83 个文件，0 个需修改 |
+| `dart format`（本次涉及文件） | 4 个文件，0 个需修改 |
 | `flutter analyze` | 0 问题 |
-| `flutter test` | 164 项全部通过 |
-| `flutter build apk --debug --build-number=6004` | 成功 |
-| Debug APK | `app/build/app/outputs/flutter-apk/app-debug.apk` |
+| `flutter test` | 183 项全部通过 |
+| `flutter build apk --release --target-platform android-x64 --build-number=10008` | 成功 |
+| Release APK | `app/build/app/outputs/flutter-apk/app-release.apk`（21.0MB） |
 
 新增或加强的关键覆盖：
 
 - 200ms 前不激活、200ms 后激活；
+- 停留 350ms 后仍保持当前层，只有超过新的 500ms 确认窗口才能进层；
 - 在真实动画模式下覆盖回弹入场帧，防止透明度越界红屏回归；
 - 连续 20 次快速掠过脚本均不确认、不写记录；
 - 当前节点轻微抖动保持黏附，且使用当前能量色温与选中语义；
@@ -101,6 +105,10 @@ Logcat 未发现 `ANR in com.kevin.powermanager`、`FATAL EXCEPTION`、`E/flutte
 恢复后消失；PowerManager 进程没有对应 ANR 或崩溃记录。覆盖安装期间只清理了可再生缓存和
 dexopt 产物，没有卸载应用或清除数据库。
 
+2026-08-12 二次调优包以 `versionCode 10008` 覆盖安装成功，应用正常进入
+`MainActivity`，进程存活，未发现新的 FATAL EXCEPTION。安装使用 `-r` 覆盖方式，
+未卸载应用、未清除现有模拟器数据。
+
 ## 4. 数据与备份
 
 - 验收手势全部以 `CANCEL` 结束，没有新增活动；今日活动保持 0 条；
@@ -120,4 +128,4 @@ dexopt 产物，没有卸载应用或清除数据库。
 ## 6. 阶段判断
 
 阶段 17-D 的代码、测试、Debug 构建、模拟器截图、备份和数据体检材料均已齐全。实现与 Spec
-v1.1 一致，可以独立提交。阶段完成后不自动进入 A / B / C 或 MVP-B。
+v1.2 一致，可以独立提交。阶段完成后不自动进入 A / B / C 或 MVP-B。

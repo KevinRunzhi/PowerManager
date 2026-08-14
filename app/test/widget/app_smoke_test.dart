@@ -24,6 +24,7 @@ import 'package:power_manager/domain/energy/estimated_activity.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/debug/presentation/debug_environment_page.dart';
+import 'package:power_manager/features/debug/presentation/energy_orb_gallery_page.dart';
 import 'package:power_manager/features/home/presentation/home_page.dart';
 import 'package:power_manager/features/settings/presentation/settings_page.dart';
 import 'package:power_manager/features/settings/presentation/data_health_page.dart';
@@ -60,6 +61,26 @@ void main() {
     expect(find.text('派生状态调试'), findsOneWidget);
     expect(find.text('2026-07-26'), findsOneWidget);
     expect(find.text('test-rules'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('energy orb gallery exposes six fixed visual states', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp());
+
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.energyOrbGallery);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(EnergyOrbGalleryPage.pageKey), findsOneWidget);
+    expect(find.text('Stage18 · 能量球状态基准'), findsOneWidget);
+    expect(find.byKey(const Key('gallery-orb-0')), findsOneWidget);
+    expect(find.byKey(const Key('gallery-orb-3')), findsOneWidget);
+    await tester.drag(find.byType(GridView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('gallery-orb-4')), findsOneWidget);
+    expect(find.byKey(const Key('gallery-orb-5')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -678,7 +699,7 @@ void main() {
     await gesture.moveTo(
       tester.getCenter(find.byKey(const Key('gesture-node-0'))),
     );
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 550));
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 600));
 
@@ -795,7 +816,11 @@ void main() {
     expect(border.top.color, AppColors.energyHigh);
 
     await gesture.moveTo(nodeCenter + const Offset(50, 0));
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('滑向大类，停留确认'), findsOneWidget);
+    expect(find.text('上课'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('上课'), findsOneWidget);
 
     await gesture.up();
