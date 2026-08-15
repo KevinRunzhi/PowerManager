@@ -24,7 +24,7 @@
   重验和参数族阻断回归。
 - `dart format --output=none --set-exit-if-changed lib test`：通过。
 - `git diff --check`：通过。
-- 最近安全修订提交：`67b829d`；验收记录提交：`ca840e6`。
+- 最近安全修订提交：`015632f`（活动闸门修订 `67b829d`）；验收记录提交：`dd12c10`。
 - `flutter analyze`：通过，无 issue。
 - 模拟器 `flutter run -d emulator-5554 --debug --no-resident`：启动、安装和同步成功；logcat 未发现 FATAL EXCEPTION、FlutterError、Unhandled 或 SQLite 数据库错误。只产生了本次 Debug 验证所需的临时 debug APK，不作为交付物。
 
