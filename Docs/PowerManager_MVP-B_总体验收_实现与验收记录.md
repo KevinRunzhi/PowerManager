@@ -66,7 +66,11 @@ foreign key/integrity/index/trigger、current/yesterday 隔离、结算与当前
   `/data/user/0` 可用空间约 530 MB，存储告警作为模拟器环境限制记录。
 - 启动日志未发现 `FATAL EXCEPTION`、`FlutterError`、`Unhandled`、`NoSuchMethodError` 或 SQLite 数据库错误。
 - 仅有 Android/图形栈的正常 warning，以及一次与应用无关的 SQLite double-quoted literal warning；没有应用崩溃或 ANR。
+- 追加模拟器验证（2026-08-16 CST）：临时设置系统字号 200%，当前提交实际构建、安装、启动成功；
+  应用日志未发现 `FlutterError`、未处理异常、`RenderFlex overflow` 或数据库错误，验证后已恢复字号。
 - 设置页 200% 字号、紧凑横屏、活动反馈和学习控制通过 widget 回归；活动影响暂停卡新增独立恢复回归。
+- 本次尝试通过 AVD 系统旋转切换横屏未生效，因此不把它记录为横屏人工设备通过；横屏结论仅来自已有
+  Widget 回归，待后续 AVD 能切换时再补人工矩阵。
 
 ## 5. 尚未执行的总验收项
 
