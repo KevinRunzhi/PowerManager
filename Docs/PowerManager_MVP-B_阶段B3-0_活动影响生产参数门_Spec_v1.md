@@ -2,12 +2,34 @@
 
 ## 0. 文档状态
 
-- 版本：1.1
+- 版本：1.2
 - 日期：2026-08-15
 - 状态：B2 稳定后先完成工程参数合同；真实参数实验延期到最终安装后
 - 类型：真实数据可行性实验与生产参数决策门
 - 数据库版本：schema v4
 - 下一阶段：工程参数合同通过可进入 B3-1；生产门仍由真实实验决定
+
+### 0.2 B3-0 工程合同冻结（预生产）
+
+本阶段只冻结可复现、可审计的参数合同，不改变 schema v4，不写入个人 factor，也不打开生产学习：
+
+- `activityImpactSamplingAlgorithmVersion = activity-impact-sampler-v1`；
+- `activityFeedbackSamplingPolicyVersion = activity-impact-sampling-preprod-v1`；
+- 预生产水印为 `PREPRODUCTION_ONLY_ACTIVITY_IMPACT_V1`，`activityImpactProductionLearningEnabled = false`，
+  `activityImpactAutoApplyEnabled = false`；
+- 每生活日最多 1 条 selected sample；跳过冷却 1 个生活日，未响应冷却 3 个生活日；
+- 只抽当前生活日 active、非零理论值、无恢复截断、规则版本为
+  `energy-rules-v2-mvp-a` 的活动；同一活动与同一 policy 的非 invalidated sample 排除；
+- 抽样只使用 policy 版本、生活日和稳定活动 ID 的 SHA-256 排序，不读取预测误差、详情打开、投诉或任何
+  feedback direction；off 模式恒为 `noPrompt`；
+- 研究审计允许纳入 `userInitiated` 但绝不把它转换为生产资格；零理论值、恢复截断、规则混用、
+  invalidated、directionMismatch 和时长异质只进入审计/否决；
+- 预生产倍率范围 `[0.50, 1.50]`、步长 `0.05`，不跨 0；同一键 directionMismatch 至少 2 条且占合格证据
+  `>= 25%` 时 veto；合格证据的时长最大跨度超过 60 分钟时返回 unstable；
+- 最小工程观察门为每键 8 条合格 sampledPrompt、覆盖至少 4 个生活日。任一完整配置字段缺失或
+  watermark 不匹配，统一返回 `configurationBlocked`。
+
+这些值是工程 fixture 的合同，不是产品结论；真实安装前不得将其解释为已验证的用户参数。
 
 ### 0.1 两轨执行说明
 
@@ -74,6 +96,13 @@
 - 用户是否理解反馈评价的是该条活动影响。
 
 策略变更必须切换版本，不在同一版本内偷偷改概率或选择规则。
+
+### 4.3 可复现选择合同
+
+工程实现的 `ActivityImpactSampler` 必须是纯函数：输入为模式、当前生活日、当前合格活动和已有
+sample 状态，输出为一个确定的 activity ID 或 `noPrompt` reason。daily cap 统计当前日所有非
+invalidated sample；invalidated 不占 cap，但同一 activity/policy 可再次 selected。跨重启重复调用必须
+得到同一 ID，直到 sample 状态改变；抽样器的输入类型不得携带 feedback direction、预测误差或投诉字段。
 
 ## 5. 倍率模型可行性
 
@@ -155,6 +184,15 @@
 - schema v5 迁移最终 Spec；
 - 追踪矩阵更新；
 - 产品状态。
+
+工程合同代码落点为 `domain/learning/activity_impact_contract.dart`，其输出必须包含：
+
+- `ActivityImpactKey` 与按键可行性审计（userInitiated 研究统计、invalidated、零值、截断、规则版本、
+  时长和方向分布）；
+- `ActivityImpactSamplingPolicyV1`、`ActivityImpactSampler` 和明确的 `noPrompt` reasons；
+- factor 范围/步长/rounding 边界与 directionMismatch、时长异质安全门；
+- 纯领域测试证明 off、daily cap、冷却、重启稳定、不同 policy 独立、反馈结果不可影响选择；
+- 预生产配置始终不可激活，供 B3-1 learner 和 schema v5 使用。
 
 ## 10. 停止条件
 

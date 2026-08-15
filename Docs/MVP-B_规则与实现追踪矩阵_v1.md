@@ -4,7 +4,7 @@
 
 - 版本：2.0
 - 日期：2026-08-15
-- 状态：B2-2 工程实现、自动化与模拟器正式 gate 已通过；预生产监测/暂停全生命周期由隔离 harness 验证；产品轨 inconclusive，正式生产门保持关闭
+- 状态：B3-0 工程参数合同、自动化与模拟器 gate 已通过；产品轨 inconclusive，正式生产门保持关闭
 
 | 能力 | 产品来源 | 参数 / 算法来源 | 技术落点 | 主要验证 | 当前状态 |
 |---|---|---|---|---|---|
@@ -33,10 +33,10 @@
 | 未来生活日幂等激活 | PRD 2、3.3 | 算法 5.3、5.4 | ModelActivationService + prepare | 通知窗口、重启、04:00、恢复只激活一次 | B2-0 已实现；24 小时边界、通知原子性、重启 / restore 复验通过 |
 | 通知、取消与撤回 | PRD 3.3、4.3、4.4 | 算法 5.3、7.2 | learning_notices、ActivationService、SettingsPage | 激活前取消、激活后未来恢复 | B2-1 候选详情、接受/稍后/拒绝/取消/撤回入口与隔离生命周期通过；模拟器正式 gate 回归通过 |
 | 恶化暂停 | PRD 3.3、5.3 | B1 后生产配置、算法 7.3、9.3 | `BaselineMonitoringEvaluator`、`BaselineMonitoringCoordinator`、`ModelActivationService`、`SettingsPage` | 新 epoch 14/21、2×7、冷却、边界、暂停、恢复、通知幂等、族隔离 | B2-2 工程与隔离预生产验证通过；产品轨 inconclusive |
-| 活动倍率方向隔离 | PRD 3.4 | B3 配置、算法 8.3 | factors v5、activity snapshot | consumption / recovery 不串用 | 阻塞于 B3-0 |
-| 活动 factor regime 隔离 | PRD 3.4 | 算法 5.4、8.3 | factor regime snapshot + learner | 旧证据不重复、基准线变化不重置 | 阻塞于 B3-0 |
-| 活动反馈抽样 | PRD 3.4、4.2 | 配置 3、算法 8.1、8.2 | ActivityFeedbackSampler + source snapshot | 低频可跳过、选择无结果偏差、来源隔离 | 阻塞于 B3-0 |
-| 活动影响自动学习 | PRD 3.4、5.3 | B3 配置、算法 8.4 | ActivityImpactLearner + model version v5 | 资格、确定性、幂等、无证据不伪造 | 阻塞于 B3-0 |
+| 活动倍率方向隔离 | PRD 3.4 | B3 配置、算法 8.3 | `ActivityImpactKey` + B3-0 contract | consumption / recovery 不串用 | B3-0 合同通过；v5 倍率表待 B3-1 |
+| 活动 factor regime 隔离 | PRD 3.4 | 算法 5.4、8.3 | B3-0 key/rule/factor 边界 | 旧证据不重复、基准线变化不重置 | B3-0 定义边界；v5 快照待 B3-1 |
+| 活动反馈抽样 | PRD 3.4、4.2 | 配置 3、算法 8.1、8.2 | `ActivityImpactSampler` | 低频可跳过、选择无结果偏差、来源隔离 | B3-0 工程实现与测试通过；持久 sample 待 B3-1 |
+| 活动影响自动学习 | PRD 3.4、5.3 | B3 配置、算法 8.4 | `ActivityImpactFactorGate` + calculator | 资格、方向 veto、取整、无证据不伪造 | B3-0 预生产 shadow 合同通过；learner/v5 待 B3-1 |
 | 参数族串行 | PRD 2、6 | 算法 9.2 | AutomaticLearningCoordinator | 同时就绪仍只变化一个参数族 | 阻塞于 B2 / B3 |
 | v3 / v4 / v5 备份兼容 | PRD 5.1 | 算法 5 | BackupCodec、restore coordinator | 运行、版本、倍率往返且不重复激活 | v3 / v4 已实现；v4 候选图、授权、通知、恢复后 prepare 与失败结果通过；v5 等待 B3 |
 
@@ -54,3 +54,5 @@
 - 自动应用不等于静默应用：版本记录、通知、取消、撤回、冷却和恶化暂停都是 P0。
 - 中间阶段只以自动化与 Android 模拟器放行；最终 APK、物理手机迁移和真实产品结论集中到
   MVP-B 总体验收，真实证据不足时生产门保持关闭。
+- B3-0 已冻结带水印的预生产抽样、按键审计、倍率边界和无结果选择合同；这些值只能用于工程
+  fixture，不代表真实用户参数，也不打开 activityImpact 生产学习或自动应用。

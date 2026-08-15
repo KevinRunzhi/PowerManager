@@ -336,6 +336,12 @@ MVP-B 最终真机门和相应真实产品证据通过。
 本轮手机安装延期时，B3-0 可以用完整、带水印、不可发布的预生产参数合同放行 B3 工程实现；
 两个 activityImpact 生产门保持关闭，产品状态记为 `inconclusive`。
 
+工程合同已冻结并通过：`ActivityImpactKey` 按键审计、userInitiated 与 sampledPrompt 来源隔离、
+SHA-256 结果盲抽样、每日上限/跳过与未响应冷却、directionMismatch veto、时长异质门、倍率范围/步长/
+取整/恢复上限均由纯领域代码覆盖。合同水印为 `PREPRODUCTION_ONLY_ACTIVITY_IMPACT_V1`，当前
+`activityImpactProductionLearningEnabled=false`、`activityImpactAutoApplyEnabled=false`；schema v5
+持久化与正式 learner 仍属于 B3-1。
+
 ## 13. B3-1：活动影响学习器与 schema v5
 
 ### 目标
