@@ -15,7 +15,8 @@
 ## 2. 阶段与代码基线
 
 阶段实现和独立验收记录已覆盖：B0-0、B0-1、B0-2、B0-3、B1-0、B1-1、B2-0、B2-1、B2-2、
-B3-0、B3-1、B3-2。当前代码基线为 B3-2，最近安全修订提交为 `67b829d`。
+B3-0、B3-1、B3-2。当前代码基线为 B3-2，最近安全修订提交为 `015632f`（前一轮活动闸门修订为
+`67b829d`）。
 
 追踪矩阵 `MVP-B_规则与实现追踪矩阵_v1.md` 已逐能力关联产品来源、算法/配置、代码、持久化、
 测试和设备证据。B3-2 新增的 P0 重点如下：
@@ -56,7 +57,11 @@ foreign key/integrity/index/trigger、current/yesterday 隔离、结算与当前
 
 - `adb devices -l`：当前仅连接 `emulator-5554`，未操作实体手机。
 - `flutter run -d emulator-5554 --debug --no-resident`：构建、安装、同步和启动成功。
-- 本次启动对应提交 `67b829d`，仅为模拟器 Debug 验证；没有执行交付 APK 构建或实体手机安装。
+- 本次启动对应提交 `015632f`，仅为模拟器 Debug 验证；没有执行交付 APK 构建或实体手机安装。
+- 模拟器本轮增量安装首次因设备存储返回 `INSTALL_FAILED_INSUFFICIENT_STORAGE`，Flutter 随后卸载
+  旧模拟器安装并完成干净安装、启动和同步；该操作只涉及 `emulator-5554`，不涉及实体手机。
+- 本轮 logcat 未发现应用 FATAL、FlutterError、Unhandled、NoSuchMethodError 或 SQLite 数据库错误；
+  `/data/user/0` 可用空间约 530 MB，存储告警作为模拟器环境限制记录。
 - 启动日志未发现 `FATAL EXCEPTION`、`FlutterError`、`Unhandled`、`NoSuchMethodError` 或 SQLite 数据库错误。
 - 仅有 Android/图形栈的正常 warning，以及一次与应用无关的 SQLite double-quoted literal warning；没有应用崩溃或 ANR。
 - 设置页 200% 字号、紧凑横屏、活动反馈和学习控制通过 widget 回归；活动影响暂停卡新增独立恢复回归。
