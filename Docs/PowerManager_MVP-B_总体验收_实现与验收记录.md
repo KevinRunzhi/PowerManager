@@ -8,6 +8,7 @@
 - baseline 产品状态：inconclusive
 - activityImpact 产品状态：inconclusive
 - 独立产品状态报告：`PowerManager_MVP-B_产品验证状态报告_v1.md`
+- P0 直接证据审计：`PowerManager_MVP-B_P0直接证据审计_v1.md`
 - 正式生产学习、baseline 自动应用、activityImpact 自动应用：均保持关闭
 
 本记录不把隔离 fixture、预生产水印或模拟器行为写成真实产品效果。按照用户当前要求，本次不生成
