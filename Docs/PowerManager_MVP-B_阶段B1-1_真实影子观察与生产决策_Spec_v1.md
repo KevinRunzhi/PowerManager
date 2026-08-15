@@ -2,12 +2,12 @@
 
 ## 0. 文档状态
 
-- 版本：1.2
+- 版本：1.3
 - 日期：2026-08-15
-- 状态：B1-0 已通过，开始工程决策包；最终安装后再执行真实产品实验
+- 状态：工程决策包已通过；产品轨保持 inconclusive，最终安装后执行真实实验
 - 类型：真实使用实验与生产参数决策门
 - 数据库版本：保持 schema v3
-- 下一阶段：工程决策包通过可进入 B2-0；生产门仍由真实实验决定
+- 下一阶段：B2-0；生产门仍由真实实验决定
 
 ### 0.1 两轨执行说明
 
@@ -106,6 +106,11 @@ B0-3 的 userInitiated feedback 继续自然积累，只用于：
 - 该配置绝不可被激活服务读取。
 
 新算法版本在冻结证据上生成 candidateValuesJson 和反事实报告，但模型仍不生效。
+
+schema v3 的已发布 CHECK 要求 `candidateValuesJson IS NULL`，因此工程轨的 candidateValuesJson
+只能作为纯函数返回值和离线报告，不写 `learning_runs`、备份或普通 UI。离线结构必须包含
+`PREPRODUCTION_ONLY_DO_NOT_ACTIVATE_OR_SHIP` 水印和 `activationAllowed = false`；schema v4
+重建 learning run 合同后，才允许持久化不带预生产水印、且仍受正式 gate 约束的候选。
 
 ## 5. 反事实审计
 
@@ -221,3 +226,14 @@ B0-3 的 userInitiated feedback 继续自然积累，只用于：
 工程阶段只有形成完整、可审计的工程决策包并证明生产门关闭才可进入 B2-0。真实产品轨只有
 形成自然数据决策记录才算结束；真实数据不足时正确状态是 inconclusive 并继续观察，不得把
 “没有发现问题”视为通过，也不得为了推进时间线自行填写生产阈值。
+
+## 12. 本轮工程裁决
+
+- 工程输入、反事实算法、极端边界、模式与通知 UI、schema v4 最终迁移合同均已冻结；
+- 工程预生产配置为 `preprod-baseline-lifecycle-v1-do-not-ship`，只存在于文档和测试输入；
+- 正常模拟器自然聚合不足，生产 referenceType 和生产参数均未选择；
+- `baselineProductionLearningEnabled` 与 `baselineAutoApplyEnabled` 继续为 false；
+- 工程轨按 7.5 分支退出并放行 B2-0，产品轨继续为 inconclusive。
+
+详细证据见《阶段 B1-1 工程决策与反事实审计记录》；模式交互见《阶段 B1-1 学习模式与变更
+通知 UI Spec》；schema v4 以《阶段 B2-0 Schema v4 最终迁移决策》为实现真源。

@@ -215,6 +215,10 @@ schema v4 升级前已经存在的 `pendingBaseEstimatedEnergy` 属于用户手�
 和 `configurationBlocked`。当前配置只有最低证据门时，最多得到 `readyForAudit`，不得得到
 `candidate`。
 
+schema v4 的生效后监测运行还允许 `improved / worsened`。它们必须和普通学习结果一样冻结
+证据、源版本、算法、配置与 hash；`worsened` 才能作为自动暂停事务的证据，不能用一个没有来源
+运行的 settings 布尔值代替。
+
 运行状态与算法结果分开：事务中断、数据库暂时错误等记为 `retryableFailure`，复用同一 run ID
 和幂等键重试；不支持的配置或确定性完整性错误记为 `terminalFailure`，只有证据、源模型、算法
 或配置变化后再运行。任何失败都不得创建候选或修改当前模型。
@@ -305,6 +309,11 @@ B1-1 发布明确标记为 shadow-only 的方向判定、候选步长和边界�
 输出 `方向不稳定 / 无需变化 / 存在候选`、候选个人模型及反事实结果。shadow-only 参数不得
 被生产激活服务读取。
 
+B1-1 工程轨保持 schema v3，因此这类候选只作为无 IO 纯函数返回和离线报告；已发布 v3
+`learning_runs.candidateValuesJson` 继续为 SQL NULL。离线 candidate 必须有预生产水印和
+`activationAllowed = false`，普通 App、备份与 Provider 不读取。schema v4 重建运行合同后才可
+持久化受正式 gate 控制的 candidate，且合法生产 candidate 不接受预生产水印字段。
+
 ### 6.3 禁止行为
 
 - 不写当前或 pending 基准线；
@@ -316,7 +325,9 @@ B1-1 发布明确标记为 shadow-only 的方向判定、候选步长和边界�
 
 ## 7. B2 基准线自动学习
 
-B2 只有在 B1 真实数据审计完成、规则配置补齐生产参数并启用对应构建门后才能运行。
+B2 正式生产只有在 B1 真实数据审计完成、规则配置补齐生产参数并启用对应构建门后才能运行。
+B2 工程轨可使用 B1-1 冻结的强水印预生产配置覆盖同一门禁和生命周期，但正式配置继续关闭，
+产品状态保持 inconclusive。
 
 ### 7.1 候选生成
 

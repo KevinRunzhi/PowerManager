@@ -2,7 +2,7 @@
 
 ## 0. 文档状态
 
-- 版本：1.2
+- 版本：1.3
 - 日期：2026-08-15
 - 状态：已实现并通过自动化与 Pixel_7 模拟器工程验收
 - 数据库版本：schema v2 升级到 schema v3
@@ -171,8 +171,8 @@ selectedEligible、excludedTotal、missingToMinimum、最早 / 最晚选中生�
 - readyForAudit；
 - configurationBlocked。
 
-本版本不得写 unstable、noChange 或 candidate，除非随后发布新的 shadow-only 算法版本并另有
-B1-1 决策记录。
+本版本不得写 unstable、noChange 或 candidate。B1-1 即使发布新的 shadow-only 算法，也只能在
+schema v3 外离线返回这些结果；持久化必须等待后续 schema 重建和独立决策记录。
 
 瞬时数据库或中断失败复用同一 run ID 和幂等键。确定性完整性失败记录 terminalFailure，只有
 证据、模型身份、算法或配置改变后才允许新运行，禁止启动忙循环。

@@ -130,6 +130,11 @@ B1-0 的第一次可执行合同进一步固定为：`parameterFamily = baseline
 组合 CHECK、64 位 lowercase hash、JSON 类型、completed / terminal 不可变保护和 v1 直升 v3 的
 整链原子回滚，以《阶段 B1-0 Spec》v1.1 为准。activityImpact 在 B3 抽样合同发布前不创建运行。
 
+B1-1 的 shadow-only candidate 因此只存在于无 IO 纯函数与离线报告，不能写回已发布 schema v3。
+schema v4 必须原子重建 `learning_runs`，逐字节保留 v3 行，再开放源 personalization version、
+`unstable / noChange / candidate / improved / worsened` 和严格 candidate JSON 形状；预生产水印结构
+不是合法持久候选。
+
 ### 2.4 数据库 schema v4：基准线模型版本
 
 B1 审计通过并确认 B2 算法后新增：
@@ -154,6 +159,10 @@ B1 审计通过并确认 B2 算法后新增：
 | createdAt / activatedAt / endedAt | 生命周期时间 |
 | transitionReason | 状态转换原因 |
 
+最终字段、状态形状、迁移顺序和可实现约束以《阶段 B2-0 Schema v4 最终迁移决策》为准。数据库
+partial unique index保证最多一个 active；事务交接和 onCreate / migration / restore / prepare 完整性
+检查保证至少一个。文档不把跨行“恰好一个”错误归因给普通 SQLite CHECK。
+
 `baseEnergy` 和 `baselineAnchorEnergy` 必须保留 `60～140` 数据库 CHECK；生产配置的累计自动
 变化边界只能进一步收紧，不能放宽硬约束。
 
@@ -176,6 +185,16 @@ activityImpactLearningCooldownUntil = null
 数据库必须用部分唯一索引或等价事务约束保证全局最多一个
 `candidate / awaitingReview / deferred / scheduled` 版本，防止基准线和活动影响在同一生活日
 同时生效。
+
+schema v4 同时新增：
+
+- `learning_consents`：按参数族和 disclosure version 保存首次授权；
+- `learning_notices`：保存安排、生效、取消、撤回和暂停的 App 内通知与去重状态；
+- daily_summaries 的 `legacyInline / personalizationVersion` 来源和 nullable 版本引用。
+
+新 summary 必须引用当时 active version；旧 summary 保持 legacyInline 和既有 inline base/rule，
+不把升级时的 initial model 伪装成历史模型。自动安排 / 暂停与 App 内 notice 原子提交，系统通知
+只做增强。
 
 #### 现有 pending base 的桥接
 

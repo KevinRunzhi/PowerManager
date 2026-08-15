@@ -2,9 +2,9 @@
 
 ## 0. 文档状态
 
-- 版本：1.1
+- 版本：1.2
 - 日期：2026-08-15
-- 状态：阻塞于 B1-1 工程决策包；生产参数仍由最终真实实验决定
+- 状态：B1-1 工程决策包已通过，可实施；生产参数仍由最终真实实验决定
 - 数据库版本：schema v3 升级到 schema v4
 - 本阶段生产激活：保持关闭
 - 下一阶段：B2-1 基准线自动学习与安全激活
@@ -16,23 +16,25 @@
 
 ## 2. 开工输入
 
-B1-1 必须已经发布：
+B1-1 已发布以下工程输入：
 
-- 基准线生产算法和完整参数；
-- referenceType 来源与优先级；
+- 带强水印、不可发布的基准线预生产算法和完整工程参数；
+- 仅用于覆盖选择器的 referenceType 工程来源与优先级；
 - 通知时间、证据年龄、候选寿命和冷却；
 - 反事实与恶化门；
 - 模式及变更通知 UI Spec；
 - 最终 schema v4 迁移决策；
-- baselineProductionLearningEnabled 是否可以进入工程预生产验证的书面结论。
+- baselineProductionLearningEnabled 只能由显式预生产测试配置进入工程验证、正式配置保持 false
+  的书面结论。
 
-缺少任一项不得在代码中猜值。
+输入真源为《阶段 B1-1 工程决策与反事实审计记录》《阶段 B1-1 学习模式与变更通知 UI Spec》
+和《阶段 B2-0 Schema v4 最终迁移决策》。缺少任一项不得在代码中猜值。
 
 ## 3. Schema v4
 
 ### 3.1 personalization_versions
 
-字段、来源、状态和时间以技术方案 2.4 节为准。数据库至少保证：
+字段、来源、状态和时间以技术方案 2.4 节为准。数据库约束与 Application 事务共同保证：
 
 - 任意时刻恰好一个 active；
 - 全局最多一个 candidate、awaitingReview、deferred 或 scheduled；
@@ -43,7 +45,19 @@ B1-1 必须已经发布：
 - scheduled 必须有 effectiveLifeDay、scheduleSource 和通知；
 - active 必须有 activatedAt；
 - terminal 状态不能再次进入 scheduled；
-- automatic schedule 的 noticeCreatedAt 非空。
+- automatic schedule 存在同事务创建的 `changeScheduled` App 内 notice。
+
+精确字段、状态形状、partial unique index、Application 跨行校验和 ID / fingerprint / epoch 编码以
+《Schema v4 最终迁移决策》为准。SQLite 直接保证“最多一个 active”，创建、迁移、恢复和 prepare
+后的完整性检查保证“恰好一个 active”；不得声称普通 CHECK 能独立表达后者。
+
+### 3.1.1 learning_runs v4 重建
+
+v3 将算法、配置、result 和 candidate 锁为 evidence-only，不能支持 B2。v4 必须原子重建
+`learning_runs`，逐字节复制旧行，并扩展 `unstable / noChange / candidate / improved / worsened`、
+源 personalization version FK 和 candidate 形状。B1 旧行仍保持 source / candidate 为 NULL。
+
+预生产水印 candidate 永远不是合法 v4 持久候选。
 
 ### 3.2 app_settings
 
@@ -52,6 +66,10 @@ B1-1 必须已经发布：
 
 迁移成功后重建 settings，删除 baseEstimatedEnergy、pendingBaseEstimatedEnergy 和
 baseEnergyEffectiveLifeDay。投影、结算、设置和备份统一读取 active personalization version。
+
+同时新增 `learning_consents` 和 `learning_notices`。模式首次开启依赖当前 disclosure receipt；App
+内通知是安排与暂停事务的一部分，系统通知只做增强。daily_summaries 重建后，新行引用 active
+version，旧行明确标记 legacyInline，不伪造历史版本。
 
 ### 3.3 初始模型与指纹
 
@@ -117,7 +135,9 @@ pendingRuleVersion 与 pendingRuleEffectiveLifeDay 必须在 v3 预检时都为�
 - 分参数族模式、暂停和冷却；
 - learning runs；
 - effective fingerprint、epoch 和 anchor；
-- 持久通知状态。
+- 持久通知状态；
+- 学习授权说明版本；
+- 日总结的 legacyInline / personalizationVersion 来源。
 
 导入 v1 至 v3 时通过与 onUpgrade 相同的 legacy base 桥接。旧备份含 pending rule 时，在替换当前
 数据库前拒绝。恢复后验证唯一 active、全局唯一待处理、父链、source run 和 schedule。

@@ -111,6 +111,46 @@ shadowWindowEligiblePairs = 7
 必须先发布新的、明确标记为 shadow-only 的候选算法配置，才能生成候选模型并做反事实回放；
 shadow-only 配置仍不允许激活。生产配置必须经过该回放审计后另行发布。
 
+### 2.1 B1-1 工程预生产回放配置
+
+以下配置只用于测试 / 模拟器工程轨，不是生产参数，不得进入正式默认实例：
+
+```text
+algorithmVersion = baseline-shadow-replay-v1
+configVersion = preprod-baseline-lifecycle-v1-do-not-ship
+watermark = PREPRODUCTION_ONLY_DO_NOT_ACTIVATE_OR_SHIP
+activationAllowed = false
+
+referencePriority = currentMoment, previousLifeDayEnd
+reviewMinimumSameDirectionPerWindow = 5
+reviewMinimumSameDirectionTotal = 10
+reviewMaximumOppositePerWindow = 1
+automaticMinimumSameDirectionPerWindow = 6
+automaticMinimumSameDirectionTotal = 12
+automaticMaximumOppositePerWindow = 0
+
+singleBaselineStep = 2
+baselineAnchorCumulativeLimit = 8
+minimumCounterfactualAlignedGain = 1
+minimumCounterfactualOrdinalErrorReduction = 1
+
+minimumAutomaticChangeNoticeDuration = 24 hours
+maximumProductionEvidenceAge = 45 days
+maximumCandidateLifetime = 7 days
+rejectedCooldown = 14 days
+canceledCooldown = 14 days
+revertedCooldown = 28 days
+activatedCooldown = 21 days
+manualChangeCooldown = 21 days
+```
+
+两个窗口必须支持同一方向；automatic 还要求每窗零反向。完整步长越过 60～140 或相对 anchor
+的 ±8 时返回 noChange，不截断成更小步长。反事实必须让 aligned 和 absolute ordinal error 至少各
+改善 1，且 aligned 不下降、反向数不增加、error 不增加。
+
+这组数值只用于 B2 工程生命周期。正式 `baselineProductionLearningEnabled` 与
+`baselineAutoApplyEnabled` 仍为 false；真实产品轨可以确认、替换或拒绝全部数值。
+
 ## 3. 反馈负担限制
 
 ```text

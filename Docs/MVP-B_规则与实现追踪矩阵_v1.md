@@ -2,9 +2,9 @@
 
 ## 0. 状态
 
-- 版本：1.6
+- 版本：1.7
 - 日期：2026-08-15
-- 状态：B1-0 已实现并通过自动化与 Pixel_7 模拟器验收，B1-1 工程决策轨可执行
+- 状态：B1-1 工程决策轨已通过，产品轨 inconclusive；B2-0 可实施
 
 | 能力 | 产品来源 | 参数 / 算法来源 | 技术落点 | 主要验证 | 当前状态 |
 |---|---|---|---|---|---|
@@ -19,16 +19,17 @@
 | 可学习资格 | PRD 3.2 | 配置 2、算法 3 | LearningEligibilityService | 全 reason code、三处复用 | B0-3 已实现；稳定 reason 顺序并由 Data Health 直接聚合，B1-0 复用同一服务 |
 | 结算后才学习 | PRD 2、3.2 | 算法 3.2、8.2、9.1 | settlement + AutomaticLearningCoordinator | 当前日不入模、结算后单次触发 | B1-0 已实现 prepare 后自动请求、未结算排除、重复 / 并发零新增和 safeRestore 次序 |
 | model regime 隔离 | PRD 2、3.2 | 算法 3.3 | modelRegimeKey + fingerprint + epoch | 迁移不切组、真实激活 / 撤回必切组 | B0-3 已实现 canonical key、固定哨兵与完整性校验；真实模型生命周期属于 B2 |
-| reference type 隔离 | PRD 4.1 | 配置 2、4.1、算法 3.3、6.1 | modelRegimeKey + learner | current / yesterday 不互补、生产来源有优先级 | B1-0 已在证据包、hash、窗口、运行和 UI 中隔离；生产来源优先级等待 B1-1 / B2 |
+| reference type 隔离 | PRD 4.1 | 配置 2、4.1、算法 3.3、6.1 | modelRegimeKey + learner | current / yesterday 不互补、生产来源有优先级 | B1-0 已全链隔离；B1-1 只冻结 current → yesterday 工程选择器，生产来源仍待真机自然证据 |
 | 活动绑定反馈 | PRD 3.1、4.2 | 算法 8.1、8.2 | activity_feedback、ActivityFeedbackUseCases | 编辑删除失效、快照完整、无参数更新 | B0-3 已实现主动 UI、完整快照、重复更新、stale 拒绝及编辑 / 删除 / 重放失效 |
 | schema v1 → v2 | PRD 5.1 | 无业务参数 | Drift onUpgrade、表重建 | 数据无损、失败回滚、约束保留 | B0-2 已实现；实际 v1 DDL fixture、失败注入与模拟器覆盖升级通过 |
 | 备份 v1 / v2 兼容 | PRD 5.1 | 无业务参数 | JsonBackupCodec、BackupRestore | v1 导入、v2 往返、损坏拒绝 | B0-2 已实现；B0-3 增加 ordinal / canonical regime key 严格校验，模拟器新合同回读通过 |
 | B1 自动影子学习 | PRD 3.2 | 配置 2、算法 5、6 | schema v3、BaselineShadowLearner、AutomaticLearningCoordinator | 证据配置不产候选、自动触发、确定性、零激活 | B1-0 已实现；13 → 14、重启幂等、失败恢复和模拟器 UI 通过 |
 | 学习运行审计 | PRD 4.3、5.1 | 算法 5.2、5.4 | learning_runs v3 | evidence hash、输入重现、失败结果 | B1-0 已实现；canonical golden、精确备份白名单、状态 / 结果分离和 final immutability 通过 |
-| 不可变个人模型 | PRD 2、3.3 | 算法 5.1、5.3 | personalization_versions v4 | 唯一 active、历史冻结、单参数族 | 等待 B2-0；B1 schema v3 明确禁止该表和激活引用 |
+| B1 shadow-only 反事实 | PRD 3.2 | 配置 2.1、算法 6.2 | BaselineShadowReplayEngine（无 IO） | 上下行、双门、步长、anchor、hard range、水印、损坏输入 | B1-1 工程轨已实现；候选只离线返回，schema v3 / Provider / backup 零写入，产品轨 inconclusive |
+| 不可变个人模型 | PRD 2、3.3 | 算法 5.1、5.3 | personalization_versions v4 | 唯一 active、历史冻结、单参数族 | B1-1 已冻结最终迁移合同；等待 B2-0 实现 |
 | legacy pending base 桥接 | PRD 5.1 | 算法 5.1 | schema v4 bridge transaction | 未来 / 到期 / 残缺 / 重启不丢不重 | 等待 B2-0 |
 | 分参数族学习模式 | PRD 4.4 | 配置 0、算法 7.2、9.1 | app_settings、AutomaticLearningCoordinator | 两族独立模式、新能力不继承授权 | 等待 B2-0 |
-| 基准线自动学习 | PRD 3.3 | B1 后生产配置、算法 7 | BaselineLearner + model version v4 | 冷却、边界、反事实、相同证据防重 | B1-1 工程决策包后进入 B2；正式生产门仍关闭 |
+| 基准线自动学习 | PRD 3.3 | B1 后生产配置、算法 7 | BaselineLearner + model version v4 | 冷却、边界、反事实、相同证据防重 | B1-1 预生产参数无空值，可进入 B2 工程实现；正式生产门仍关闭 |
 | 未来生活日幂等激活 | PRD 2、3.3 | 算法 5.3、5.4 | ModelActivationService + prepare | 通知窗口、重启、04:00、恢复只激活一次 | 等待 B2；B1 依赖图中该路径不可达 |
 | 通知、取消与撤回 | PRD 3.3、4.3、4.4 | 算法 5.3、7.2 | model history UI、ActivationService | 激活前取消、激活后未来恢复 | 等待 B2 |
 | 恶化暂停 | PRD 3.3、5.3 | B1 后生产配置、算法 7.3、9.3 | learning suspension + evaluation | 不震荡、原因可见、手动恢复 | 阻塞于 B2 |
@@ -44,8 +45,10 @@
 - 自动学习现在贯穿 PRD、配置、算法、Schema、服务、测试和阶段门禁，不再停留在候选建议。
 - 基准线和活动影响均属于 MVP-B 核心；真实证据不足允许“不变化”，但学习器和安全闭环不能
   因此省略。
-- B1-0 已在 schema v3 上实现确定性只读 learning run、规范证据 hash、自动协调、失败恢复、v3
-  备份和只读进度；不存在个人模型、候选或参数激活写路径。
+- B1-0 已在 schema v3 上实现确定性只读 learning run；B1-1 只增加无 IO、强水印的离线反事实，
+  仍不存在个人模型、持久候选或参数激活写路径。
+- B1-1 已补齐 schema v4 重建 learning run、active 可实现约束、legacy summary、授权和持久通知
+  合同；B2-0 不再需要猜字段或阈值。
 - 生产阈值没有隐藏默认值，必须通过真实影子数据门禁后发布新的配置版本。
 - MVP-A 历史规则和 schema v1 数据不会被自动解释成新证据。
 - 自动应用不等于静默应用：版本记录、通知、取消、撤回、冷却和恶化暂停都是 P0。
