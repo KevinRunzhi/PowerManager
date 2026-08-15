@@ -141,6 +141,8 @@ extension _SchemaMigrations on AppDatabase {
     await customStatement('DROP TABLE activity_feedback_v4_backup');
     await migrationFailureHook?.call('v5-after-backup-dropped');
 
+    await _ensureLearningRunsV5Constraints();
+
     await _createV5ActivityIndexes();
     await _createProtectionTriggers();
     await migrationFailureHook?.call('v5-before-verify');
@@ -148,6 +150,76 @@ extension _SchemaMigrations on AppDatabase {
       expectedActivities: activityCount,
       expectedFeedback: feedbackCount,
     );
+  }
+
+  Future<void> _ensureLearningRunsV5Constraints() async {
+    final table = await customSelect(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'learning_runs'",
+    ).getSingleOrNull();
+    final sql = table?.readNullable<String>('sql') ?? '';
+    if (sql.contains("json_type(current_values_json, '\$.factors')")) {
+      return;
+    }
+    await _dropProtectionTriggers();
+    for (final name in const [
+      'learning_runs_idempotency',
+      'learning_runs_source_time',
+      'learning_runs_status_time',
+    ]) {
+      await customStatement('DROP INDEX IF EXISTS $name');
+    }
+    await customStatement('PRAGMA foreign_keys = OFF');
+    await customStatement('PRAGMA legacy_alter_table = ON');
+    await customStatement(
+      'ALTER TABLE learning_runs RENAME TO learning_runs_v5_old',
+    );
+    await customStatement('''
+      CREATE TABLE learning_runs (
+        id TEXT NOT NULL,
+        parameter_family TEXT NOT NULL,
+        source_model_identity TEXT NOT NULL,
+        source_personalization_version_id TEXT NULL,
+        status TEXT NOT NULL,
+        result TEXT NULL,
+        evidence_snapshot_json TEXT NOT NULL,
+        evidence_hash TEXT NOT NULL,
+        evidence_hash_version TEXT NOT NULL,
+        algorithm_version TEXT NOT NULL,
+        config_version TEXT NOT NULL,
+        current_values_json TEXT NOT NULL,
+        candidate_values_json TEXT NULL,
+        reason_codes_json TEXT NOT NULL,
+        triggered_at INTEGER NOT NULL,
+        completed_at INTEGER NULL,
+        PRIMARY KEY (id),
+        CHECK (length(trim(id)) > 0),
+        CHECK (parameter_family IN ('baseline', 'activityImpact')),
+        CHECK (length(trim(source_model_identity)) > 0),
+        CHECK (status IN ('pending', 'running', 'completed', 'retryableFailure', 'terminalFailure')),
+        CHECK (result IS NULL OR result IN ('insufficientEvidence', 'readyForAudit', 'unstable', 'noChange', 'candidate', 'configurationBlocked', 'improved', 'worsened')),
+        CHECK (json_valid(evidence_snapshot_json) AND json_type(evidence_snapshot_json) = 'object'),
+        CHECK (length(evidence_hash) = 64 AND evidence_hash = lower(evidence_hash) AND evidence_hash NOT GLOB '*[^0-9a-f]*'),
+        CHECK (length(trim(evidence_hash_version)) > 0),
+        CHECK (length(trim(algorithm_version)) > 0),
+        CHECK (length(trim(config_version)) > 0),
+        CHECK (json_valid(current_values_json) AND json_type(current_values_json) = 'object'),
+        CHECK ((parameter_family = 'baseline' AND json_type(current_values_json, '\$.baseEnergy') = 'integer' AND json_extract(current_values_json, '\$.baseEnergy') BETWEEN 60 AND 140) OR (parameter_family = 'activityImpact' AND json_type(current_values_json, '\$.factors') = 'object')),
+        CHECK ((parameter_family = 'baseline' AND current_values_json = json_object('baseEnergy', json_extract(current_values_json, '\$.baseEnergy'))) OR (parameter_family = 'activityImpact' AND current_values_json = json_object('factors', json_extract(current_values_json, '\$.factors')))),
+        CHECK ((result = 'candidate' AND status = 'completed' AND candidate_values_json IS NOT NULL AND json_valid(candidate_values_json) AND ((parameter_family = 'baseline' AND json_type(candidate_values_json, '\$.baseEnergy') = 'integer' AND json_extract(candidate_values_json, '\$.baseEnergy') BETWEEN 60 AND 140 AND candidate_values_json = json_object('baseEnergy', json_extract(candidate_values_json, '\$.baseEnergy'))) OR (parameter_family = 'activityImpact' AND json_type(candidate_values_json, '\$.factors') = 'object' AND candidate_values_json = json_object('factors', json_extract(candidate_values_json, '\$.factors'))))) OR ((result IS NULL OR result != 'candidate') AND candidate_values_json IS NULL)),
+        CHECK (json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array'),
+        CHECK (((status IN ('pending', 'running')) AND result IS NULL AND completed_at IS NULL) OR (status = 'completed' AND result IS NOT NULL AND completed_at IS NOT NULL) OR (status IN ('retryableFailure', 'terminalFailure') AND result IS NULL AND completed_at IS NOT NULL)),
+        CHECK ((algorithm_version = 'evidence-shadow-v1' AND source_personalization_version_id IS NULL AND candidate_values_json IS NULL) OR (algorithm_version != 'evidence-shadow-v1' AND source_personalization_version_id IS NOT NULL)),
+        FOREIGN KEY (source_personalization_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT
+      )
+    ''');
+    await customStatement('''
+      INSERT INTO learning_runs SELECT * FROM learning_runs_v5_old
+    ''');
+    await customStatement('DROP TABLE learning_runs_v5_old');
+    await customStatement('PRAGMA legacy_alter_table = OFF');
+    await customStatement('PRAGMA foreign_keys = ON');
+    await _createV3IndexesAfterMigration();
+    await _createLearningRunProtectionTrigger();
   }
 
   Future<void> _migrateV1ToV2(Migrator migrator) async {

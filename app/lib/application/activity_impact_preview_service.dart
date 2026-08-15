@@ -5,6 +5,7 @@ import 'package:power_manager/application/energy_rule_config_loader.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
+import 'package:power_manager/domain/learning/activity_impact_contract.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 
 final class ActivityImpactPreview {
@@ -43,11 +44,13 @@ final class ActivityImpactPreviewService implements ActivityImpactPreviewer {
   const ActivityImpactPreviewService({
     required this.activities,
     required this.ruleLoader,
+    this.activityFactors,
     this.projector = const CurrentDayProjector(),
   });
 
   final ActivityRecordsRepository activities;
   final EnergyRuleConfigLoader ruleLoader;
+  final PersonalizationActivityFactorsRepository? activityFactors;
   final CurrentDayProjector projector;
 
   @override
@@ -77,7 +80,23 @@ final class ActivityImpactPreviewService implements ActivityImpactPreviewer {
     for (final subcategory in ActivitySubcategory.values) {
       final durations = <DurationSlot, ActivityImpactPreview>{};
       for (final duration in DurationSlot.values) {
-        final theoreticalDelta = config.theoreticalDelta(subcategory, duration);
+        final defaultTheoreticalDelta = config.theoreticalDelta(
+          subcategory,
+          duration,
+        );
+        final sign = activityImpactContractSign(defaultTheoreticalDelta);
+        final factorRow =
+            activityFactors == null ||
+                current.personalizationVersionId ==
+                    fixedMvpAPersonalizationVersion
+            ? null
+            : await activityFactors!.find(
+                personalizationVersionId: current.personalizationVersionId,
+                subcategory: subcategory,
+                impactSign: sign,
+              );
+        final factor = factorRow?.factor ?? 1.0;
+        final theoreticalDelta = (defaultTheoreticalDelta * factor).round();
         final candidate = EstimatedActivityRecord(
           id: candidateId,
           completedAt: completedAtUtc,

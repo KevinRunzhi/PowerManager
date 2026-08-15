@@ -237,6 +237,10 @@ const revertPersonalizationVersionV1 = 'revert-personalization-v1';
 const baselineLearningDisclosureV1 = 'baseline-learning-disclosure-v1';
 const activityImpactLearningDisclosureV1 =
     'activity-impact-learning-disclosure-v1';
+const activityImpactLearningAlgorithmV1 = 'activity-impact-learning-v1';
+const activityImpactLearningConfigV1 = 'activity-impact-learning-policy-v1';
+const activityImpactMonitoringAlgorithmV1 = 'activity-impact-monitoring-v1';
+const activityImpactMonitoringConfigV1 = 'activity-impact-monitoring-policy-v1';
 
 enum ObservationReferenceType {
   currentMoment('currentMoment'),

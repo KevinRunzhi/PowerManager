@@ -5,6 +5,7 @@ import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/learning/canonical_json.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
+import 'package:power_manager/domain/learning/activity_impact_contract.dart';
 
 final class PersonalizationIdentityBuilder {
   const PersonalizationIdentityBuilder({
@@ -41,9 +42,15 @@ final class PersonalizationIdentityBuilder {
   String effectiveFingerprint({
     required int baseEnergy,
     required String ruleVersion,
+    Map<ActivityImpactKey, double> activityFactors = const {},
   }) {
     final identity = canonicalEncoder.encode({
-      'activityFactors': const <Object?>[],
+      'activityFactors': {
+        for (final entry
+            in (activityFactors.entries.toList()
+              ..sort((a, b) => a.key.compareTo(b.key))))
+          entry.key.value: {'factorBps': (entry.value * 100).round()},
+      },
       'baseEnergy': baseEnergy,
       'fingerprintVersion': effectiveModelFingerprintV1,
       'ruleVersion': ruleVersion,
@@ -186,6 +193,7 @@ PersonalizationVersion learningPersonalizationVersion({
   required int baseEnergy,
   required DateTime createdAt,
   required String ruleVersion,
+  Map<ActivityImpactKey, double> activityFactors = const {},
   PersonalizationIdentityBuilder identities =
       const PersonalizationIdentityBuilder(),
 }) {
@@ -213,6 +221,7 @@ PersonalizationVersion learningPersonalizationVersion({
     effectiveModelFingerprint: identities.effectiveFingerprint(
       baseEnergy: baseEnergy,
       ruleVersion: ruleVersion,
+      activityFactors: activityFactors,
     ),
     modelRegimeEpoch: identities.regimeEpoch(versionId: id),
     creationSource: PersonalizationCreationSource.learningRun,
@@ -238,6 +247,7 @@ PersonalizationVersion scheduledRevertPersonalizationVersion({
   required LifeDay effectiveLifeDay,
   required DateTime createdAt,
   required String ruleVersion,
+  Map<ActivityImpactKey, double> activityFactors = const {},
   PersonalizationIdentityBuilder identities =
       const PersonalizationIdentityBuilder(),
 }) {
@@ -268,6 +278,7 @@ PersonalizationVersion scheduledRevertPersonalizationVersion({
     effectiveModelFingerprint: identities.effectiveFingerprint(
       baseEnergy: target.baseEnergy,
       ruleVersion: ruleVersion,
+      activityFactors: activityFactors,
     ),
     modelRegimeEpoch: identities.regimeEpoch(versionId: id),
     creationSource: PersonalizationCreationSource.revert,

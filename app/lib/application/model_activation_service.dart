@@ -9,6 +9,7 @@ import 'package:power_manager/domain/learning/canonical_json.dart';
 import 'package:power_manager/domain/learning/personalization_identity.dart';
 import 'package:power_manager/domain/learning/personalization_lifecycle.dart';
 import 'package:power_manager/domain/learning/shadow_learning.dart';
+import 'package:power_manager/domain/learning/activity_impact_contract.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 
@@ -22,6 +23,8 @@ final class LearningProductionGate {
     this.isPreproductionValidationOverride = false,
     this.supportedBaselineAlgorithms = const {},
     this.supportedBaselineConfigs = const {},
+    this.supportedActivityImpactAlgorithms = const {},
+    this.supportedActivityImpactConfigs = const {},
   });
 
   const LearningProductionGate.closed()
@@ -32,7 +35,9 @@ final class LearningProductionGate {
       activityImpactAutoApplyEnabled = false,
       isPreproductionValidationOverride = false,
       supportedBaselineAlgorithms = const {},
-      supportedBaselineConfigs = const {};
+      supportedBaselineConfigs = const {},
+      supportedActivityImpactAlgorithms = const {},
+      supportedActivityImpactConfigs = const {};
 
   final bool baselineProductionLearningEnabled;
   final bool activityImpactProductionLearningEnabled;
@@ -45,6 +50,8 @@ final class LearningProductionGate {
   final bool isPreproductionValidationOverride;
   final Set<String> supportedBaselineAlgorithms;
   final Set<String> supportedBaselineConfigs;
+  final Set<String> supportedActivityImpactAlgorithms;
+  final Set<String> supportedActivityImpactConfigs;
 
   bool allows(LearningParameterFamily family) => switch (family) {
     LearningParameterFamily.baseline => baselineProductionLearningEnabled,
@@ -98,6 +105,7 @@ final class ModelActivationService {
     required this.learningRuns,
     required this.consents,
     required this.notices,
+    this.activityFactors,
     this.productionGate = const LearningProductionGate.closed(),
     this.lifecycle = const PersonalizationLifecycle(),
     this.integrity = const PersonalizationIntegrityValidator(),
@@ -110,6 +118,7 @@ final class ModelActivationService {
   final LearningRunsRepository learningRuns;
   final LearningConsentsRepository consents;
   final LearningNoticesRepository notices;
+  final PersonalizationActivityFactorsRepository? activityFactors;
   final LearningProductionGate productionGate;
   final PersonalizationLifecycle lifecycle;
   final PersonalizationIntegrityValidator integrity;
@@ -242,9 +251,6 @@ final class ModelActivationService {
       if (persistedRun == null || !_sameLearningRun(persistedRun, run)) {
         throw StateError('sourceLearningRunNotPersisted');
       }
-      if (run.parameterFamily != LearningParameterFamily.baseline) {
-        throw StateError('activityImpactModelNotImplemented');
-      }
       final now = atLocal.toUtc();
       final appSettings = await settings.get();
       final mode = _modeFor(appSettings, run.parameterFamily);
@@ -261,6 +267,80 @@ final class ModelActivationService {
         throw StateError('learningDisclosureNotAccepted');
       }
       final active = await versions.getActive();
+      if (run.parameterFamily == LearningParameterFamily.activityImpact) {
+        final factors = await _validateActivityCandidateRun(
+          run,
+          active: active,
+          activeRuleVersion: ruleVersion,
+          at: now,
+        );
+        final pending = await versions.findPending();
+        if (pending != null) throw StateError('pendingPersonalizationExists');
+        var candidate = learningPersonalizationVersion(
+          parent: active,
+          sourceRun: run,
+          baseEnergy: active.baseEnergy,
+          createdAt: now,
+          ruleVersion: ruleVersion,
+          activityFactors: factors,
+          identities: identities,
+        );
+        final LearningNoticeType noticeType;
+        final String noticeReason;
+        switch (mode) {
+          case LearningMode.off:
+            throw StateError('learningModeOff');
+          case LearningMode.review:
+            candidate = lifecycle.transition(
+              version: candidate,
+              to: PersonalizationVersionStatus.awaitingReview,
+              at: now,
+              reason: 'reviewCandidateAvailable',
+            );
+            noticeType = LearningNoticeType.candidateAvailable;
+            noticeReason = 'reviewCandidateAvailable';
+          case LearningMode.automatic:
+            if (!productionGate.allowsAutoApply(run.parameterFamily)) {
+              throw StateError('automaticApplyDisabled');
+            }
+            candidate = lifecycle.transition(
+              version: candidate,
+              to: PersonalizationVersionStatus.scheduled,
+              at: now,
+              reason: 'automaticCandidateScheduled',
+              effectiveLifeDay: earliestAutomaticEffectiveLifeDay(
+                currentLifeDay: currentLifeDay,
+                atLocal: atLocal,
+              ),
+              scheduleSource: PersonalizationScheduleSource.automatic,
+            );
+            noticeType = LearningNoticeType.changeScheduled;
+            noticeReason = 'automaticCandidateScheduled';
+        }
+        await versions.insert(candidate);
+        await _persistActivityFactors(
+          version: candidate,
+          factors: factors,
+          sourceLearningRunId: run.id,
+          // A review candidate has no effective day yet.  Keep its staged
+          // factor rows anchored to the current regime; acceptance/automatic
+          // scheduling rewrites only the changed keys to the future regime.
+          regimeForChangedKeys: currentLifeDay,
+        );
+        await _insertNotice(
+          parameterFamily: run.parameterFamily,
+          type: noticeType,
+          versionId: candidate.id,
+          learningRunId: run.id,
+          reasonCode: noticeReason,
+          at: now,
+        );
+        await _validateAll();
+        return PersonalizationCandidateResult(
+          version: candidate,
+          created: true,
+        );
+      }
       final candidateBase = _validateCandidateRun(
         run,
         active: active,
@@ -378,6 +458,39 @@ final class ModelActivationService {
       }
       final run = await learningRuns.find(candidate.sourceLearningRunId!);
       if (run == null) throw StateError('sourceLearningRunMissing');
+      if (family == LearningParameterFamily.activityImpact) {
+        final factors = await _validateActivityCandidateRun(
+          run,
+          active: await versions.getActive(),
+          activeRuleVersion: appSettings.activeRuleVersion,
+          at: at.toUtc(),
+        );
+        final scheduled = lifecycle.transition(
+          version: candidate,
+          to: PersonalizationVersionStatus.scheduled,
+          at: at,
+          reason: 'reviewCandidateAccepted',
+          effectiveLifeDay: effectiveLifeDay,
+          scheduleSource: PersonalizationScheduleSource.reviewAccepted,
+        );
+        await _updateConditionally(scheduled, candidate.status);
+        await _persistActivityFactors(
+          version: scheduled,
+          factors: factors,
+          sourceLearningRunId: run.id,
+          regimeForChangedKeys: effectiveLifeDay,
+        );
+        await _insertNotice(
+          parameterFamily: family,
+          type: LearningNoticeType.changeScheduled,
+          versionId: candidate.id,
+          learningRunId: candidate.sourceLearningRunId,
+          reasonCode: 'reviewCandidateAccepted',
+          at: at,
+        );
+        await _validateAll();
+        return scheduled;
+      }
       final candidateBase = _validateCandidateRun(
         run,
         active: await versions.getActive(),
@@ -554,16 +667,44 @@ final class ModelActivationService {
         throw StateError('revertTargetNotAncestor');
       }
       final appSettings = await settings.get();
+      final targetFactors =
+          target.changedParameterFamily ==
+              PersonalizationChangedParameterFamily.activityImpact
+          ? await _requireActivityFactors().listForVersion(target.id)
+          : const <PersonalizationActivityFactor>[];
       final scheduled = scheduledRevertPersonalizationVersion(
         parent: active,
         target: target,
         effectiveLifeDay: effectiveLifeDay,
         createdAt: at,
         ruleVersion: appSettings.activeRuleVersion,
+        activityFactors: {
+          for (final factor in targetFactors)
+            ActivityImpactKey(
+              subcategory: factor.subcategory,
+              impactSign: factor.impactSign,
+            ): factor.factor,
+        },
         identities: identities,
       );
       lifecycle.validateShape(scheduled);
       await versions.insert(scheduled);
+      if (scheduled.changedParameterFamily ==
+          PersonalizationChangedParameterFamily.activityImpact) {
+        await _persistActivityFactors(
+          version: scheduled,
+          factors: {
+            for (final factor in targetFactors)
+              ActivityImpactKey(
+                subcategory: factor.subcategory,
+                impactSign: factor.impactSign,
+              ): factor.factor,
+          },
+          sourceLearningRunId: null,
+          regimeForChangedKeys: effectiveLifeDay,
+          forceNewRegime: true,
+        );
+      }
       await _insertNotice(
         parameterFamily: scheduled.changedParameterFamily.parameterFamily!,
         type: LearningNoticeType.changeScheduled,
@@ -924,6 +1065,23 @@ final class ModelActivationService {
       return 'sourceLearningRunInvalid';
     }
     try {
+      if (family == LearningParameterFamily.activityImpact) {
+        final factors = await _validateActivityCandidateRun(
+          run,
+          active: active,
+          activeRuleVersion: appSettings.activeRuleVersion,
+          at: at.toUtc(),
+        );
+        final expectedFingerprint = identities.effectiveFingerprint(
+          baseEnergy: active.baseEnergy,
+          ruleVersion: appSettings.activeRuleVersion,
+          activityFactors: factors,
+        );
+        if (expectedFingerprint != scheduled.effectiveModelFingerprint) {
+          return 'candidateValuesChanged';
+        }
+        return null;
+      }
       final candidateBase = _validateCandidateRun(
         run,
         active: active,
@@ -1351,6 +1509,179 @@ final class ModelActivationService {
     }
     return candidateBase;
   }
+
+  Future<Map<ActivityImpactKey, double>> _validateActivityCandidateRun(
+    LearningRun run, {
+    required PersonalizationVersion active,
+    required String activeRuleVersion,
+    required DateTime at,
+  }) async {
+    if (activityFactors == null ||
+        run.parameterFamily != LearningParameterFamily.activityImpact ||
+        run.status != LearningRunStatus.completed ||
+        run.result != LearningRunResult.candidate ||
+        run.completedAt == null ||
+        run.completedAt!.toUtc().isBefore(run.triggeredAt.toUtc()) ||
+        run.completedAt!.toUtc().isAfter(at.toUtc()) ||
+        run.sourcePersonalizationVersionId != active.id ||
+        !productionGate.allows(run.parameterFamily) ||
+        !productionGate.supportedActivityImpactAlgorithms.contains(
+          run.algorithmVersion,
+        ) ||
+        !productionGate.supportedActivityImpactConfigs.contains(
+          run.configVersion,
+        ) ||
+        run.evidenceHashVersion != canonicalEvidenceHashV1 ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(run.evidenceHash) ||
+        _containsForbiddenWatermark(run.algorithmVersion) ||
+        _containsForbiddenWatermark(run.configVersion) ||
+        _containsForbiddenWatermark(run.evidenceSnapshotJson) ||
+        _containsForbiddenWatermark(run.candidateValuesJson ?? '')) {
+      throw StateError('sourceLearningRunInvalid');
+    }
+    final expectedRunId = deterministicLearningRunId(
+      parameterFamily: run.parameterFamily,
+      sourceModelIdentity: run.sourceModelIdentity,
+      algorithmVersion: run.algorithmVersion,
+      configVersion: run.configVersion,
+      evidenceHash: run.evidenceHash,
+    );
+    if (run.id != expectedRunId || run.sourceModelIdentity != active.id) {
+      throw StateError('sourceLearningRunIdentityInvalid');
+    }
+    final current = _jsonObject(run.currentValuesJson, 'currentValues');
+    final candidate = _jsonObject(
+      run.candidateValuesJson ?? '',
+      'candidateValues',
+    );
+    final currentFactors = _decodeActivityFactors(current['factors']);
+    final candidateFactors = _decodeActivityFactors(candidate['factors']);
+    final policy = const ActivityImpactSamplingPolicyV1();
+    if (currentFactors.values.any(
+          (factor) => !policy.isFactorInRange(factor),
+        ) ||
+        candidateFactors.isEmpty ||
+        candidateFactors.keys.any(
+          (key) => !policy.isFactorInRange(candidateFactors[key]!),
+        )) {
+      throw StateError('candidateValuesInvalid');
+    }
+    final full = <ActivityImpactKey, double>{...currentFactors};
+    full.addAll(candidateFactors);
+    if (full.entries.every(
+      (entry) =>
+          (entry.value - (currentFactors[entry.key] ?? 1)).abs() < 0.000001,
+    )) {
+      throw StateError('candidateValuesUnchanged');
+    }
+    final snapshot = _jsonObject(run.evidenceSnapshotJson, 'evidenceSnapshot');
+    if (const CanonicalJsonEncoder().encode(snapshot) !=
+        run.evidenceSnapshotJson) {
+      throw StateError('learningEvidenceShapeInvalid');
+    }
+    final recomputed = sha256
+        .convert(utf8.encode(run.evidenceSnapshotJson))
+        .toString();
+    if (recomputed != run.evidenceHash) {
+      throw StateError('learningEvidenceHashChanged');
+    }
+    for (final key in full.keys) {
+      if (!key.isFactorEligible) throw StateError('candidateValuesInvalid');
+    }
+    if (activeRuleVersion != activityImpactSupportedRuleVersion) {
+      throw StateError('unsupportedRuleVersion');
+    }
+    return full;
+  }
+
+  Map<ActivityImpactKey, double> _decodeActivityFactors(Object? value) {
+    if (value is! Map<String, Object?>) {
+      throw StateError('activityFactorValuesInvalid');
+    }
+    final result = <ActivityImpactKey, double>{};
+    for (final entry in value.entries) {
+      final parts = entry.key.split('|');
+      if (parts.length != 2) throw StateError('activityFactorKeyInvalid');
+      final subcategory = ActivitySubcategory.values
+          .where((item) => item.code == parts[0])
+          .firstOrNull;
+      final sign = ActivityImpactSign.values
+          .where((item) => item.code == parts[1])
+          .firstOrNull;
+      if (subcategory == null ||
+          sign == null ||
+          sign == ActivityImpactSign.zero) {
+        throw StateError('activityFactorKeyInvalid');
+      }
+      if (entry.value is! Map<String, Object?>) {
+        throw StateError('activityFactorValueInvalid');
+      }
+      final bps = (entry.value! as Map<String, Object?>)['factorBps'];
+      if (bps is! int) throw StateError('activityFactorValueInvalid');
+      result[ActivityImpactKey(subcategory: subcategory, impactSign: sign)] =
+          bps / 100;
+    }
+    return result;
+  }
+
+  Future<void> _persistActivityFactors({
+    required PersonalizationVersion version,
+    required Map<ActivityImpactKey, double> factors,
+    required String? sourceLearningRunId,
+    required LifeDay? regimeForChangedKeys,
+    bool forceNewRegime = false,
+  }) async {
+    final repository = activityFactors;
+    if (repository == null) {
+      throw StateError('activityImpactFactorsRepositoryMissing');
+    }
+    final parent = version.parentVersionId == null
+        ? const <PersonalizationActivityFactor>[]
+        : await repository.listForVersion(version.parentVersionId!);
+    final oldByKey = {
+      for (final factor in parent)
+        ActivityImpactKey(
+          subcategory: factor.subcategory,
+          impactSign: factor.impactSign,
+        ): factor,
+    };
+    for (final entry in factors.entries) {
+      final old = oldByKey[entry.key];
+      final changed =
+          forceNewRegime ||
+          old == null ||
+          (old.factor - entry.value).abs() > 0.000001;
+      final nextFactor = PersonalizationActivityFactor(
+        personalizationVersionId: version.id,
+        subcategory: entry.key.subcategory,
+        impactSign: entry.key.impactSign,
+        factor: entry.value,
+        baseActivityRuleVersion: activityImpactSupportedRuleVersion,
+        sourceLearningRunId: changed ? sourceLearningRunId : null,
+        factorRegimeStartedLifeDay:
+            (forceNewRegime || changed) && regimeForChangedKeys != null
+            ? regimeForChangedKeys
+            : (old?.factorRegimeStartedLifeDay ??
+                  regimeForChangedKeys ??
+                  version.effectiveLifeDay ??
+                  LifeDay(2000, 1, 1)),
+      );
+      final existing = await repository.find(
+        personalizationVersionId: version.id,
+        subcategory: entry.key.subcategory,
+        impactSign: entry.key.impactSign,
+      );
+      if (existing == null) {
+        await repository.insert(nextFactor);
+      } else {
+        await repository.update(nextFactor);
+      }
+    }
+  }
+
+  PersonalizationActivityFactorsRepository _requireActivityFactors() =>
+      activityFactors ??
+      (throw StateError('activityImpactFactorsRepositoryMissing'));
 
   bool _observationVersionMatches(
     Map<String, Object?> observation,

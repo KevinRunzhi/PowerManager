@@ -7,6 +7,8 @@ import 'package:power_manager/domain/energy/energy_calculator.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day_calculator.dart';
+import 'package:power_manager/domain/life_day/life_day.dart';
+import 'package:power_manager/domain/learning/activity_impact_contract.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 
 final class ActivityDraft {
@@ -64,6 +66,7 @@ final class ActivityUseCases implements ActivityMutator {
     required this.summaries,
     required this.projectionService,
     required this.feedbackMaintenance,
+    this.activityFactors,
     this.calculator = const EnergyCalculator(),
   }) : ruleLoader = EnergyRuleConfigLoader(rules);
 
@@ -75,6 +78,7 @@ final class ActivityUseCases implements ActivityMutator {
   final DailySummariesRepository summaries;
   final CurrentDayProjectionService projectionService;
   final ActivityFeedbackMaintenance feedbackMaintenance;
+  final PersonalizationActivityFactorsRepository? activityFactors;
   final EnergyCalculator calculator;
   final EnergyRuleConfigLoader ruleLoader;
 
@@ -101,6 +105,11 @@ final class ActivityUseCases implements ActivityMutator {
           duration: draft.duration,
         );
         final nowUtc = prepared.nowUtc;
+        final snapshot = await _activitySnapshot(
+          current: prepared.current,
+          subcategory: draft.subcategory,
+          defaultTheoreticalDelta: theoreticalDelta,
+        );
         final activity = StoredEstimatedActivity(
           id: draft.operationId,
           lifeDay: prepared.current.lifeDay,
@@ -110,11 +119,16 @@ final class ActivityUseCases implements ActivityMutator {
           category: draft.category,
           subcategory: draft.subcategory,
           duration: draft.duration,
-          theoreticalDelta: theoreticalDelta,
-          appliedDelta: theoreticalDelta,
+          theoreticalDelta: snapshot.personalizedTheoreticalDelta,
+          appliedDelta: snapshot.personalizedTheoreticalDelta,
           ruleVersion: prepared.current.ruleVersion,
           status: ActivityRecordStatus.active,
           deletedAt: null,
+          personalizationVersionId: snapshot.personalizationVersionId,
+          factorRegimeStartedLifeDay: snapshot.factorRegimeStartedLifeDay,
+          defaultTheoreticalDelta: theoreticalDelta,
+          factor: snapshot.factor,
+          personalizedTheoreticalDelta: snapshot.personalizedTheoreticalDelta,
         );
         await activities.insert(activity);
         final current = await _replayAndPersist(
@@ -155,6 +169,11 @@ final class ActivityUseCases implements ActivityMutator {
         final projectedAppliedDelta = prepared.current.projection.activities
             .singleWhere((item) => item.record.id == existing!.id)
             .appliedDelta;
+        final snapshot = await _activitySnapshot(
+          current: prepared.current,
+          subcategory: subcategory,
+          defaultTheoreticalDelta: theoreticalDelta,
+        );
         final isNoOp =
             existing!.category == category &&
             existing.subcategory == subcategory &&
@@ -162,7 +181,9 @@ final class ActivityUseCases implements ActivityMutator {
             existing.completedAt.toUtc().isAtSameMomentAs(
               validatedCompletion,
             ) &&
-            existing.theoreticalDelta == theoreticalDelta &&
+            existing.theoreticalDelta ==
+                snapshot.personalizedTheoreticalDelta &&
+            existing.factor == snapshot.factor &&
             existing.appliedDelta == projectedAppliedDelta &&
             existing.ruleVersion == prepared.current.ruleVersion;
         if (isNoOp) {
@@ -184,11 +205,16 @@ final class ActivityUseCases implements ActivityMutator {
           category: category,
           subcategory: subcategory,
           duration: duration,
-          theoreticalDelta: theoreticalDelta,
+          theoreticalDelta: snapshot.personalizedTheoreticalDelta,
           appliedDelta: existing.appliedDelta,
           ruleVersion: prepared.current.ruleVersion,
           status: ActivityRecordStatus.active,
           deletedAt: null,
+          personalizationVersionId: snapshot.personalizationVersionId,
+          factorRegimeStartedLifeDay: snapshot.factorRegimeStartedLifeDay,
+          defaultTheoreticalDelta: theoreticalDelta,
+          factor: snapshot.factor,
+          personalizedTheoreticalDelta: snapshot.personalizedTheoreticalDelta,
         );
         await feedbackMaintenance.invalidateForSnapshotChange(
           before: existing,
@@ -347,6 +373,45 @@ final class ActivityUseCases implements ActivityMutator {
     }
   }
 
+  Future<_ActivitySnapshot> _activitySnapshot({
+    required CurrentDayProjection current,
+    required ActivitySubcategory subcategory,
+    required int defaultTheoreticalDelta,
+  }) async {
+    if (defaultTheoreticalDelta == 0 ||
+        current.personalizationVersionId == fixedMvpAPersonalizationVersion) {
+      return _ActivitySnapshot(
+        personalizationVersionId: null,
+        factorRegimeStartedLifeDay: null,
+        factor: 1,
+        personalizedTheoreticalDelta: defaultTheoreticalDelta,
+      );
+    }
+    final repository = activityFactors;
+    final key = ActivityImpactKey(
+      subcategory: subcategory,
+      impactSign: activityImpactContractSign(defaultTheoreticalDelta),
+    );
+    final factor = repository == null
+        ? null
+        : await repository.find(
+            personalizationVersionId: current.personalizationVersionId,
+            subcategory: key.subcategory,
+            impactSign: key.impactSign,
+          );
+    final value = factor?.factor ?? 1.0;
+    if (!const ActivityImpactSamplingPolicyV1().isFactorInRange(value)) {
+      throw StateError('activityFactorOutOfRange');
+    }
+    return _ActivitySnapshot(
+      personalizationVersionId: current.personalizationVersionId,
+      factorRegimeStartedLifeDay:
+          factor?.factorRegimeStartedLifeDay ?? current.lifeDay,
+      factor: value,
+      personalizedTheoreticalDelta: (defaultTheoreticalDelta * value).round(),
+    );
+  }
+
   void _ensureActiveCurrent(
     StoredEstimatedActivity? activity,
     OperationPreparationResult prepared,
@@ -430,4 +495,18 @@ final class ActivityUseCases implements ActivityMutator {
     );
     return replayed;
   }
+}
+
+final class _ActivitySnapshot {
+  const _ActivitySnapshot({
+    required this.personalizationVersionId,
+    required this.factorRegimeStartedLifeDay,
+    required this.factor,
+    required this.personalizedTheoreticalDelta,
+  });
+
+  final String? personalizationVersionId;
+  final LifeDay? factorRegimeStartedLifeDay;
+  final double factor;
+  final int personalizedTheoreticalDelta;
 }

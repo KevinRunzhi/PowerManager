@@ -95,12 +95,16 @@ final class JsonBackupCodec {
   const JsonBackupCodec({
     this.supportedBaselineAlgorithms = const {},
     this.supportedBaselineConfigs = const {},
+    this.supportedActivityImpactAlgorithms = const {},
+    this.supportedActivityImpactConfigs = const {},
   });
 
   static const maxBytes = 10 * 1024 * 1024;
 
   final Set<String> supportedBaselineAlgorithms;
   final Set<String> supportedBaselineConfigs;
+  final Set<String> supportedActivityImpactAlgorithms;
+  final Set<String> supportedActivityImpactConfigs;
 
   BackupInspection inspect({
     required String fileName,
@@ -136,6 +140,8 @@ final class JsonBackupCodec {
         backup,
         supportedBaselineAlgorithms: supportedBaselineAlgorithms,
         supportedBaselineConfigs: supportedBaselineConfigs,
+        supportedActivityImpactAlgorithms: supportedActivityImpactAlgorithms,
+        supportedActivityImpactConfigs: supportedActivityImpactConfigs,
       );
       final lifeDays = <LifeDay>[
         ...backup.morningCheckIns.map((item) => item.lifeDay),
@@ -1119,6 +1125,8 @@ void _validateBackup(
   PowerManagerExportDto backup, {
   required Set<String> supportedBaselineAlgorithms,
   required Set<String> supportedBaselineConfigs,
+  required Set<String> supportedActivityImpactAlgorithms,
+  required Set<String> supportedActivityImpactConfigs,
 }) {
   final settings = backup.appSettings;
   final legacy = backup.legacyBaseSettings;
@@ -1265,6 +1273,8 @@ void _validateBackup(
       schemaVersion: backup.schemaVersion,
       supportedBaselineAlgorithms: supportedBaselineAlgorithms,
       supportedBaselineConfigs: supportedBaselineConfigs,
+      supportedActivityImpactAlgorithms: supportedActivityImpactAlgorithms,
+      supportedActivityImpactConfigs: supportedActivityImpactConfigs,
     );
     final idempotencyKey = [
       run.parameterFamily.code,
@@ -1282,6 +1292,7 @@ void _validateBackup(
     backup.personalizationVersions,
     learningRuns: {for (final run in backup.learningRuns) run.id: run},
     activeRuleVersion: settings.activeRuleVersion,
+    activityFactors: backup.activityFactors,
   );
   final activeModel = versionsById.values.singleWhere(
     (version) => version.status == PersonalizationVersionStatus.active,
@@ -1385,6 +1396,7 @@ Map<String, PersonalizationVersion> _validatePersonalizationVersions(
   List<PersonalizationVersion> versions, {
   required Map<String, LearningRun> learningRuns,
   required String activeRuleVersion,
+  List<PersonalizationActivityFactor> activityFactors = const [],
 }) {
   try {
     const PersonalizationIntegrityValidator().validate(versions);
@@ -1393,6 +1405,17 @@ Map<String, PersonalizationVersion> _validatePersonalizationVersions(
   }
   const identities = PersonalizationIdentityBuilder();
   final byId = {for (final version in versions) version.id: version};
+  final factorsByVersion = <String, Map<ActivityImpactKey, double>>{};
+  for (final factor in activityFactors) {
+    factorsByVersion.putIfAbsent(
+          factor.personalizationVersionId,
+          () => {},
+        )[ActivityImpactKey(
+          subcategory: factor.subcategory,
+          impactSign: factor.impactSign,
+        )] =
+        factor.factor;
+  }
   for (final version in versions) {
     final expectedId = identities.versionId(
       parentVersionId: version.parentVersionId,
@@ -1423,6 +1446,7 @@ Map<String, PersonalizationVersion> _validatePersonalizationVersions(
       final expectedFingerprint = identities.effectiveFingerprint(
         baseEnergy: version.baseEnergy,
         ruleVersion: activeRuleVersion,
+        activityFactors: factorsByVersion[version.id] ?? const {},
       );
       if (version.effectiveModelFingerprint != expectedFingerprint ||
           version.modelRegimeEpoch !=
@@ -2010,6 +2034,8 @@ void _validateLearningRun(
   required int schemaVersion,
   required Set<String> supportedBaselineAlgorithms,
   required Set<String> supportedBaselineConfigs,
+  required Set<String> supportedActivityImpactAlgorithms,
+  required Set<String> supportedActivityImpactConfigs,
 }) {
   _nonEmpty(run.sourceModelIdentity, '影子学习来源模型');
   _nonEmpty(run.algorithmVersion, '影子学习算法版本');
@@ -2038,6 +2064,91 @@ void _validateLearningRun(
   }
   if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(run.evidenceHash)) {
     throw const BackupFormatException('影子学习证据哈希格式不合法。');
+  }
+
+  if (run.parameterFamily == LearningParameterFamily.activityImpact) {
+    final pendingShape =
+        (run.status == LearningRunStatus.pending ||
+            run.status == LearningRunStatus.running) &&
+        run.result == null &&
+        run.completedAt == null;
+    final completedShape =
+        run.status == LearningRunStatus.completed &&
+        run.result != null &&
+        run.completedAt != null;
+    final failureShape =
+        (run.status == LearningRunStatus.retryableFailure ||
+            run.status == LearningRunStatus.terminalFailure) &&
+        run.result == null &&
+        run.completedAt != null;
+    if ((!pendingShape && !completedShape && !failureShape) ||
+        (run.completedAt != null &&
+            run.completedAt!.isBefore(run.triggeredAt))) {
+      throw const BackupFormatException('活动影响学习运行状态组合不合法。');
+    }
+    final supported =
+        schemaVersion >= 5 &&
+        run.sourcePersonalizationVersionId != null &&
+        supportedActivityImpactAlgorithms.contains(run.algorithmVersion) &&
+        supportedActivityImpactConfigs.contains(run.configVersion) &&
+        !_containsForbiddenLearningWatermark(run.algorithmVersion) &&
+        !_containsForbiddenLearningWatermark(run.configVersion) &&
+        !_containsForbiddenLearningWatermark(run.evidenceSnapshotJson) &&
+        !_containsForbiddenLearningWatermark(run.candidateValuesJson ?? '');
+    if (!supported || run.evidenceHashVersion != canonicalEvidenceHashV1) {
+      throw const BackupFormatException('活动影响学习运行包含当前版本不支持的配置。');
+    }
+    final snapshot = _canonicalJsonObject(
+      run.evidenceSnapshotJson,
+      '活动影响学习证据快照',
+    );
+    final recomputed = sha256
+        .convert(utf8.encode(run.evidenceSnapshotJson))
+        .toString();
+    if (recomputed != run.evidenceHash) {
+      throw const BackupFormatException('活动影响学习证据哈希与快照不一致。');
+    }
+    final current = _canonicalJsonObject(run.currentValuesJson, '活动影响当前参数');
+    if (!_isCanonicalActivityFactorObject(current) ||
+        const CanonicalJsonEncoder().encode(current) != run.currentValuesJson) {
+      throw const BackupFormatException('活动影响当前参数不合法。');
+    }
+    if (run.result == LearningRunResult.candidate) {
+      final candidate = run.candidateValuesJson == null
+          ? null
+          : _canonicalJsonObject(run.candidateValuesJson!, '活动影响候选参数');
+      if (candidate == null ||
+          !_isCanonicalActivityFactorObject(candidate) ||
+          const CanonicalJsonEncoder().encode(candidate) !=
+              run.candidateValuesJson) {
+        throw const BackupFormatException('活动影响候选参数不合法。');
+      }
+      final candidateFactors = _activityFactorBps(candidate['factors']);
+      final currentFactors = _activityFactorBps(current['factors']);
+      if (candidateFactors.isEmpty ||
+          candidateFactors.keys.every(
+            (key) => candidateFactors[key] == currentFactors[key],
+          )) {
+        throw const BackupFormatException('活动影响候选没有产生参数变化。');
+      }
+    } else if (run.candidateValuesJson != null) {
+      throw const BackupFormatException('非候选活动影响运行不能包含候选参数。');
+    }
+    final reasons = _canonicalJsonList(run.reasonCodesJson, '活动影响学习原因码');
+    if (reasons.any((value) => value is! String || value.trim().isEmpty)) {
+      throw const BackupFormatException('活动影响学习原因码必须是非空文本。');
+    }
+    final expectedId = deterministicLearningRunId(
+      parameterFamily: run.parameterFamily,
+      sourceModelIdentity: run.sourceModelIdentity,
+      algorithmVersion: run.algorithmVersion,
+      configVersion: run.configVersion,
+      evidenceHash: run.evidenceHash,
+    );
+    if (run.id != expectedId || snapshot.isEmpty) {
+      throw const BackupFormatException('活动影响学习运行 ID 或证据不合法。');
+    }
+    return;
   }
 
   final pendingShape =
@@ -2121,6 +2232,42 @@ void _validateLearningRun(
   if (run.id != expectedId) {
     throw const BackupFormatException('影子学习运行 ID 不是确定性 ID。');
   }
+}
+
+bool _isCanonicalActivityFactorObject(Map<String, Object?> value) {
+  if (value.length != 1 || value['factors'] is! Map<String, Object?>) {
+    return false;
+  }
+  final factors = value['factors']! as Map<String, Object?>;
+  for (final entry in factors.entries) {
+    final parts = entry.key.split('|');
+    if (parts.length != 2 ||
+        !ActivitySubcategory.values.any((item) => item.code == parts[0]) ||
+        !ActivityImpactSign.values.any(
+          (item) => item.code == parts[1] && item != ActivityImpactSign.zero,
+        ) ||
+        entry.value is! Map<String, Object?>) {
+      return false;
+    }
+    final valueMap = entry.value! as Map<String, Object?>;
+    if (valueMap['factorBps'] is! int ||
+        !const ActivityImpactSamplingPolicyV1().isFactorInRange(
+          (valueMap['factorBps']! as int) / 100,
+        )) {
+      return false;
+    }
+  }
+  return true;
+}
+
+Map<String, int> _activityFactorBps(Object? value) {
+  if (value is! Map<String, Object?>) return const {};
+  return {
+    for (final entry in value.entries)
+      if (entry.value is Map<String, Object?> &&
+          (entry.value! as Map<String, Object?>)['factorBps'] is int)
+        entry.key: (entry.value! as Map<String, Object?>)['factorBps']! as int,
+  };
 }
 
 bool _containsForbiddenLearningWatermark(String value) {

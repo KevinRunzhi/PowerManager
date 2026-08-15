@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/application/activity_feedback_use_cases.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
+import 'package:power_manager/application/activity_impact_learning_coordinator.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/automatic_learning_coordinator.dart';
 import 'package:power_manager/application/baseline_monitoring_coordinator.dart';
+import 'package:power_manager/application/activity_impact_monitoring_coordinator.dart';
 import 'package:power_manager/application/backup_content_digest.dart';
 import 'package:power_manager/application/business_write_coordinator.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
@@ -166,6 +168,7 @@ final modelActivationServiceProvider = Provider<ModelActivationService>((ref) {
     learningRuns: ref.watch(learningRunsRepositoryProvider),
     consents: ref.watch(learningConsentsRepositoryProvider),
     notices: ref.watch(learningNoticesRepositoryProvider),
+    activityFactors: ref.watch(activityFactorsRepositoryProvider),
     productionGate: ref.watch(learningProductionGateProvider),
   );
 });
@@ -299,6 +302,27 @@ final baselineMonitoringRequesterProvider =
       );
     });
 
+final activityImpactMonitoringCoordinatorProvider =
+    Provider<ActivityImpactMonitoringCoordinator>((ref) {
+      final database = ref.watch(appDatabaseProvider);
+      return ActivityImpactMonitoringCoordinator(
+        writeCoordinator: ref.watch(businessWriteCoordinatorProvider),
+        transactionRunner: DriftTransactionRunner(database),
+        clock: ref.watch(clockProvider),
+        integrityVerifier: ref.watch(learningIntegrityVerifierProvider),
+        activities: ref.watch(activitiesRepositoryProvider),
+        feedback: ref.watch(activityFeedbackRepositoryProvider),
+        samples: ref.watch(activityFeedbackSamplesRepositoryProvider),
+        summaries: ref.watch(summariesRepositoryProvider),
+        factors: ref.watch(activityFactorsRepositoryProvider),
+        versions: ref.watch(personalizationVersionsRepositoryProvider),
+        learningRuns: ref.watch(learningRunsRepositoryProvider),
+        settings: ref.watch(settingsRepositoryProvider),
+        modelActivationService: ref.watch(modelActivationServiceProvider),
+        productionGate: ref.watch(learningProductionGateProvider),
+      );
+    });
+
 final currentPreparationProvider = FutureProvider<OperationPreparationResult>((
   ref,
 ) async {
@@ -306,6 +330,7 @@ final currentPreparationProvider = FutureProvider<OperationPreparationResult>((
   final preparer = ref.watch(operationPreparerProvider);
   final learning = ref.watch(automaticLearningRequesterProvider);
   final monitoring = ref.watch(baselineMonitoringRequesterProvider);
+  final productionGate = ref.watch(learningProductionGateProvider);
   final learningGate = ref.watch(preparationLearningRequestGateProvider);
   final result = await preparer.prepare(request.trigger);
   if (request.trigger != PreparationTrigger.beforeWrite &&
@@ -313,6 +338,14 @@ final currentPreparationProvider = FutureProvider<OperationPreparationResult>((
     try {
       await learning.request(_automaticLearningTrigger(request.trigger));
       await monitoring.request(_monitoringTrigger(request.trigger));
+      if (productionGate.activityImpactProductionLearningEnabled) {
+        final settings = await ref.watch(appSettingsProvider.future);
+        if (settings.activityImpactLearningMode != LearningMode.off) {
+          await ref
+              .watch(activityImpactMonitoringCoordinatorProvider)
+              .request();
+        }
+      }
     } on Object {
       // Shadow learning must never make the core preparation flow unavailable.
     }
@@ -352,6 +385,7 @@ final activityUseCasesProvider = Provider<ActivityMutator>((ref) {
     summaries: ref.watch(summariesRepositoryProvider),
     projectionService: ref.watch(projectionServiceProvider),
     feedbackMaintenance: ref.watch(activityFeedbackMaintenanceProvider),
+    activityFactors: ref.watch(activityFactorsRepositoryProvider),
   );
 });
 
@@ -375,6 +409,7 @@ final activityImpactPreviewServiceProvider = Provider<ActivityImpactPreviewer>((
   return ActivityImpactPreviewService(
     activities: ref.watch(activitiesRepositoryProvider),
     ruleLoader: EnergyRuleConfigLoader(ref.watch(rulesRepositoryProvider)),
+    activityFactors: ref.watch(activityFactorsRepositoryProvider),
   );
 });
 
@@ -538,6 +573,7 @@ final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),
     feedback: ref.watch(activityFeedbackRepositoryProvider),
+    activityFactors: ref.watch(activityFactorsRepositoryProvider),
     learningRuns: ref.watch(learningRunsRepositoryProvider),
     personalizationVersions: ref.watch(
       personalizationVersionsRepositoryProvider,
@@ -554,12 +590,22 @@ final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
   );
 });
 
+final jsonBackupCodecProvider = Provider<JsonBackupCodec>((ref) {
+  final gate = ref.watch(learningProductionGateProvider);
+  return JsonBackupCodec(
+    supportedBaselineAlgorithms: gate.supportedBaselineAlgorithms,
+    supportedBaselineConfigs: gate.supportedBaselineConfigs,
+    supportedActivityImpactAlgorithms: gate.supportedActivityImpactAlgorithms,
+    supportedActivityImpactConfigs: gate.supportedActivityImpactConfigs,
+  );
+});
+
 final learningIntegrityVerifierProvider = Provider<LearningIntegrityVerifier>((
   ref,
 ) {
   return BackupRoundTripLearningIntegrityVerifier(
     exportService: ref.watch(jsonExportServiceProvider),
-    codec: const JsonBackupCodec(),
+    codec: ref.watch(jsonBackupCodecProvider),
     clock: ref.watch(clockProvider),
   );
 });
@@ -567,7 +613,7 @@ final learningIntegrityVerifierProvider = Provider<LearningIntegrityVerifier>((
 final automaticLearningRequesterProvider = Provider<AutomaticLearningRequester>(
   (ref) {
     final database = ref.watch(appDatabaseProvider);
-    return AutomaticLearningCoordinator(
+    final baseline = AutomaticLearningCoordinator(
       writeCoordinator: ref.watch(businessWriteCoordinatorProvider),
       transactionRunner: DriftTransactionRunner(database),
       clock: ref.watch(clockProvider),
@@ -584,6 +630,23 @@ final automaticLearningRequesterProvider = Provider<AutomaticLearningRequester>(
       ),
       appSettings: ref.watch(settingsRepositoryProvider),
     );
+    final activity = ActivityImpactLearningCoordinator(
+      writeCoordinator: ref.watch(businessWriteCoordinatorProvider),
+      transactionRunner: DriftTransactionRunner(database),
+      clock: ref.watch(clockProvider),
+      integrityVerifier: ref.watch(learningIntegrityVerifierProvider),
+      activities: ref.watch(activitiesRepositoryProvider),
+      feedback: ref.watch(activityFeedbackRepositoryProvider),
+      samples: ref.watch(activityFeedbackSamplesRepositoryProvider),
+      summaries: ref.watch(summariesRepositoryProvider),
+      factors: ref.watch(activityFactorsRepositoryProvider),
+      versions: ref.watch(personalizationVersionsRepositoryProvider),
+      learningRuns: ref.watch(learningRunsRepositoryProvider),
+      settings: ref.watch(settingsRepositoryProvider),
+      modelActivationService: ref.watch(modelActivationServiceProvider),
+      productionGate: ref.watch(learningProductionGateProvider),
+    );
+    return CombinedAutomaticLearningRequester(requesters: [baseline, activity]);
   },
 );
 
@@ -604,7 +667,7 @@ final localBackupStoreProvider = Provider<LocalBackupStore>((ref) {
 final localBackupServiceProvider = Provider<LocalBackupSaver>((ref) {
   return LocalBackupService(
     exportService: ref.watch(jsonExportServiceProvider),
-    codec: const JsonBackupCodec(),
+    codec: ref.watch(jsonBackupCodecProvider),
     store: ref.watch(localBackupStoreProvider),
     clock: ref.watch(clockProvider),
   );
@@ -628,7 +691,7 @@ final mvpBUpgradeReadinessServiceProvider =
         localBackupStore: ref.watch(localBackupStoreProvider),
         readinessStore: ref.watch(mvpBUpgradeReadinessStoreProvider),
         exportService: ref.watch(jsonExportServiceProvider),
-        codec: const JsonBackupCodec(),
+        codec: ref.watch(jsonBackupCodecProvider),
         digester: const BackupContentDigester(),
         clock: ref.watch(clockProvider),
       );
@@ -643,7 +706,7 @@ final mvpBUpgradeReadinessProvider =
 final dataHealthServiceProvider = Provider<DataHealthService>((ref) {
   return DataHealthService(
     exportService: ref.watch(jsonExportServiceProvider),
-    codec: const JsonBackupCodec(),
+    codec: ref.watch(jsonBackupCodecProvider),
     clock: ref.watch(clockProvider),
     settings: ref.watch(settingsRepositoryProvider),
     mornings: ref.watch(morningsRepositoryProvider),
@@ -671,7 +734,7 @@ final jsonBackupRestoreServiceProvider = Provider<JsonBackupRestoreService>((
   ref,
 ) {
   return JsonBackupRestoreService(
-    codec: const JsonBackupCodec(),
+    codec: ref.watch(jsonBackupCodecProvider),
     exportService: ref.watch(jsonExportServiceProvider),
     database: ref.watch(appDatabaseProvider),
     safetyStore: ref.watch(backupSafetyStoreProvider),

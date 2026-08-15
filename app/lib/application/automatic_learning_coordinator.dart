@@ -28,6 +28,7 @@ enum AutomaticLearningTrigger {
 enum LearningCoordinationSkipReason {
   integrityGateFailed,
   noSettledEvidence,
+  blockedByOtherParameterFamily,
   unchangedEvidence,
 }
 

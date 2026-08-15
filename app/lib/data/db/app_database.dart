@@ -81,11 +81,17 @@ final class AppDatabase extends _$AppDatabase {
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (migrator) async {
       await migrator.createAll();
+      if (schemaVersionOverride >= 5) {
+        await _ensureLearningRunsV5Constraints();
+      }
       await _createSchemaExtras();
     },
     onUpgrade: _upgradeSchema,
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
+      if (schemaVersionOverride >= 5) {
+        await _ensureLearningRunsV5Constraints();
+      }
       await transaction(_seedDefaults);
     },
   );
