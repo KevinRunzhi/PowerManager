@@ -44,6 +44,7 @@ void main() {
 
     expect(tables.map((row) => row.read<String>('name')), [
       'activity_feedback',
+      'activity_feedback_samples',
       'activity_records',
       'app_settings',
       'daily_summaries',
@@ -52,11 +53,12 @@ void main() {
       'learning_notices',
       'learning_runs',
       'morning_check_ins',
+      'personalization_activity_factors',
       'personalization_versions',
       'prompt_receipts',
       'rule_config_versions',
     ]);
-    expect(version.read<int>('user_version'), 4);
+    expect(version.read<int>('user_version'), 5);
     expect(foreignKeys.read<int>('foreign_keys'), 1);
     expect(integrity.read<String>('integrity_check'), 'ok');
     expect(
@@ -66,6 +68,10 @@ void main() {
         'activity_feedback_activity_order',
         'activity_feedback_life_day_status',
         'activity_feedback_one_active_per_activity',
+        'activity_feedback_samples_activity_day',
+        'activity_feedback_samples_one_active_policy',
+        'activity_feedback_samples_one_feedback',
+        'activity_feedback_one_sample',
         'app_settings_reject_delete',
         'daily_summaries_reject_delete',
         'daily_summaries_reject_update',
@@ -75,6 +81,7 @@ void main() {
         'learning_runs_idempotency',
         'learning_runs_source_time',
         'learning_runs_status_time',
+        'personalization_activity_factors_source',
         'learning_runs_reject_final_update',
         'learning_consents_reject_delete',
         'learning_consents_reject_update',
@@ -85,6 +92,7 @@ void main() {
         'personalization_versions_reject_identity_update',
         'personalization_versions_reject_terminal_update',
         'referenced_rule_versions_reject_update',
+        'referenced_rule_versions_reject_update_v5',
       ]),
     );
   });

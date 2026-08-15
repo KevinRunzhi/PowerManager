@@ -27,12 +27,8 @@ final class DriftAppSettingsRepository implements AppSettingsRepository {
         ),
         onboardingCompleted: Value(settings.onboardingCompleted),
         baselineLearningMode: Value(settings.baselineLearningMode),
-        activityImpactLearningMode: Value(
-          settings.activityImpactLearningMode,
-        ),
-        baselineLearningSuspended: Value(
-          settings.baselineLearningSuspended,
-        ),
+        activityImpactLearningMode: Value(settings.activityImpactLearningMode),
+        baselineLearningSuspended: Value(settings.baselineLearningSuspended),
         baselineLearningSuspendedAt: Value(
           settings.baselineLearningSuspendedAt?.toUtc(),
         ),
@@ -343,6 +339,13 @@ final class DriftActivityRecordsRepository
         duration: Value(activity.duration),
         theoreticalDelta: Value(activity.theoreticalDelta),
         appliedDelta: Value(activity.appliedDelta),
+        defaultTheoreticalDelta: Value(activity.defaultTheoreticalDelta),
+        factor: Value(activity.factor),
+        personalizedTheoreticalDelta: Value(
+          activity.personalizedTheoreticalDelta,
+        ),
+        personalizationVersionId: Value(activity.personalizationVersionId),
+        factorRegimeStartedLifeDay: Value(activity.factorRegimeStartedLifeDay),
         ruleVersion: Value(activity.ruleVersion),
         status: Value(activity.status),
         deletedAt: Value(activity.deletedAt?.toUtc()),
@@ -500,6 +503,19 @@ final class DriftActivityFeedbackRepository
         direction: Value(feedback.direction),
         status: Value(feedback.status),
         invalidationReason: Value(feedback.invalidationReason),
+        defaultTheoreticalDeltaSnapshot: Value(
+          feedback.defaultTheoreticalDeltaSnapshot,
+        ),
+        factorSnapshot: Value(feedback.factorSnapshot),
+        personalizedTheoreticalDeltaSnapshot: Value(
+          feedback.personalizedTheoreticalDeltaSnapshot,
+        ),
+        personalizationVersionId: Value(feedback.personalizationVersionId),
+        factorRegimeStartedLifeDay: Value(feedback.factorRegimeStartedLifeDay),
+        collectionSource: Value(feedback.collectionSource),
+        samplingPolicyVersion: Value(feedback.samplingPolicyVersion),
+        sampledAt: Value(feedback.sampledAt?.toUtc()),
+        sampleId: Value(feedback.sampleId),
         observedAt: Value(feedback.observedAt.toUtc()),
       ),
     );
@@ -533,6 +549,115 @@ final class DriftActivityFeedbackRepository
   Future<List<ActivityFeedback>> list() async {
     return (await dao.listAll()).map(_mapFeedback).toList();
   }
+}
+
+final class DriftPersonalizationActivityFactorsRepository
+    implements PersonalizationActivityFactorsRepository {
+  const DriftPersonalizationActivityFactorsRepository(this.dao);
+
+  final PersonalizationActivityFactorsDao dao;
+
+  @override
+  Future<void> insert(PersonalizationActivityFactor factor) {
+    return dao.insertFactor(_activityFactorCompanion(factor));
+  }
+
+  @override
+  Future<void> update(PersonalizationActivityFactor factor) async {
+    final changed = await dao.updateByKey(
+      factor.personalizationVersionId,
+      factor.subcategory,
+      factor.impactSign,
+      PersonalizationActivityFactorsTableCompanion(
+        factor: Value(factor.factor),
+        baseActivityRuleVersion: Value(factor.baseActivityRuleVersion),
+        sourceLearningRunId: Value(factor.sourceLearningRunId),
+        factorRegimeStartedLifeDay: Value(factor.factorRegimeStartedLifeDay),
+      ),
+    );
+    _expectOneChanged(
+      changed,
+      'activity factor ${factor.personalizationVersionId}/${factor.subcategory.code}/${factor.impactSign.code}',
+    );
+  }
+
+  @override
+  Future<PersonalizationActivityFactor?> find({
+    required String personalizationVersionId,
+    required ActivitySubcategory subcategory,
+    required ActivityImpactSign impactSign,
+  }) async {
+    final row = await dao.findByKey(
+      personalizationVersionId: personalizationVersionId,
+      subcategory: subcategory,
+      impactSign: impactSign,
+    );
+    return row == null ? null : _mapActivityFactor(row);
+  }
+
+  @override
+  Future<List<PersonalizationActivityFactor>> listForVersion(
+    String personalizationVersionId,
+  ) async => (await dao.listForVersion(
+    personalizationVersionId,
+  )).map(_mapActivityFactor).toList();
+
+  @override
+  Future<List<PersonalizationActivityFactor>> list() async =>
+      (await dao.listAll()).map(_mapActivityFactor).toList();
+}
+
+final class DriftActivityFeedbackSamplesRepository
+    implements ActivityFeedbackSamplesRepository {
+  const DriftActivityFeedbackSamplesRepository(this.dao);
+
+  final ActivityFeedbackSamplesDao dao;
+
+  @override
+  Future<void> insert(ActivityFeedbackSample sample) =>
+      dao.insertSample(_activityFeedbackSampleCompanion(sample));
+
+  @override
+  Future<void> update(ActivityFeedbackSample sample) async {
+    final changed = await dao.updateById(
+      sample.id,
+      ActivityFeedbackSamplesTableCompanion(
+        activityRecordId: Value(sample.activityRecordId),
+        lifeDay: Value(sample.lifeDay),
+        samplingPolicyVersion: Value(sample.samplingPolicyVersion),
+        status: Value(sample.status),
+        selectedAt: Value(sample.selectedAt.toUtc()),
+        promptedAt: Value(sample.promptedAt?.toUtc()),
+        respondedAt: Value(sample.respondedAt?.toUtc()),
+        feedbackId: Value(sample.feedbackId),
+        invalidatedAt: Value(sample.invalidatedAt?.toUtc()),
+        invalidationReason: Value(sample.invalidationReason),
+      ),
+    );
+    _expectOneChanged(changed, 'activity feedback sample ${sample.id}');
+  }
+
+  @override
+  Future<ActivityFeedbackSample?> find(String id) async {
+    final row = await dao.findById(id);
+    return row == null ? null : _mapActivityFeedbackSample(row);
+  }
+
+  @override
+  Future<ActivityFeedbackSample?> findActiveForActivityPolicy({
+    required String activityRecordId,
+    required String samplingPolicyVersion,
+  }) async {
+    final row = await dao.findActiveForActivityPolicy(
+      activityRecordId: activityRecordId,
+      samplingPolicyVersion: samplingPolicyVersion,
+    );
+    return row == null ? null : _mapActivityFeedbackSample(row);
+  }
+
+  @override
+  Future<List<ActivityFeedbackSample>> list() async =>
+      (await dao.listAll()).map(_mapActivityFeedbackSample).toList();
 }
 
 final class DriftLearningRunsRepository implements LearningRunsRepository {
@@ -691,14 +816,13 @@ AppSettings _mapSettings(AppSettingsRow row) {
     baselineLearningSuspendedAt: row.baselineLearningSuspendedAt?.toUtc(),
     baselineLearningSuspensionReason: row.baselineLearningSuspensionReason,
     activityImpactLearningSuspended: row.activityImpactLearningSuspended,
-    activityImpactLearningSuspendedAt:
-        row.activityImpactLearningSuspendedAt?.toUtc(),
+    activityImpactLearningSuspendedAt: row.activityImpactLearningSuspendedAt
+        ?.toUtc(),
     activityImpactLearningSuspensionReason:
         row.activityImpactLearningSuspensionReason,
-    baselineLearningCooldownUntil:
-        row.baselineLearningCooldownUntil?.toUtc(),
-    activityImpactLearningCooldownUntil:
-        row.activityImpactLearningCooldownUntil?.toUtc(),
+    baselineLearningCooldownUntil: row.baselineLearningCooldownUntil?.toUtc(),
+    activityImpactLearningCooldownUntil: row.activityImpactLearningCooldownUntil
+        ?.toUtc(),
     createdAt: row.createdAt.toUtc(),
     updatedAt: row.updatedAt.toUtc(),
   );
@@ -802,9 +926,7 @@ LearningNotice _mapLearningNotice(LearningNoticeRow row) {
   );
 }
 
-LearningNoticesTableCompanion _learningNoticeCompanion(
-  LearningNotice notice,
-) {
+LearningNoticesTableCompanion _learningNoticeCompanion(LearningNotice notice) {
   return LearningNoticesTableCompanion.insert(
     id: notice.id,
     parameterFamily: notice.parameterFamily,
@@ -870,6 +992,11 @@ StoredEstimatedActivity _mapActivity(ActivityRecordRow row) {
     duration: row.duration,
     theoreticalDelta: row.theoreticalDelta,
     appliedDelta: row.appliedDelta,
+    defaultTheoreticalDelta: row.defaultTheoreticalDelta,
+    factor: row.factor,
+    personalizedTheoreticalDelta: row.personalizedTheoreticalDelta,
+    personalizationVersionId: row.personalizationVersionId,
+    factorRegimeStartedLifeDay: row.factorRegimeStartedLifeDay,
     ruleVersion: row.ruleVersion,
     status: row.status,
     deletedAt: row.deletedAt?.toUtc(),
@@ -890,6 +1017,11 @@ ActivityRecordsTableCompanion _activityCompanion(
     duration: activity.duration,
     theoreticalDelta: activity.theoreticalDelta,
     appliedDelta: activity.appliedDelta,
+    defaultTheoreticalDelta: Value(activity.defaultTheoreticalDelta),
+    factor: Value(activity.factor),
+    personalizedTheoreticalDelta: Value(activity.personalizedTheoreticalDelta),
+    personalizationVersionId: Value(activity.personalizationVersionId),
+    factorRegimeStartedLifeDay: Value(activity.factorRegimeStartedLifeDay),
     ruleVersion: activity.ruleVersion,
     status: activity.status,
     deletedAt: Value(activity.deletedAt?.toUtc()),
@@ -938,6 +1070,16 @@ ActivityFeedback _mapFeedback(ActivityFeedbackRow row) {
     direction: row.direction,
     status: row.status,
     invalidationReason: row.invalidationReason,
+    defaultTheoreticalDeltaSnapshot: row.defaultTheoreticalDeltaSnapshot,
+    factorSnapshot: row.factorSnapshot,
+    personalizedTheoreticalDeltaSnapshot:
+        row.personalizedTheoreticalDeltaSnapshot,
+    personalizationVersionId: row.personalizationVersionId,
+    factorRegimeStartedLifeDay: row.factorRegimeStartedLifeDay,
+    collectionSource: row.collectionSource,
+    samplingPolicyVersion: row.samplingPolicyVersion,
+    sampledAt: row.sampledAt?.toUtc(),
+    sampleId: row.sampleId,
     observedAt: row.observedAt.toUtc(),
   );
 }
@@ -957,9 +1099,78 @@ ActivityFeedbackTableCompanion _feedbackCompanion(ActivityFeedback feedback) {
     direction: feedback.direction,
     status: feedback.status,
     invalidationReason: Value(feedback.invalidationReason),
+    defaultTheoreticalDeltaSnapshot: Value(
+      feedback.defaultTheoreticalDeltaSnapshot,
+    ),
+    factorSnapshot: Value(feedback.factorSnapshot),
+    personalizedTheoreticalDeltaSnapshot: Value(
+      feedback.personalizedTheoreticalDeltaSnapshot,
+    ),
+    personalizationVersionId: Value(feedback.personalizationVersionId),
+    factorRegimeStartedLifeDay: Value(feedback.factorRegimeStartedLifeDay),
+    collectionSource: Value(feedback.collectionSource),
+    samplingPolicyVersion: Value(feedback.samplingPolicyVersion),
+    sampledAt: Value(feedback.sampledAt?.toUtc()),
+    sampleId: Value(feedback.sampleId),
     observedAt: feedback.observedAt.toUtc(),
   );
 }
+
+PersonalizationActivityFactor _mapActivityFactor(
+  PersonalizationActivityFactorRow row,
+) => PersonalizationActivityFactor(
+  personalizationVersionId: row.personalizationVersionId,
+  subcategory: row.subcategory,
+  impactSign: row.impactSign,
+  factor: row.factor,
+  baseActivityRuleVersion: row.baseActivityRuleVersion,
+  sourceLearningRunId: row.sourceLearningRunId,
+  factorRegimeStartedLifeDay: row.factorRegimeStartedLifeDay,
+);
+
+PersonalizationActivityFactorsTableCompanion _activityFactorCompanion(
+  PersonalizationActivityFactor factor,
+) => PersonalizationActivityFactorsTableCompanion.insert(
+  personalizationVersionId: factor.personalizationVersionId,
+  subcategory: factor.subcategory,
+  impactSign: factor.impactSign,
+  factor: factor.factor,
+  baseActivityRuleVersion: factor.baseActivityRuleVersion,
+  sourceLearningRunId: Value(factor.sourceLearningRunId),
+  factorRegimeStartedLifeDay: factor.factorRegimeStartedLifeDay,
+);
+
+ActivityFeedbackSample _mapActivityFeedbackSample(
+  ActivityFeedbackSampleRow row,
+) => ActivityFeedbackSample(
+  id: row.id,
+  activityRecordId: row.activityRecordId,
+  lifeDay: row.lifeDay,
+  samplingPolicyVersion: row.samplingPolicyVersion,
+  status: row.status,
+  selectedAt: row.selectedAt.toUtc(),
+  promptedAt: row.promptedAt?.toUtc(),
+  respondedAt: row.respondedAt?.toUtc(),
+  feedbackId: row.feedbackId,
+  invalidatedAt: row.invalidatedAt?.toUtc(),
+  invalidationReason: row.invalidationReason,
+);
+
+ActivityFeedbackSamplesTableCompanion _activityFeedbackSampleCompanion(
+  ActivityFeedbackSample sample,
+) => ActivityFeedbackSamplesTableCompanion.insert(
+  id: sample.id,
+  activityRecordId: sample.activityRecordId,
+  lifeDay: sample.lifeDay,
+  samplingPolicyVersion: sample.samplingPolicyVersion,
+  status: sample.status,
+  selectedAt: sample.selectedAt.toUtc(),
+  promptedAt: Value(sample.promptedAt?.toUtc()),
+  respondedAt: Value(sample.respondedAt?.toUtc()),
+  feedbackId: Value(sample.feedbackId),
+  invalidatedAt: Value(sample.invalidatedAt?.toUtc()),
+  invalidationReason: Value(sample.invalidationReason),
+);
 
 LearningRun _mapLearningRun(LearningRunRow row) {
   return LearningRun(

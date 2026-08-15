@@ -29,6 +29,8 @@ final class JsonExportService implements JsonExporter {
     required this.feedback,
     required this.learningRuns,
     required this.personalizationVersions,
+    this.activityFactors,
+    this.activityFeedbackSamples,
     required this.learningConsents,
     required this.learningNotices,
     required this.summaries,
@@ -37,7 +39,7 @@ final class JsonExportService implements JsonExporter {
     required this.transactionRunner,
   });
 
-  static const schemaVersion = 4;
+  static const schemaVersion = 5;
 
   final AppSettingsRepository settings;
   final RuleConfigVersionsRepository rules;
@@ -47,6 +49,8 @@ final class JsonExportService implements JsonExporter {
   final ActivityFeedbackRepository feedback;
   final LearningRunsRepository learningRuns;
   final PersonalizationVersionsRepository personalizationVersions;
+  final PersonalizationActivityFactorsRepository? activityFactors;
+  final ActivityFeedbackSamplesRepository? activityFeedbackSamples;
   final LearningConsentsRepository learningConsents;
   final LearningNoticesRepository learningNotices;
   final DailySummariesRepository summaries;
@@ -67,6 +71,12 @@ final class JsonExportService implements JsonExporter {
       final learningRunItems = await learningRuns.list();
       final personalizationVersionItems =
           await personalizationVersions.list();
+      final activityFactorItems = activityFactors == null
+          ? const <PersonalizationActivityFactor>[]
+          : await activityFactors!.list();
+      final activityFeedbackSampleItems = activityFeedbackSamples == null
+          ? const <ActivityFeedbackSample>[]
+          : await activityFeedbackSamples!.list();
       final learningConsentItems = await learningConsents.list();
       final learningNoticeItems = await learningNotices.list();
       final dailySummaries = await summaries.list();
@@ -80,6 +90,8 @@ final class JsonExportService implements JsonExporter {
         activityFeedback: activityFeedback,
         learningRuns: learningRunItems,
         personalizationVersions: personalizationVersionItems,
+        activityFactors: activityFactorItems,
+        activityFeedbackSamples: activityFeedbackSampleItems,
         learningConsents: learningConsentItems,
         learningNotices: learningNoticeItems,
         dailySummaries: dailySummaries,
@@ -98,6 +110,8 @@ final class JsonExportService implements JsonExporter {
       activityFeedback: snapshot.activityFeedback,
       learningRuns: snapshot.learningRuns,
       personalizationVersions: snapshot.personalizationVersions,
+      activityFactors: snapshot.activityFactors,
+      activityFeedbackSamples: snapshot.activityFeedbackSamples,
       learningConsents: snapshot.learningConsents,
       learningNotices: snapshot.learningNotices,
       dailySummaries: snapshot.dailySummaries,
@@ -129,6 +143,8 @@ final class _ExportSnapshot {
     required this.activityFeedback,
     required this.learningRuns,
     required this.personalizationVersions,
+    required this.activityFactors,
+    required this.activityFeedbackSamples,
     required this.learningConsents,
     required this.learningNotices,
     required this.dailySummaries,
@@ -143,6 +159,8 @@ final class _ExportSnapshot {
   final List<ActivityFeedback> activityFeedback;
   final List<LearningRun> learningRuns;
   final List<PersonalizationVersion> personalizationVersions;
+  final List<PersonalizationActivityFactor> activityFactors;
+  final List<ActivityFeedbackSample> activityFeedbackSamples;
   final List<LearningConsent> learningConsents;
   final List<LearningNotice> learningNotices;
   final List<DailySummary> dailySummaries;

@@ -4,7 +4,7 @@ typedef SchemaMigrationFailureHook = Future<void> Function(String checkpoint);
 
 extension _SchemaMigrations on AppDatabase {
   Future<void> _upgradeSchema(Migrator migrator, int from, int to) async {
-    if (from < 1 || to > 4 || from >= to) {
+    if (from < 1 || to > 5 || from >= to) {
       throw StateError('Unsupported schema migration: $from -> $to');
     }
 
@@ -24,6 +24,10 @@ extension _SchemaMigrations on AppDatabase {
           await _migrateV3ToV4(migrator);
           current = 4;
         }
+        if (current == 4 && to >= 5) {
+          await _migrateV4ToV5(migrator);
+          current = 5;
+        }
         if (current != to) {
           throw StateError('Unsupported schema migration: $from -> $to');
         }
@@ -31,6 +35,119 @@ extension _SchemaMigrations on AppDatabase {
     } finally {
       await customStatement('PRAGMA foreign_keys = ON');
     }
+  }
+
+  Future<void> _migrateV4ToV5(Migrator migrator) async {
+    final activityCount = await _tableRowCount('activity_records');
+    final feedbackCount = await _tableRowCount('activity_feedback');
+    await _verifyForeignKeysAndIntegrity('schema v4 preflight');
+    await migrationFailureHook?.call('v5-before-preflight');
+
+    await _dropProtectionTriggers();
+    await customStatement(
+      'DROP INDEX IF EXISTS activity_feedback_one_active_per_activity',
+    );
+    await migrationFailureHook?.call('v5-after-extras-dropped');
+
+    await customStatement(
+      'ALTER TABLE activity_feedback RENAME TO activity_feedback_v4_backup',
+    );
+    await migrationFailureHook?.call('v5-after-feedback-renamed');
+
+    await customStatement(
+      'ALTER TABLE activity_records RENAME TO activity_records_v4_backup',
+    );
+    await migrator.createTable(activityRecordsTable);
+    await customStatement('''
+      INSERT INTO activity_records (
+        id, life_day, completed_at, created_at, updated_at, category,
+        subcategory, duration_minutes, theoretical_delta, applied_delta,
+        default_theoretical_delta, activity_factor, personalized_theoretical_delta,
+        personalization_version_id, factor_regime_started_life_day,
+        rule_version, status, deleted_at
+      )
+      SELECT
+        id, life_day, completed_at, created_at, updated_at, category,
+        subcategory, duration_minutes, theoretical_delta, applied_delta,
+        theoretical_delta, 1.0, theoretical_delta, NULL, NULL,
+        rule_version, status, deleted_at
+      FROM activity_records_v4_backup
+    ''');
+    await customStatement('DROP TABLE activity_records_v4_backup');
+    await migrationFailureHook?.call('v5-after-activity-columns');
+
+    await migrator.createTable(activityFeedbackTable);
+    await migrator.createTable(personalizationActivityFactorsTable);
+    await migrator.createTable(activityFeedbackSamplesTable);
+    await migrationFailureHook?.call('v5-after-tables-created');
+
+    await customStatement('''
+      INSERT INTO activity_feedback (
+        id,
+        activity_record_id,
+        life_day,
+        subcategory_snapshot,
+        duration_minutes_snapshot,
+        theoretical_delta_snapshot,
+        applied_delta_snapshot,
+        default_theoretical_delta_snapshot,
+        factor_snapshot,
+        personalized_theoretical_delta_snapshot,
+        personalization_version_id,
+        factor_regime_started_life_day,
+        impact_sign_snapshot,
+        rule_version_snapshot,
+        activity_updated_at_snapshot,
+        direction,
+        collection_source,
+        sampling_policy_version,
+        sampled_at,
+        sample_id,
+        status,
+        invalidation_reason,
+        observed_at
+      )
+      SELECT
+        id,
+        activity_record_id,
+        life_day,
+        subcategory_snapshot,
+        duration_minutes_snapshot,
+        theoretical_delta_snapshot,
+        applied_delta_snapshot,
+        theoretical_delta_snapshot,
+        1.0,
+        theoretical_delta_snapshot,
+        NULL,
+        NULL,
+        impact_sign_snapshot,
+        rule_version_snapshot,
+        activity_updated_at_snapshot,
+        direction,
+        'userInitiated',
+        NULL,
+        NULL,
+        NULL,
+        status,
+        invalidation_reason,
+        observed_at
+      FROM activity_feedback_v4_backup
+    ''');
+    await migrationFailureHook?.call('v5-after-feedback-copied');
+    if (await _tableRowCount('activity_records') != activityCount ||
+        await _tableRowCount('activity_feedback') != feedbackCount) {
+      throw StateError('Schema v4 -> v5 row count changed');
+    }
+    await customStatement('DROP TABLE activity_feedback_v4_backup');
+    await migrationFailureHook?.call('v5-after-backup-dropped');
+
+    await _createV5ActivityIndexes();
+    await _createProtectionTriggers();
+    await migrationFailureHook?.call('v5-before-verify');
+    await _verifySchemaV5(
+      expectedActivities: activityCount,
+      expectedFeedback: feedbackCount,
+    );
   }
 
   Future<void> _migrateV1ToV2(Migrator migrator) async {
@@ -102,7 +219,7 @@ extension _SchemaMigrations on AppDatabase {
     await _verifyObservationCopy(sourceCount);
 
     await customStatement('DROP TABLE energy_observations_v1_backup');
-    await migrator.createTable(activityFeedbackTable);
+    await _createLegacyActivityFeedbackTableV2();
     await _createV2IndexesAfterMigration();
 
     await migrationFailureHook?.call('before-protection-triggers');
@@ -122,6 +239,41 @@ extension _SchemaMigrations on AppDatabase {
     await _createLearningRunProtectionTrigger();
     await migrationFailureHook?.call('before-v3-verify');
     await _verifySchemaV3();
+  }
+
+  Future<void> _createLegacyActivityFeedbackTableV2() async {
+    await customStatement('''
+      CREATE TABLE activity_feedback (
+        id TEXT NOT NULL,
+        activity_record_id TEXT NOT NULL,
+        life_day TEXT NOT NULL,
+        subcategory_snapshot TEXT NOT NULL,
+        duration_minutes_snapshot INTEGER NOT NULL,
+        theoretical_delta_snapshot INTEGER NOT NULL,
+        applied_delta_snapshot INTEGER NOT NULL,
+        impact_sign_snapshot TEXT NOT NULL,
+        rule_version_snapshot TEXT NOT NULL,
+        activity_updated_at_snapshot INTEGER NOT NULL,
+        direction TEXT NOT NULL,
+        status TEXT NOT NULL,
+        invalidation_reason TEXT NULL,
+        observed_at INTEGER NOT NULL,
+        PRIMARY KEY (id),
+        CHECK (length(trim(id)) > 0),
+        CHECK (length(trim(activity_record_id)) > 0),
+        CHECK (subcategory_snapshot IN ('classAttendance', 'selfStudyOrThesis', 'homework', 'reviewOrExamPrep', 'organizeOrSummarize', 'otherStudy', 'implementationOrDevelopment', 'experiment', 'projectProgress', 'debuggingOrRevision', 'organizationOrAdministration', 'otherPractice', 'nap', 'lightActivity', 'mentalReset', 'exerciseRecovery', 'lifeMaintenance', 'otherRecovery', 'gaming', 'shortVideo', 'seriesOrMovie', 'chatOrSocial', 'hobbyEntertainment', 'otherLeisure')),
+        CHECK (duration_minutes_snapshot IN (15, 30, 45, 60, 90, 120)),
+        CHECK (impact_sign_snapshot IN ('consumption', 'recovery', 'zero')),
+        CHECK ((impact_sign_snapshot = 'consumption' AND theoretical_delta_snapshot < 0) OR (impact_sign_snapshot = 'recovery' AND theoretical_delta_snapshot > 0) OR (impact_sign_snapshot = 'zero' AND theoretical_delta_snapshot = 0)),
+        CHECK (length(trim(rule_version_snapshot)) > 0),
+        CHECK (direction IN ('strongerImpact', 'aboutRight', 'weakerImpact', 'directionMismatch')),
+        CHECK (status IN ('active', 'invalidated')),
+        CHECK (invalidation_reason IS NULL OR invalidation_reason IN ('activityDeleted', 'activityEdited', 'integrityFailure')),
+        CHECK ((status = 'active' AND invalidation_reason IS NULL) OR (status = 'invalidated' AND invalidation_reason IS NOT NULL)),
+        FOREIGN KEY (activity_record_id) REFERENCES activity_records(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        FOREIGN KEY (rule_version_snapshot) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT
+      )
+    ''');
   }
 
   Future<void> _migrateV3ToV4(Migrator migrator) async {
@@ -709,6 +861,71 @@ extension _SchemaMigrations on AppDatabase {
     ''').get();
     if (forbiddenBackups.isNotEmpty) {
       throw StateError('Schema v4 temporary migration tables remain');
+    }
+  }
+
+  Future<void> _verifySchemaV5({
+    required int expectedActivities,
+    required int expectedFeedback,
+  }) async {
+    await _verifyForeignKeysAndIntegrity('Schema v5 migration');
+    for (final table in const [
+      'personalization_activity_factors',
+      'activity_feedback_samples',
+    ]) {
+      if (await _tableRowCount(table) != 0) {
+        throw StateError('Schema v5 fabricated $table rows');
+      }
+    }
+    if (await _tableRowCount('activity_records') != expectedActivities ||
+        await _tableRowCount('activity_feedback') != expectedFeedback) {
+      throw StateError('Schema v5 changed activity row counts');
+    }
+    final activityColumns = await customSelect(
+      'PRAGMA table_info(activity_records)',
+    ).get();
+    final activityNames = activityColumns
+        .map((row) => row.read<String>('name'))
+        .toSet();
+    if (!activityNames.containsAll(const {
+      'default_theoretical_delta',
+      'activity_factor',
+      'personalized_theoretical_delta',
+      'personalization_version_id',
+      'factor_regime_started_life_day',
+    })) {
+      throw StateError('Schema v5 activity snapshots are missing');
+    }
+    final feedbackColumns = await customSelect(
+      'PRAGMA table_info(activity_feedback)',
+    ).get();
+    final feedbackNames = feedbackColumns
+        .map((row) => row.read<String>('name'))
+        .toSet();
+    if (!feedbackNames.containsAll(const {
+      'default_theoretical_delta_snapshot',
+      'factor_snapshot',
+      'personalized_theoretical_delta_snapshot',
+      'personalization_version_id',
+      'factor_regime_started_life_day',
+      'collection_source',
+      'sampling_policy_version',
+      'sampled_at',
+      'sample_id',
+    })) {
+      throw StateError('Schema v5 feedback snapshots are missing');
+    }
+    final legacyFeedback = await customSelect('''
+      SELECT COUNT(*) AS row_count
+      FROM activity_feedback
+      WHERE collection_source = 'userInitiated'
+        AND sample_id IS NULL
+        AND factor_snapshot = 1.0
+        AND default_theoretical_delta_snapshot = theoretical_delta_snapshot
+        AND personalized_theoretical_delta_snapshot = theoretical_delta_snapshot
+    ''').getSingle();
+    if (legacyFeedback.read<int>('row_count') != expectedFeedback) {
+      throw StateError('Schema v5 legacy feedback bridge is invalid');
     }
   }
 }

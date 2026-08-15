@@ -6,6 +6,7 @@ import 'package:power_manager/application/json_export_service.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/db/app_database.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
+import 'package:power_manager/domain/entities/persisted_entities.dart';
 
 abstract interface class BackupSafetyStore {
   Future<void> save(String contents);
@@ -32,6 +33,8 @@ final class JsonBackupRestoreService {
     required this.activities,
     required this.observations,
     required this.feedback,
+    this.activityFactors,
+    this.activityFeedbackSamples,
     required this.learningRuns,
     required this.personalizationVersions,
     required this.learningConsents,
@@ -51,6 +54,8 @@ final class JsonBackupRestoreService {
   final ActivityRecordsRepository activities;
   final EnergyObservationsRepository observations;
   final ActivityFeedbackRepository feedback;
+  final PersonalizationActivityFactorsRepository? activityFactors;
+  final ActivityFeedbackSamplesRepository? activityFeedbackSamples;
   final LearningRunsRepository learningRuns;
   final PersonalizationVersionsRepository personalizationVersions;
   final LearningConsentsRepository learningConsents;
@@ -71,6 +76,12 @@ final class JsonBackupRestoreService {
       final activityRecords = await activities.listAllForExport();
       final energyObservations = await observations.list();
       final activityFeedback = await feedback.list();
+      final activityFactorItems = activityFactors == null
+          ? const <PersonalizationActivityFactor>[]
+          : await activityFactors!.list();
+      final activityFeedbackSampleItems = activityFeedbackSamples == null
+          ? const <ActivityFeedbackSample>[]
+          : await activityFeedbackSamples!.list();
       final learningRunItems = await learningRuns.list();
       final personalizationVersionItems = await personalizationVersions.list();
       final learningConsentItems = await learningConsents.list();
@@ -83,6 +94,8 @@ final class JsonBackupRestoreService {
         activityRecords: activityRecords.length,
         energyObservations: energyObservations.length,
         activityFeedback: activityFeedback.length,
+        activityFactors: activityFactorItems.length,
+        activityFeedbackSamples: activityFeedbackSampleItems.length,
         learningRuns: learningRunItems.length,
         personalizationVersions: personalizationVersionItems.length,
         learningConsents: learningConsentItems.length,

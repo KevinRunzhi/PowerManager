@@ -283,6 +283,11 @@ final class ActivityUseCases implements ActivityMutator {
             ruleVersion: existing.ruleVersion,
             status: ActivityRecordStatus.active,
             deletedAt: null,
+            personalizationVersionId: existing.personalizationVersionId,
+            factorRegimeStartedLifeDay: existing.factorRegimeStartedLifeDay,
+            defaultTheoreticalDelta: existing.defaultTheoreticalDelta,
+            factor: existing.factor,
+            personalizedTheoreticalDelta: existing.personalizedTheoreticalDelta,
           ),
         );
         final current = await _replayAndPersist(
@@ -402,6 +407,11 @@ final class ActivityUseCases implements ActivityMutator {
           ruleVersion: activity.ruleVersion,
           status: activity.status,
           deletedAt: activity.deletedAt,
+          personalizationVersionId: activity.personalizationVersionId,
+          factorRegimeStartedLifeDay: activity.factorRegimeStartedLifeDay,
+          defaultTheoreticalDelta: activity.defaultTheoreticalDelta,
+          factor: activity.factor,
+          personalizedTheoreticalDelta: activity.personalizedTheoreticalDelta,
         );
         await feedbackMaintenance.invalidateForSnapshotChange(
           before: activity,

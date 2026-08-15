@@ -45,10 +45,9 @@ final class PersonalizationVersionsDao extends DatabaseAccessor<AppDatabase>
       PersonalizationVersionStatus.deferred,
       PersonalizationVersionStatus.scheduled,
     };
-    return (select(personalizationVersionsTable)..where(
-          (row) => row.status.isInValues(statuses),
-        ))
-        .getSingleOrNull();
+    return (select(
+      personalizationVersionsTable,
+    )..where((row) => row.status.isInValues(statuses))).getSingleOrNull();
   }
 
   Future<List<PersonalizationVersionRow>> listAll() {
@@ -74,8 +73,7 @@ final class PersonalizationVersionsDao extends DatabaseAccessor<AppDatabase>
     PersonalizationVersionsTableCompanion changes,
   ) {
     return (update(personalizationVersionsTable)..where(
-          (row) =>
-              row.id.equals(id) & row.status.equalsValue(expectedStatus),
+          (row) => row.id.equals(id) & row.status.equalsValue(expectedStatus),
         ))
         .write(changes);
   }
@@ -140,10 +138,7 @@ final class LearningNoticesDao extends DatabaseAccessor<AppDatabase>
         .get();
   }
 
-  Future<int> updateById(
-    String id,
-    LearningNoticesTableCompanion changes,
-  ) {
+  Future<int> updateById(String id, LearningNoticesTableCompanion changes) {
     return (update(
       learningNoticesTable,
     )..where((row) => row.id.equals(id))).write(changes);
@@ -353,6 +348,118 @@ final class ActivityFeedbackDao extends DatabaseAccessor<AppDatabase>
   Future<int> updateById(String id, ActivityFeedbackTableCompanion changes) {
     return (update(
       activityFeedbackTable,
+    )..where((row) => row.id.equals(id))).write(changes);
+  }
+}
+
+@DriftAccessor(tables: [PersonalizationActivityFactorsTable])
+final class PersonalizationActivityFactorsDao
+    extends DatabaseAccessor<AppDatabase>
+    with _$PersonalizationActivityFactorsDaoMixin {
+  PersonalizationActivityFactorsDao(super.attachedDatabase);
+
+  Future<void> insertFactor(
+    PersonalizationActivityFactorsTableCompanion factor,
+  ) => into(personalizationActivityFactorsTable).insert(factor);
+
+  Future<PersonalizationActivityFactorRow?> findByKey({
+    required String personalizationVersionId,
+    required ActivitySubcategory subcategory,
+    required ActivityImpactSign impactSign,
+  }) {
+    return (select(personalizationActivityFactorsTable)..where(
+          (row) =>
+              row.personalizationVersionId.equals(personalizationVersionId) &
+              row.subcategory.equalsValue(subcategory) &
+              row.impactSign.equalsValue(impactSign),
+        ))
+        .getSingleOrNull();
+  }
+
+  Future<List<PersonalizationActivityFactorRow>> listForVersion(
+    String personalizationVersionId,
+  ) {
+    return (select(personalizationActivityFactorsTable)
+          ..where(
+            (row) =>
+                row.personalizationVersionId.equals(personalizationVersionId),
+          )
+          ..orderBy([
+            (row) => OrderingTerm.asc(row.subcategory),
+            (row) => OrderingTerm.asc(row.impactSign),
+          ]))
+        .get();
+  }
+
+  Future<List<PersonalizationActivityFactorRow>> listAll() {
+    return (select(personalizationActivityFactorsTable)..orderBy([
+          (row) => OrderingTerm.asc(row.personalizationVersionId),
+          (row) => OrderingTerm.asc(row.subcategory),
+          (row) => OrderingTerm.asc(row.impactSign),
+        ]))
+        .get();
+  }
+
+  Future<int> updateByKey(
+    String personalizationVersionId,
+    ActivitySubcategory subcategory,
+    ActivityImpactSign impactSign,
+    PersonalizationActivityFactorsTableCompanion changes,
+  ) {
+    return (update(personalizationActivityFactorsTable)..where(
+          (row) =>
+              row.personalizationVersionId.equals(personalizationVersionId) &
+              row.subcategory.equalsValue(subcategory) &
+              row.impactSign.equalsValue(impactSign),
+        ))
+        .write(changes);
+  }
+}
+
+@DriftAccessor(tables: [ActivityFeedbackSamplesTable])
+final class ActivityFeedbackSamplesDao extends DatabaseAccessor<AppDatabase>
+    with _$ActivityFeedbackSamplesDaoMixin {
+  ActivityFeedbackSamplesDao(super.attachedDatabase);
+
+  Future<void> insertSample(ActivityFeedbackSamplesTableCompanion sample) =>
+      into(activityFeedbackSamplesTable).insert(sample);
+
+  Future<ActivityFeedbackSampleRow?> findById(String id) {
+    return (select(
+      activityFeedbackSamplesTable,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+  }
+
+  Future<ActivityFeedbackSampleRow?> findActiveForActivityPolicy({
+    required String activityRecordId,
+    required String samplingPolicyVersion,
+  }) {
+    return (select(activityFeedbackSamplesTable)..where(
+          (row) =>
+              row.activityRecordId.equals(activityRecordId) &
+              row.samplingPolicyVersion.equals(samplingPolicyVersion) &
+              row.status
+                  .equalsValue(ActivityFeedbackSampleStatus.invalidated)
+                  .not(),
+        ))
+        .getSingleOrNull();
+  }
+
+  Future<List<ActivityFeedbackSampleRow>> listAll() {
+    return (select(activityFeedbackSamplesTable)..orderBy([
+          (row) => OrderingTerm.asc(row.lifeDay),
+          (row) => OrderingTerm.asc(row.selectedAt),
+          (row) => OrderingTerm.asc(row.id),
+        ]))
+        .get();
+  }
+
+  Future<int> updateById(
+    String id,
+    ActivityFeedbackSamplesTableCompanion changes,
+  ) {
+    return (update(
+      activityFeedbackSamplesTable,
     )..where((row) => row.id.equals(id))).write(changes);
   }
 }

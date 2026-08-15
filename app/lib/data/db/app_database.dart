@@ -24,6 +24,8 @@ part 'tables.dart';
     ActivityRecordsTable,
     EnergyObservationsTable,
     ActivityFeedbackTable,
+    PersonalizationActivityFactorsTable,
+    ActivityFeedbackSamplesTable,
     LearningRunsTable,
     PersonalizationVersionsTable,
     LearningConsentsTable,
@@ -38,6 +40,8 @@ part 'tables.dart';
     ActivityRecordsDao,
     EnergyObservationsDao,
     ActivityFeedbackDao,
+    PersonalizationActivityFactorsDao,
+    ActivityFeedbackSamplesDao,
     LearningRunsDao,
     PersonalizationVersionsDao,
     LearningConsentsDao,
@@ -51,23 +55,27 @@ final class AppDatabase extends _$AppDatabase {
     QueryExecutor executor, {
     Clock clock = const SystemClock(),
     SchemaMigrationFailureHook? migrationFailureHook,
+    int schemaVersionOverride = 5,
   }) : this._(
          executor,
          clock: clock,
          migrationFailureHook: migrationFailureHook,
+         schemaVersionOverride: schemaVersionOverride,
        );
 
   AppDatabase._(
     super.executor, {
     required this.clock,
     this.migrationFailureHook,
+    required this.schemaVersionOverride,
   });
 
   final Clock clock;
   final SchemaMigrationFailureHook? migrationFailureHook;
+  final int schemaVersionOverride;
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => schemaVersionOverride;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -93,8 +101,63 @@ final class AppDatabase extends _$AppDatabase {
       ON activity_feedback (activity_record_id)
       WHERE status = 'active'
     ''');
+    await _createV5ActivityIndexes();
     await _createV4PersonalizationIndexes();
     await _createProtectionTriggers();
+  }
+
+  Future<void> _createV5ActivityIndexes() async {
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS activity_records_life_day_order
+      ON activity_records (life_day, completed_at, created_at, id)
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS activity_feedback_activity_order
+      ON activity_feedback (activity_record_id, observed_at, id)
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS activity_feedback_life_day_status
+      ON activity_feedback (life_day, status, observed_at, id)
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS personalization_activity_factors_source
+      ON personalization_activity_factors (source_learning_run_id)
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS activity_feedback_samples_activity_day
+      ON activity_feedback_samples (activity_record_id, life_day, selected_at)
+    ''');
+    await customStatement('''
+      CREATE UNIQUE INDEX IF NOT EXISTS activity_feedback_one_active_per_activity
+      ON activity_feedback (activity_record_id)
+      WHERE status = 'active'
+    ''');
+    await customStatement('''
+      CREATE UNIQUE INDEX IF NOT EXISTS activity_feedback_samples_one_active_policy
+      ON activity_feedback_samples (activity_record_id, sampling_policy_version)
+      WHERE status != 'invalidated'
+    ''');
+    await customStatement('''
+      CREATE UNIQUE INDEX IF NOT EXISTS activity_feedback_samples_one_feedback
+      ON activity_feedback_samples (feedback_id)
+      WHERE feedback_id IS NOT NULL
+    ''');
+    await customStatement('''
+      CREATE UNIQUE INDEX IF NOT EXISTS activity_feedback_one_sample
+      ON activity_feedback (sample_id)
+      WHERE sample_id IS NOT NULL
+    ''');
+    await customStatement('''
+      CREATE TRIGGER IF NOT EXISTS referenced_rule_versions_reject_update_v5
+      BEFORE UPDATE ON rule_config_versions
+      WHEN EXISTS (
+        SELECT 1 FROM personalization_activity_factors
+        WHERE base_activity_rule_version = OLD.version
+      )
+      BEGIN
+        SELECT RAISE (ABORT, 'referenced activity factor rule versions are immutable');
+      END
+    ''');
   }
 
   Future<void> _createV4PersonalizationIndexes() async {

@@ -137,7 +137,7 @@ void main() {
         fileName: exported.fileName,
         bytes: Uint8List.fromList(utf8.encode(exported.contents)),
       );
-      expect(reparsed.backup.schemaVersion, 4);
+      expect(reparsed.backup.schemaVersion, 5);
       expect(reparsed.backup.learningRuns, isEmpty);
       expect(reparsed.backup.energyObservations, isEmpty);
     },

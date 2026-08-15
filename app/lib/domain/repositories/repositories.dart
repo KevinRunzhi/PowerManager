@@ -77,6 +77,31 @@ abstract interface class ActivityFeedbackRepository {
   Future<List<ActivityFeedback>> list();
 }
 
+abstract interface class PersonalizationActivityFactorsRepository {
+  Future<void> insert(PersonalizationActivityFactor factor);
+  Future<void> update(PersonalizationActivityFactor factor);
+  Future<PersonalizationActivityFactor?> find({
+    required String personalizationVersionId,
+    required ActivitySubcategory subcategory,
+    required ActivityImpactSign impactSign,
+  });
+  Future<List<PersonalizationActivityFactor>> listForVersion(
+    String personalizationVersionId,
+  );
+  Future<List<PersonalizationActivityFactor>> list();
+}
+
+abstract interface class ActivityFeedbackSamplesRepository {
+  Future<void> insert(ActivityFeedbackSample sample);
+  Future<void> update(ActivityFeedbackSample sample);
+  Future<ActivityFeedbackSample?> find(String id);
+  Future<ActivityFeedbackSample?> findActiveForActivityPolicy({
+    required String activityRecordId,
+    required String samplingPolicyVersion,
+  });
+  Future<List<ActivityFeedbackSample>> list();
+}
+
 abstract interface class LearningRunsRepository {
   Future<void> insert(LearningRun run);
   Future<void> update(LearningRun run);

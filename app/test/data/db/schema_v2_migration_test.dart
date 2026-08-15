@@ -25,6 +25,7 @@ void main() {
       final database = AppDatabase.forExecutor(
         schema.newConnection(),
         clock: const _FixedClock(),
+        schemaVersionOverride: 4,
       );
       await expectLater(
         database.customSelect('SELECT 1').get(),
@@ -61,6 +62,7 @@ void main() {
       final database = AppDatabase.forExecutor(
         schema.newConnection(),
         clock: const _FixedClock(),
+        schemaVersionOverride: 4,
       );
       addTearDown(database.close);
       await verifier.migrateAndValidate(
@@ -143,6 +145,7 @@ void main() {
     final database = AppDatabase.forExecutor(
       schema.newConnection(),
       clock: const _FixedClock(),
+      schemaVersionOverride: 4,
     );
     await expectLater(
       database.customSelect('SELECT 1').get(),
@@ -168,6 +171,7 @@ void main() {
     final database = AppDatabase.forExecutor(
       schema.newConnection(),
       clock: const _FixedClock(),
+      schemaVersionOverride: 4,
     );
     await expectLater(
       database.customSelect('SELECT 1').get(),
@@ -203,6 +207,7 @@ void main() {
       final database = AppDatabase.forExecutor(
         schema.newConnection(),
         clock: const _FixedClock(),
+        schemaVersionOverride: 4,
       );
       addTearDown(database.close);
       await verifier.migrateAndValidate(
@@ -245,6 +250,7 @@ void main() {
       final failing = AppDatabase.forExecutor(
         schema.newConnection(),
         clock: const _FixedClock(),
+        schemaVersionOverride: 4,
         migrationFailureHook: (current) async {
           if (current == checkpoint) {
             throw StateError('injected at $checkpoint');
@@ -270,6 +276,7 @@ void main() {
       final retry = AppDatabase.forExecutor(
         schema.newConnection(),
         clock: const _FixedClock(),
+        schemaVersionOverride: 4,
       );
       addTearDown(retry.close);
       expect(await _snapshotV2BusinessRows(retry), before);
@@ -307,6 +314,7 @@ void main() {
         final failing = AppDatabase.forExecutor(
           schema.newConnection(),
           clock: const _FixedClock(),
+          schemaVersionOverride: 4,
           migrationFailureHook: (current) async {
             if (current == checkpoint) {
               hookCalls++;
@@ -357,6 +365,7 @@ void main() {
         final retry = AppDatabase.forExecutor(
           schema.newConnection(),
           clock: const _FixedClock(),
+          schemaVersionOverride: 4,
         );
         addTearDown(retry.close);
         await verifier.migrateAndValidate(
@@ -383,6 +392,7 @@ void main() {
     final first = AppDatabase.forExecutor(
       schema.newConnection(),
       clock: const _FixedClock(),
+      schemaVersionOverride: 4,
     );
     await verifier.migrateAndValidate(first, 4);
     await first.close();
@@ -391,6 +401,7 @@ void main() {
     final reopened = AppDatabase.forExecutor(
       schema.newConnection(),
       clock: const _FixedClock(),
+      schemaVersionOverride: 4,
       migrationFailureHook: (_) async => migrationHookCalls++,
     );
     addTearDown(reopened.close);

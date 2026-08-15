@@ -27,6 +27,8 @@ final class PowerManagerExportDto {
     List<ActivityFeedback> activityFeedback = const [],
     List<LearningRun> learningRuns = const [],
     List<PersonalizationVersion> personalizationVersions = const [],
+    List<PersonalizationActivityFactor> activityFactors = const [],
+    List<ActivityFeedbackSample> activityFeedbackSamples = const [],
     List<LearningConsent> learningConsents = const [],
     List<LearningNotice> learningNotices = const [],
     required List<DailySummary> dailySummaries,
@@ -38,6 +40,8 @@ final class PowerManagerExportDto {
        activityFeedback = List.unmodifiable(activityFeedback),
        learningRuns = List.unmodifiable(learningRuns),
        personalizationVersions = List.unmodifiable(personalizationVersions),
+       activityFactors = List.unmodifiable(activityFactors),
+       activityFeedbackSamples = List.unmodifiable(activityFeedbackSamples),
        learningConsents = List.unmodifiable(learningConsents),
        learningNotices = List.unmodifiable(learningNotices),
        dailySummaries = List.unmodifiable(dailySummaries),
@@ -57,6 +61,8 @@ final class PowerManagerExportDto {
   final List<ActivityFeedback> activityFeedback;
   final List<LearningRun> learningRuns;
   final List<PersonalizationVersion> personalizationVersions;
+  final List<PersonalizationActivityFactor> activityFactors;
+  final List<ActivityFeedbackSample> activityFeedbackSamples;
   final List<LearningConsent> learningConsents;
   final List<LearningNotice> learningNotices;
   final List<DailySummary> dailySummaries;
@@ -72,12 +78,16 @@ final class PowerManagerExportDto {
           : _legacySettingsJson(appSettings, legacyBaseSettings!),
       'ruleConfigVersions': ruleVersions.map(_ruleVersionJson).toList(),
       'morningCheckIns': morningCheckIns.map(_checkInJson).toList(),
-      'activityRecords': activityRecords.map(_activityJson).toList(),
+      'activityRecords': activityRecords
+          .map((item) => _activityJson(item, schemaVersion: schemaVersion))
+          .toList(),
       'energyObservations': energyObservations
           .map((item) => _observationJson(item, schemaVersion: schemaVersion))
           .toList(),
       if (schemaVersion >= 2)
-        'activityFeedback': activityFeedback.map(_feedbackJson).toList(),
+        'activityFeedback': activityFeedback
+            .map((item) => _feedbackJson(item, schemaVersion: schemaVersion))
+            .toList(),
       if (schemaVersion >= 3)
         'learningRuns': learningRuns.map(_learningRunJson).toList(),
       if (schemaVersion >= 4) ...{
@@ -86,6 +96,12 @@ final class PowerManagerExportDto {
             .toList(),
         'learningConsents': learningConsents.map(_learningConsentJson).toList(),
         'learningNotices': learningNotices.map(_learningNoticeJson).toList(),
+        if (schemaVersion >= 5) ...{
+          'activityFactors': activityFactors.map(_activityFactorJson).toList(),
+          'activityFeedbackSamples': activityFeedbackSamples
+              .map(_activityFeedbackSampleJson)
+              .toList(),
+        },
       },
       'dailySummaries': dailySummaries
           .map((item) => _summaryJson(item, schemaVersion: schemaVersion))
@@ -244,7 +260,10 @@ Map<String, Object?> _checkInJson(MorningCheckIn checkIn) {
   };
 }
 
-Map<String, Object?> _activityJson(StoredEstimatedActivity activity) {
+Map<String, Object?> _activityJson(
+  StoredEstimatedActivity activity, {
+  required int schemaVersion,
+}) {
   return {
     'id': activity.id,
     'lifeDay': activity.lifeDay.toString(),
@@ -259,6 +278,14 @@ Map<String, Object?> _activityJson(StoredEstimatedActivity activity) {
     'ruleVersion': activity.ruleVersion,
     'status': activity.status.code,
     'deletedAt': activity.deletedAt == null ? null : _utc(activity.deletedAt!),
+    if (schemaVersion >= 5) ...{
+      'defaultTheoreticalDelta': activity.defaultTheoreticalDelta,
+      'factor': activity.factor,
+      'personalizedTheoreticalDelta': activity.personalizedTheoreticalDelta,
+      'personalizationVersionId': activity.personalizationVersionId,
+      'factorRegimeStartedLifeDay': activity.factorRegimeStartedLifeDay
+          ?.toString(),
+    },
   };
 }
 
@@ -297,7 +324,10 @@ Map<String, Object?> _observationJson(
   };
 }
 
-Map<String, Object?> _feedbackJson(ActivityFeedback feedback) {
+Map<String, Object?> _feedbackJson(
+  ActivityFeedback feedback, {
+  required int schemaVersion,
+}) {
   return {
     'id': feedback.id,
     'activityRecordId': feedback.activityRecordId,
@@ -313,6 +343,51 @@ Map<String, Object?> _feedbackJson(ActivityFeedback feedback) {
     'status': feedback.status.code,
     'invalidationReason': feedback.invalidationReason?.code,
     'observedAt': _utc(feedback.observedAt),
+    if (schemaVersion >= 5) ...{
+      'defaultTheoreticalDeltaSnapshot':
+          feedback.defaultTheoreticalDeltaSnapshot,
+      'factorSnapshot': feedback.factorSnapshot,
+      'personalizedTheoreticalDeltaSnapshot':
+          feedback.personalizedTheoreticalDeltaSnapshot,
+      'personalizationVersionId': feedback.personalizationVersionId,
+      'factorRegimeStartedLifeDay': feedback.factorRegimeStartedLifeDay
+          ?.toString(),
+      'collectionSource': feedback.collectionSource.code,
+      'samplingPolicyVersion': feedback.samplingPolicyVersion,
+      'sampledAt': feedback.sampledAt == null ? null : _utc(feedback.sampledAt!),
+      'sampleId': feedback.sampleId,
+    },
+  };
+}
+
+Map<String, Object?> _activityFactorJson(PersonalizationActivityFactor factor) {
+  return {
+    'personalizationVersionId': factor.personalizationVersionId,
+    'subcategory': factor.subcategory.code,
+    'impactSign': factor.impactSign.code,
+    'factor': factor.factor,
+    'baseActivityRuleVersion': factor.baseActivityRuleVersion,
+    'sourceLearningRunId': factor.sourceLearningRunId,
+    'factorRegimeStartedLifeDay': factor.factorRegimeStartedLifeDay.toString(),
+  };
+}
+
+Map<String, Object?> _activityFeedbackSampleJson(ActivityFeedbackSample sample) {
+  return {
+    'id': sample.id,
+    'activityRecordId': sample.activityRecordId,
+    'lifeDay': sample.lifeDay.toString(),
+    'samplingPolicyVersion': sample.samplingPolicyVersion,
+    'status': sample.status.code,
+    'selectedAt': _utc(sample.selectedAt),
+    'promptedAt': sample.promptedAt == null ? null : _utc(sample.promptedAt!),
+    'respondedAt':
+        sample.respondedAt == null ? null : _utc(sample.respondedAt!),
+    'feedbackId': sample.feedbackId,
+    'invalidatedAt': sample.invalidatedAt == null
+        ? null
+        : _utc(sample.invalidatedAt!),
+    'invalidationReason': sample.invalidationReason?.code,
   };
 }
 

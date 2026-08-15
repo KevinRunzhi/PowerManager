@@ -412,7 +412,7 @@ void main() {
       final deleted = records.single as Map<String, Object?>;
 
       expect(result.fileName, 'powermanager-20260726-120000Z.json');
-      expect(json['schemaVersion'], 4);
+      expect(json['schemaVersion'], 5);
       expect(json['appVersion'], '0.1.0+1');
       expect(json['exportedAt'], testNow.toIso8601String());
       expect(json['ruleConfigVersions'], isA<List<Object?>>());

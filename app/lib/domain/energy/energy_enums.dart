@@ -291,6 +291,28 @@ enum ActivityFeedbackInvalidationReason {
   final String code;
 }
 
+enum ActivityFeedbackCollectionSource {
+  userInitiated('userInitiated'),
+  sampledPrompt('sampledPrompt');
+
+  const ActivityFeedbackCollectionSource(this.code);
+
+  final String code;
+}
+
+enum ActivityFeedbackSampleStatus {
+  selected('selected'),
+  prompted('prompted'),
+  responded('responded'),
+  skipped('skipped'),
+  expired('expired'),
+  invalidated('invalidated');
+
+  const ActivityFeedbackSampleStatus(this.code);
+
+  final String code;
+}
+
 enum LearningParameterFamily {
   baseline('baseline'),
   activityImpact('activityImpact');

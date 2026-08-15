@@ -98,6 +98,20 @@ final activityFeedbackRepositoryProvider = Provider<ActivityFeedbackRepository>(
   },
 );
 
+final activityFactorsRepositoryProvider =
+    Provider<PersonalizationActivityFactorsRepository>((ref) {
+      return DriftPersonalizationActivityFactorsRepository(
+        ref.watch(appDatabaseProvider).personalizationActivityFactorsDao,
+      );
+    });
+
+final activityFeedbackSamplesRepositoryProvider =
+    Provider<ActivityFeedbackSamplesRepository>((ref) {
+      return DriftActivityFeedbackSamplesRepository(
+        ref.watch(appDatabaseProvider).activityFeedbackSamplesDao,
+      );
+    });
+
 final learningRunsRepositoryProvider = Provider<LearningRunsRepository>((ref) {
   return DriftLearningRunsRepository(
     ref.watch(appDatabaseProvider).learningRunsDao,
@@ -166,6 +180,7 @@ final activityFeedbackMaintenanceProvider =
     Provider<ActivityFeedbackMaintenance>((ref) {
       return ActivityFeedbackMaintenance(
         ref.watch(activityFeedbackRepositoryProvider),
+        samples: ref.watch(activityFeedbackSamplesRepositoryProvider),
       );
     });
 
@@ -666,6 +681,10 @@ final jsonBackupRestoreServiceProvider = Provider<JsonBackupRestoreService>((
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),
     feedback: ref.watch(activityFeedbackRepositoryProvider),
+    activityFactors: ref.watch(activityFactorsRepositoryProvider),
+    activityFeedbackSamples: ref.watch(
+      activityFeedbackSamplesRepositoryProvider,
+    ),
     learningRuns: ref.watch(learningRunsRepositoryProvider),
     personalizationVersions: ref.watch(
       personalizationVersionsRepositoryProvider,

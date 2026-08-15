@@ -179,11 +179,9 @@ class LearningNoticesTable extends Table {
   TextColumn get type => text().map(const LearningNoticeTypeConverter())();
   TextColumn get personalizationVersionId =>
       text().named('personalization_version_id').nullable()();
-  TextColumn get learningRunId =>
-      text().named('learning_run_id').nullable()();
+  TextColumn get learningRunId => text().named('learning_run_id').nullable()();
   TextColumn get dedupKey => text().named('dedup_key').unique()();
-  TextColumn get status =>
-      text().map(const LearningNoticeStatusConverter())();
+  TextColumn get status => text().map(const LearningNoticeStatusConverter())();
   TextColumn get reasonCode => text().named('reason_code')();
   DateTimeColumn get createdAt => dateTime().named('created_at')();
   DateTimeColumn get seenAt => dateTime().named('seen_at').nullable()();
@@ -282,6 +280,20 @@ class ActivityRecordsTable extends Table {
       integer().named('duration_minutes').map(const DurationSlotConverter())();
   IntColumn get theoreticalDelta => integer().named('theoretical_delta')();
   IntColumn get appliedDelta => integer().named('applied_delta')();
+  IntColumn get defaultTheoreticalDelta => integer()
+      .named('default_theoretical_delta')
+      .withDefault(const Constant(0))();
+  RealColumn get factor =>
+      real().named('activity_factor').withDefault(const Constant(1.0))();
+  IntColumn get personalizedTheoreticalDelta => integer()
+      .named('personalized_theoretical_delta')
+      .withDefault(const Constant(0))();
+  TextColumn get personalizationVersionId =>
+      text().named('personalization_version_id').nullable()();
+  TextColumn get factorRegimeStartedLifeDay => text()
+      .named('factor_regime_started_life_day')
+      .map(const LifeDayConverter())
+      .nullable()();
   TextColumn get ruleVersion => text().named('rule_version')();
   TextColumn get status => text().map(const ActivityRecordStatusConverter())();
   DateTimeColumn get deletedAt => dateTime().named('deleted_at').nullable()();
@@ -294,6 +306,7 @@ class ActivityRecordsTable extends Table {
     "CHECK (length(trim(id)) > 0)",
     'CHECK (duration_minutes IN (15, 30, 45, 60, 90, 120))',
     "CHECK (status IN ('active', 'deleted'))",
+    'CHECK (activity_factor > 0)',
     "CHECK ((status = 'active' AND deleted_at IS NULL) OR (status = 'deleted' AND deleted_at IS NOT NULL))",
     "CHECK ((category = 'study' AND subcategory IN ('classAttendance', 'selfStudyOrThesis', 'homework', 'reviewOrExamPrep', 'organizeOrSummarize', 'otherStudy')) OR (category = 'practice' AND subcategory IN ('implementationOrDevelopment', 'experiment', 'projectProgress', 'debuggingOrRevision', 'organizationOrAdministration', 'otherPractice')) OR (category = 'recovery' AND subcategory IN ('nap', 'lightActivity', 'mentalReset', 'exerciseRecovery', 'lifeMaintenance', 'otherRecovery')) OR (category = 'leisure' AND subcategory IN ('gaming', 'shortVideo', 'seriesOrMovie', 'chatOrSocial', 'hobbyEntertainment', 'otherLeisure')))",
     'FOREIGN KEY (rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
@@ -413,6 +426,20 @@ class ActivityFeedbackTable extends Table {
       integer().named('theoretical_delta_snapshot')();
   IntColumn get appliedDeltaSnapshot =>
       integer().named('applied_delta_snapshot')();
+  IntColumn get defaultTheoreticalDeltaSnapshot => integer()
+      .named('default_theoretical_delta_snapshot')
+      .withDefault(const Constant(0))();
+  RealColumn get factorSnapshot =>
+      real().named('factor_snapshot').withDefault(const Constant(1.0))();
+  IntColumn get personalizedTheoreticalDeltaSnapshot => integer()
+      .named('personalized_theoretical_delta_snapshot')
+      .withDefault(const Constant(0))();
+  TextColumn get personalizationVersionId =>
+      text().named('personalization_version_id').nullable()();
+  TextColumn get factorRegimeStartedLifeDay => text()
+      .named('factor_regime_started_life_day')
+      .map(const LifeDayConverter())
+      .nullable()();
   TextColumn get impactSignSnapshot => text()
       .named('impact_sign_snapshot')
       .map(const ActivityImpactSignConverter())();
@@ -421,6 +448,14 @@ class ActivityFeedbackTable extends Table {
       dateTime().named('activity_updated_at_snapshot')();
   TextColumn get direction =>
       text().map(const ActivityFeedbackDirectionConverter())();
+  TextColumn get collectionSource => text()
+      .named('collection_source')
+      .map(const ActivityFeedbackCollectionSourceConverter())
+      .withDefault(const Constant('userInitiated'))();
+  TextColumn get samplingPolicyVersion =>
+      text().named('sampling_policy_version').nullable()();
+  DateTimeColumn get sampledAt => dateTime().named('sampled_at').nullable()();
+  TextColumn get sampleId => text().named('sample_id').nullable()();
   TextColumn get status =>
       text().map(const ActivityFeedbackStatusConverter())();
   TextColumn get invalidationReason => text()
@@ -442,11 +477,102 @@ class ActivityFeedbackTable extends Table {
     "CHECK ((impact_sign_snapshot = 'consumption' AND theoretical_delta_snapshot < 0) OR (impact_sign_snapshot = 'recovery' AND theoretical_delta_snapshot > 0) OR (impact_sign_snapshot = 'zero' AND theoretical_delta_snapshot = 0))",
     "CHECK (length(trim(rule_version_snapshot)) > 0)",
     "CHECK (direction IN ('strongerImpact', 'aboutRight', 'weakerImpact', 'directionMismatch'))",
+    "CHECK (collection_source IN ('userInitiated', 'sampledPrompt'))",
+    'CHECK (factor_snapshot > 0)',
+    "CHECK ((collection_source = 'userInitiated' AND sample_id IS NULL AND sampling_policy_version IS NULL AND sampled_at IS NULL) OR (collection_source = 'sampledPrompt' AND sample_id IS NOT NULL AND sampling_policy_version IS NOT NULL AND sampled_at IS NOT NULL AND personalization_version_id IS NOT NULL AND factor_regime_started_life_day IS NOT NULL))",
     "CHECK (status IN ('active', 'invalidated'))",
     "CHECK (invalidation_reason IS NULL OR invalidation_reason IN ('activityDeleted', 'activityEdited', 'integrityFailure'))",
     "CHECK ((status = 'active' AND invalidation_reason IS NULL) OR (status = 'invalidated' AND invalidation_reason IS NOT NULL))",
     'FOREIGN KEY (activity_record_id) REFERENCES activity_records(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
     'FOREIGN KEY (rule_version_snapshot) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  ];
+}
+
+@DataClassName('PersonalizationActivityFactorRow')
+@TableIndex(
+  name: 'personalization_activity_factors_source',
+  columns: {#sourceLearningRunId},
+)
+class PersonalizationActivityFactorsTable extends Table {
+  @override
+  String get tableName => 'personalization_activity_factors';
+
+  TextColumn get personalizationVersionId =>
+      text().named('personalization_version_id')();
+  TextColumn get subcategory =>
+      text().map(const ActivitySubcategoryConverter())();
+  TextColumn get impactSign =>
+      text().named('impact_sign').map(const ActivityImpactSignConverter())();
+  RealColumn get factor => real()();
+  TextColumn get baseActivityRuleVersion =>
+      text().named('base_activity_rule_version')();
+  TextColumn get sourceLearningRunId =>
+      text().named('source_learning_run_id').nullable()();
+  TextColumn get factorRegimeStartedLifeDay => text()
+      .named('factor_regime_started_life_day')
+      .map(const LifeDayConverter())();
+
+  @override
+  Set<Column> get primaryKey => {
+    personalizationVersionId,
+    subcategory,
+    impactSign,
+  };
+
+  @override
+  List<String> get customConstraints => const [
+    'CHECK (factor > 0 AND factor <= 2.0)',
+    "CHECK (impact_sign IN ('consumption', 'recovery'))",
+    "CHECK (length(trim(base_activity_rule_version)) > 0)",
+    "CHECK (source_learning_run_id IS NULL OR length(trim(source_learning_run_id)) > 0)",
+    'FOREIGN KEY (personalization_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+    'FOREIGN KEY (source_learning_run_id) REFERENCES learning_runs(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+    'FOREIGN KEY (base_activity_rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  ];
+}
+
+@DataClassName('ActivityFeedbackSampleRow')
+@TableIndex(
+  name: 'activity_feedback_samples_activity_day',
+  columns: {#activityRecordId, #lifeDay, #selectedAt},
+)
+class ActivityFeedbackSamplesTable extends Table {
+  @override
+  String get tableName => 'activity_feedback_samples';
+
+  TextColumn get id => text()();
+  TextColumn get activityRecordId => text().named('activity_record_id')();
+  TextColumn get lifeDay =>
+      text().named('life_day').map(const LifeDayConverter())();
+  TextColumn get samplingPolicyVersion =>
+      text().named('sampling_policy_version')();
+  TextColumn get status =>
+      text().map(const ActivityFeedbackSampleStatusConverter())();
+  DateTimeColumn get selectedAt => dateTime().named('selected_at')();
+  DateTimeColumn get promptedAt => dateTime().named('prompted_at').nullable()();
+  DateTimeColumn get respondedAt =>
+      dateTime().named('responded_at').nullable()();
+  TextColumn get feedbackId => text().named('feedback_id').nullable()();
+  DateTimeColumn get invalidatedAt =>
+      dateTime().named('invalidated_at').nullable()();
+  TextColumn get invalidationReason => text()
+      .named('invalidation_reason')
+      .map(const ActivityFeedbackInvalidationReasonConverter())
+      .nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+
+  @override
+  List<String> get customConstraints => const [
+    "CHECK (length(trim(id)) > 0)",
+    "CHECK (length(trim(activity_record_id)) > 0)",
+    "CHECK (length(trim(sampling_policy_version)) > 0)",
+    "CHECK (status IN ('selected', 'prompted', 'responded', 'skipped', 'expired', 'invalidated'))",
+    "CHECK ((status IN ('selected', 'prompted', 'responded', 'skipped', 'expired') AND invalidated_at IS NULL AND invalidation_reason IS NULL) OR (status = 'invalidated' AND invalidated_at IS NOT NULL AND invalidation_reason IS NOT NULL))",
+    "CHECK ((status = 'selected' AND prompted_at IS NULL AND responded_at IS NULL AND feedback_id IS NULL) OR (status = 'prompted' AND prompted_at IS NOT NULL AND responded_at IS NULL AND feedback_id IS NULL) OR (status = 'responded' AND prompted_at IS NOT NULL AND responded_at IS NOT NULL AND feedback_id IS NOT NULL) OR (status IN ('skipped', 'expired', 'invalidated')))",
+    "CHECK (invalidation_reason IS NULL OR invalidation_reason IN ('activityDeleted', 'activityEdited', 'integrityFailure'))",
+    'FOREIGN KEY (activity_record_id) REFERENCES activity_records(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   ];
 }
 

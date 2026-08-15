@@ -4,7 +4,7 @@
 
 - 版本：1.7
 - 日期：2026-08-15
-- 状态：B2-2 工程实现、自动化与模拟器已通过，产品轨延期到最终安装后；下一阶段 B3-0
+- 状态：B3-1 工程实现、自动化与模拟器已通过，产品轨延期到最终安装后；下一阶段 B3-2
 - 当前实现起点：MVP-A Stage 19
 
 本计划把“能安全采集证据”“自动学习能在影子中成立”和“模型能安全自动生效”设为三道不同
@@ -340,7 +340,8 @@ MVP-B 最终真机门和相应真实产品证据通过。
 SHA-256 结果盲抽样、每日上限/跳过与未响应冷却、directionMismatch veto、时长异质门、倍率范围/步长/
 取整/恢复上限均由纯领域代码覆盖。合同水印为 `PREPRODUCTION_ONLY_ACTIVITY_IMPACT_V1`，当前
 `activityImpactProductionLearningEnabled=false`、`activityImpactAutoApplyEnabled=false`；schema v5
-持久化与正式 learner 仍属于 B3-1。
+持久化与正式 learner 仍属于 B3-1；B3-1 已完成 schema v5、备份桥接、快照保持和确定性 shadow learner，
+正式激活仍属于 B3-2。
 
 ## 13. B3-1：活动影响学习器与 schema v5
 
@@ -367,6 +368,9 @@ SHA-256 结果盲抽样、每日上限/跳过与未响应冷却、directionMisma
 - 仅新增默认倍率能力时不切换有效模型 regime；
 - 没有合格键时得到稳定 `insufficientEvidence / noChange`；
 - fixture 覆盖完整的候选与版本生命周期。
+
+工程实现已通过：v4 → v5 迁移、失败回滚、v5 备份往返、sample/feedback 生命周期、活动快照保持、
+factor regime 隔离和按键 learner 均已完成；生产门保持关闭，下一阶段为 B3-2。
 
 ## 14. B3-2：活动影响安全激活与监测
 

@@ -52,6 +52,11 @@ final class ActivityFeedbackUseCases implements ActivityFeedbackMutator {
     required String activityId,
     required DateTime expectedActivityUpdatedAt,
     required ActivityFeedbackDirection direction,
+    ActivityFeedbackCollectionSource collectionSource =
+        ActivityFeedbackCollectionSource.userInitiated,
+    String? samplingPolicyVersion,
+    DateTime? sampledAt,
+    String? sampleId,
   }) {
     return writeCoordinator.run(() {
       return transactionRunner.run(() async {
@@ -73,13 +78,30 @@ final class ActivityFeedbackUseCases implements ActivityFeedbackMutator {
           throw StateError('staleActivity');
         }
         final config = await ruleLoader.load(activity.ruleVersion);
-        final expectedTheoretical = calculator.calculateTheoreticalDelta(
+        final expectedDefaultTheoretical = calculator.calculateTheoreticalDelta(
           config: config,
           subcategory: activity.subcategory,
           duration: activity.duration,
         );
-        if (expectedTheoretical != activity.theoreticalDelta) {
+        if (expectedDefaultTheoretical != activity.defaultTheoreticalDelta) {
           throw StateError('activityRuleIntegrityFailure');
+        }
+        if (collectionSource ==
+                ActivityFeedbackCollectionSource.sampledPrompt &&
+            (sampleId == null ||
+                sampleId.trim().isEmpty ||
+                samplingPolicyVersion == null ||
+                samplingPolicyVersion.trim().isEmpty ||
+                activity.personalizationVersionId == null ||
+                activity.factorRegimeStartedLifeDay == null)) {
+          throw StateError('sampledFeedbackSnapshotIncomplete');
+        }
+        if (collectionSource ==
+                ActivityFeedbackCollectionSource.userInitiated &&
+            (sampleId != null ||
+                samplingPolicyVersion != null ||
+                sampledAt != null)) {
+          throw StateError('userInitiatedFeedbackCannotHaveSample');
         }
         final existing = await feedback.findActiveForActivity(activity.id);
         if (existing == null && feedbackId.trim().isEmpty) {
@@ -107,6 +129,19 @@ final class ActivityFeedbackUseCases implements ActivityFeedbackMutator {
           status: ActivityFeedbackStatus.active,
           invalidationReason: null,
           observedAt: nowUtc,
+          defaultTheoreticalDeltaSnapshot: activity.defaultTheoreticalDelta,
+          factorSnapshot: activity.factor,
+          personalizedTheoreticalDeltaSnapshot:
+              activity.personalizedTheoreticalDelta,
+          personalizationVersionId: activity.personalizationVersionId,
+          factorRegimeStartedLifeDay: activity.factorRegimeStartedLifeDay,
+          collectionSource: collectionSource,
+          samplingPolicyVersion: samplingPolicyVersion,
+          sampledAt:
+              collectionSource == ActivityFeedbackCollectionSource.sampledPrompt
+              ? (sampledAt?.toUtc() ?? nowUtc)
+              : null,
+          sampleId: sampleId,
         );
         if (existing == null) {
           await feedback.insert(saved);
@@ -123,37 +158,73 @@ final class ActivityFeedbackUseCases implements ActivityFeedbackMutator {
 }
 
 final class ActivityFeedbackMaintenance {
-  const ActivityFeedbackMaintenance(this.feedback);
+  const ActivityFeedbackMaintenance(this.feedback, {this.samples});
 
   final ActivityFeedbackRepository feedback;
+  final ActivityFeedbackSamplesRepository? samples;
 
   Future<bool> invalidateActive(
     String activityId,
     ActivityFeedbackInvalidationReason reason,
   ) async {
     final existing = await feedback.findActiveForActivity(activityId);
-    if (existing == null) {
-      return false;
+    var changed = false;
+    if (existing != null) {
+      await feedback.update(
+        ActivityFeedback(
+          id: existing.id,
+          activityRecordId: existing.activityRecordId,
+          lifeDay: existing.lifeDay,
+          subcategorySnapshot: existing.subcategorySnapshot,
+          durationSnapshot: existing.durationSnapshot,
+          theoreticalDeltaSnapshot: existing.theoreticalDeltaSnapshot,
+          appliedDeltaSnapshot: existing.appliedDeltaSnapshot,
+          impactSignSnapshot: existing.impactSignSnapshot,
+          ruleVersionSnapshot: existing.ruleVersionSnapshot,
+          activityUpdatedAtSnapshot: existing.activityUpdatedAtSnapshot,
+          direction: existing.direction,
+          status: ActivityFeedbackStatus.invalidated,
+          invalidationReason: reason,
+          observedAt: existing.observedAt,
+          defaultTheoreticalDeltaSnapshot:
+              existing.defaultTheoreticalDeltaSnapshot,
+          factorSnapshot: existing.factorSnapshot,
+          personalizedTheoreticalDeltaSnapshot:
+              existing.personalizedTheoreticalDeltaSnapshot,
+          personalizationVersionId: existing.personalizationVersionId,
+          factorRegimeStartedLifeDay: existing.factorRegimeStartedLifeDay,
+          collectionSource: existing.collectionSource,
+          samplingPolicyVersion: existing.samplingPolicyVersion,
+          sampledAt: existing.sampledAt,
+          sampleId: existing.sampleId,
+        ),
+      );
+      changed = true;
     }
-    await feedback.update(
-      ActivityFeedback(
-        id: existing.id,
-        activityRecordId: existing.activityRecordId,
-        lifeDay: existing.lifeDay,
-        subcategorySnapshot: existing.subcategorySnapshot,
-        durationSnapshot: existing.durationSnapshot,
-        theoreticalDeltaSnapshot: existing.theoreticalDeltaSnapshot,
-        appliedDeltaSnapshot: existing.appliedDeltaSnapshot,
-        impactSignSnapshot: existing.impactSignSnapshot,
-        ruleVersionSnapshot: existing.ruleVersionSnapshot,
-        activityUpdatedAtSnapshot: existing.activityUpdatedAtSnapshot,
-        direction: existing.direction,
-        status: ActivityFeedbackStatus.invalidated,
-        invalidationReason: reason,
-        observedAt: existing.observedAt,
-      ),
-    );
-    return true;
+    if (samples != null) {
+      for (final sample in await samples!.list()) {
+        if (sample.activityRecordId != activityId || sample.isInvalidated) {
+          continue;
+        }
+        await samples!.update(
+          ActivityFeedbackSample(
+            id: sample.id,
+            activityRecordId: sample.activityRecordId,
+            lifeDay: sample.lifeDay,
+            samplingPolicyVersion: sample.samplingPolicyVersion,
+            status: ActivityFeedbackSampleStatus.invalidated,
+            selectedAt: sample.selectedAt,
+            promptedAt: sample.promptedAt,
+            respondedAt: sample.respondedAt,
+            feedbackId: sample.feedbackId,
+            invalidatedAt: sample.invalidatedAt ?? sample.selectedAt,
+            invalidationReason: reason,
+          ),
+        );
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   Future<bool> invalidateForSnapshotChange({

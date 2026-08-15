@@ -10,6 +10,7 @@ import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
+import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
@@ -35,7 +36,7 @@ void main() {
         harness.proofStore.proof!.backupContentDigest,
         harness.proofStore.proof!.currentContentDigest,
       );
-      expect(harness.proofStore.proof!.backupSchemaVersion, 4);
+      expect(harness.proofStore.proof!.backupSchemaVersion, 5);
       expect((await harness.service.check()).isReady, isTrue);
     },
   );
@@ -181,8 +182,28 @@ void main() {
   );
 }
 
-String _json({int baseEnergy = 100}) =>
-    jsonEncode(backupFixtureV4(baseEnergy: baseEnergy).toJson());
+String _json({int baseEnergy = 100}) {
+  final source = backupFixtureV4(baseEnergy: baseEnergy);
+  return jsonEncode(
+    PowerManagerExportDto(
+      schemaVersion: 5,
+      exportedAt: source.exportedAt,
+      appVersion: source.appVersion,
+      appSettings: source.appSettings,
+      ruleVersions: source.ruleVersions,
+      morningCheckIns: source.morningCheckIns,
+      activityRecords: source.activityRecords,
+      energyObservations: source.energyObservations,
+      activityFeedback: source.activityFeedback,
+      learningRuns: source.learningRuns,
+      personalizationVersions: source.personalizationVersions,
+      learningConsents: source.learningConsents,
+      learningNotices: source.learningNotices,
+      dailySummaries: source.dailySummaries,
+      promptReceipts: source.promptReceipts,
+    ).toJson(),
+  );
+}
 
 final class _Harness {
   _Harness({String? savedBackupContents, String? currentContents})

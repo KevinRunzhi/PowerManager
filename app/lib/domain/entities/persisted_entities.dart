@@ -174,7 +174,14 @@ final class StoredEstimatedActivity {
     required this.ruleVersion,
     required this.status,
     required this.deletedAt,
-  });
+    this.personalizationVersionId,
+    this.factorRegimeStartedLifeDay,
+    int? defaultTheoreticalDelta,
+    this.factor = 1,
+    int? personalizedTheoreticalDelta,
+  }) : defaultTheoreticalDelta = defaultTheoreticalDelta ?? theoreticalDelta,
+       personalizedTheoreticalDelta =
+           personalizedTheoreticalDelta ?? theoreticalDelta;
 
   final String id;
   final LifeDay lifeDay;
@@ -189,6 +196,11 @@ final class StoredEstimatedActivity {
   final String ruleVersion;
   final ActivityRecordStatus status;
   final DateTime? deletedAt;
+  final String? personalizationVersionId;
+  final LifeDay? factorRegimeStartedLifeDay;
+  final int defaultTheoreticalDelta;
+  final double factor;
+  final int personalizedTheoreticalDelta;
 
   EstimatedActivityRecord toReplayRecord() {
     return EstimatedActivityRecord(
@@ -266,7 +278,19 @@ final class ActivityFeedback {
     required this.status,
     required this.invalidationReason,
     required this.observedAt,
-  });
+    int? defaultTheoreticalDeltaSnapshot,
+    this.factorSnapshot = 1,
+    int? personalizedTheoreticalDeltaSnapshot,
+    this.personalizationVersionId,
+    this.factorRegimeStartedLifeDay,
+    this.collectionSource = ActivityFeedbackCollectionSource.userInitiated,
+    this.samplingPolicyVersion,
+    this.sampledAt,
+    this.sampleId,
+  }) : defaultTheoreticalDeltaSnapshot =
+           defaultTheoreticalDeltaSnapshot ?? theoreticalDeltaSnapshot,
+       personalizedTheoreticalDeltaSnapshot =
+           personalizedTheoreticalDeltaSnapshot ?? theoreticalDeltaSnapshot;
 
   final String id;
   final String activityRecordId;
@@ -282,6 +306,87 @@ final class ActivityFeedback {
   final ActivityFeedbackStatus status;
   final ActivityFeedbackInvalidationReason? invalidationReason;
   final DateTime observedAt;
+  final int defaultTheoreticalDeltaSnapshot;
+  final double factorSnapshot;
+  final int personalizedTheoreticalDeltaSnapshot;
+  final String? personalizationVersionId;
+  final LifeDay? factorRegimeStartedLifeDay;
+  final ActivityFeedbackCollectionSource collectionSource;
+  final String? samplingPolicyVersion;
+  final DateTime? sampledAt;
+  final String? sampleId;
+}
+
+final class PersonalizationActivityFactor {
+  const PersonalizationActivityFactor({
+    required this.personalizationVersionId,
+    required this.subcategory,
+    required this.impactSign,
+    required this.factor,
+    required this.baseActivityRuleVersion,
+    required this.sourceLearningRunId,
+    required this.factorRegimeStartedLifeDay,
+  });
+
+  final String personalizationVersionId;
+  final ActivitySubcategory subcategory;
+  final ActivityImpactSign impactSign;
+  final double factor;
+  final String baseActivityRuleVersion;
+  final String? sourceLearningRunId;
+  final LifeDay factorRegimeStartedLifeDay;
+}
+
+final class ActivityFeedbackSample {
+  const ActivityFeedbackSample({
+    required this.id,
+    required this.activityRecordId,
+    required this.lifeDay,
+    required this.samplingPolicyVersion,
+    required this.status,
+    required this.selectedAt,
+    required this.promptedAt,
+    required this.respondedAt,
+    required this.feedbackId,
+    required this.invalidatedAt,
+    required this.invalidationReason,
+  });
+
+  final String id;
+  final String activityRecordId;
+  final LifeDay lifeDay;
+  final String samplingPolicyVersion;
+  final ActivityFeedbackSampleStatus status;
+  final DateTime selectedAt;
+  final DateTime? promptedAt;
+  final DateTime? respondedAt;
+  final String? feedbackId;
+  final DateTime? invalidatedAt;
+  final ActivityFeedbackInvalidationReason? invalidationReason;
+
+  bool get isInvalidated => status == ActivityFeedbackSampleStatus.invalidated;
+
+  bool canTransitionTo(ActivityFeedbackSampleStatus next) {
+    if (isInvalidated) return false;
+    return switch (status) {
+      ActivityFeedbackSampleStatus.selected =>
+        next == ActivityFeedbackSampleStatus.prompted ||
+            next == ActivityFeedbackSampleStatus.responded ||
+            next == ActivityFeedbackSampleStatus.skipped ||
+            next == ActivityFeedbackSampleStatus.expired ||
+            next == ActivityFeedbackSampleStatus.invalidated,
+      ActivityFeedbackSampleStatus.prompted =>
+        next == ActivityFeedbackSampleStatus.responded ||
+            next == ActivityFeedbackSampleStatus.skipped ||
+            next == ActivityFeedbackSampleStatus.expired ||
+            next == ActivityFeedbackSampleStatus.invalidated,
+      ActivityFeedbackSampleStatus.responded ||
+      ActivityFeedbackSampleStatus.skipped ||
+      ActivityFeedbackSampleStatus.expired =>
+        next == ActivityFeedbackSampleStatus.invalidated,
+      ActivityFeedbackSampleStatus.invalidated => false,
+    };
+  }
 }
 
 final class LearningRun {

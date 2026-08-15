@@ -11,25 +11,25 @@ void main() {
         final observations = <ActivityImpactFeedbackObservation>[
           _observation(
             day: LifeDay(2026, 8, 1),
-            source: ActivityImpactFeedbackCollectionSource.userInitiated,
+          source: ActivityFeedbackCollectionSource.userInitiated,
           ),
           _observation(
             day: LifeDay(2026, 8, 2),
-            source: ActivityImpactFeedbackCollectionSource.sampledPrompt,
+          source: ActivityFeedbackCollectionSource.sampledPrompt,
           ),
           _observation(
             day: LifeDay(2026, 8, 3),
-            source: ActivityImpactFeedbackCollectionSource.sampledPrompt,
+          source: ActivityFeedbackCollectionSource.sampledPrompt,
             direction: ActivityFeedbackDirection.strongerImpact,
           ),
           _observation(
             day: LifeDay(2026, 8, 4),
-            source: ActivityImpactFeedbackCollectionSource.sampledPrompt,
+          source: ActivityFeedbackCollectionSource.sampledPrompt,
             direction: ActivityFeedbackDirection.weakerImpact,
           ),
           _observation(
             day: LifeDay(2026, 8, 5),
-            source: ActivityImpactFeedbackCollectionSource.sampledPrompt,
+          source: ActivityFeedbackCollectionSource.sampledPrompt,
             direction: ActivityFeedbackDirection.aboutRight,
           ),
         ];
@@ -228,7 +228,7 @@ void main() {
         for (var index = 0; index < 8; index++)
           _observation(
             day: LifeDay(2026, 8, index + 1),
-            source: ActivityImpactFeedbackCollectionSource.sampledPrompt,
+            source: ActivityFeedbackCollectionSource.sampledPrompt,
             direction: index.isEven
                 ? ActivityFeedbackDirection.aboutRight
                 : ActivityFeedbackDirection.strongerImpact,
@@ -249,7 +249,7 @@ void main() {
         for (var index = 0; index < 8; index++)
           _observation(
             day: LifeDay(2026, 8, index + 1),
-            source: ActivityImpactFeedbackCollectionSource.sampledPrompt,
+            source: ActivityFeedbackCollectionSource.sampledPrompt,
             direction: index < 2
                 ? ActivityFeedbackDirection.directionMismatch
                 : ActivityFeedbackDirection.aboutRight,
@@ -268,7 +268,7 @@ void main() {
         for (var index = 0; index < 8; index++)
           _observation(
             day: LifeDay(2026, 8, index + 1),
-            source: ActivityImpactFeedbackCollectionSource.sampledPrompt,
+            source: ActivityFeedbackCollectionSource.sampledPrompt,
             duration: index.isEven
                 ? DurationSlot.minutes15
                 : DurationSlot.minutes90,
@@ -333,8 +333,8 @@ void main() {
 
 ActivityImpactFeedbackObservation _observation({
   required LifeDay day,
-  ActivityImpactFeedbackCollectionSource source =
-      ActivityImpactFeedbackCollectionSource.userInitiated,
+  ActivityFeedbackCollectionSource source =
+      ActivityFeedbackCollectionSource.userInitiated,
   ActivityFeedbackDirection direction = ActivityFeedbackDirection.aboutRight,
   ActivityFeedbackStatus status = ActivityFeedbackStatus.active,
   DurationSlot duration = DurationSlot.minutes30,

@@ -55,7 +55,7 @@ void main() {
     expect(report.relativeCorrections, 1);
     expect(report.activityRecords, 2);
     expect(report.deletedActivityRecords, 1);
-    expect(report.schemaVersion, 4);
+    expect(report.schemaVersion, 5);
     expect(report.legacyObservations, 3);
     expect(report.contractObservations, 0);
     expect(report.activityFeedback, 2);

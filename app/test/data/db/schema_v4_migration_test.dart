@@ -28,6 +28,7 @@ void main() {
     final database = AppDatabase.forExecutor(
       schema.newConnection(),
       clock: const _MigrationClock(),
+      schemaVersionOverride: 4,
     );
     addTearDown(database.close);
     await verifier.migrateAndValidate(
@@ -97,6 +98,7 @@ void main() {
       final database = AppDatabase.forExecutor(
         schema.newConnection(),
         clock: const _MigrationClock(),
+        schemaVersionOverride: 4,
       );
       addTearDown(database.close);
       final rows = await database.customSelect('''
@@ -204,6 +206,7 @@ void main() {
       final database = AppDatabase.forExecutor(
         schema.newConnection(),
         clock: const _MigrationClock(),
+        schemaVersionOverride: 4,
       );
       addTearDown(database.close);
       expect(await _snapshotRows(database, 'learning_runs', 'id'), beforeRuns);
@@ -258,6 +261,7 @@ void main() {
       final database = AppDatabase.forExecutor(
         schema.newConnection(),
         clock: const _MigrationClock(),
+        schemaVersionOverride: 4,
         migrationFailureHook: (current) async {
           if (current == checkpoint) {
             failures++;
@@ -293,6 +297,7 @@ void main() {
       final successfulRetry = AppDatabase.forExecutor(
         schema.newConnection(),
         clock: const _MigrationClock(),
+        schemaVersionOverride: 4,
       );
       addTearDown(successfulRetry.close);
       expect(await _userVersion(successfulRetry), 4);
@@ -309,6 +314,7 @@ void main() {
     final first = AppDatabase.forExecutor(
       schema.newConnection(),
       clock: const _MigrationClock(),
+      schemaVersionOverride: 4,
     );
     expect(await _count(first, 'personalization_versions'), 2);
     await first.close();
@@ -317,6 +323,7 @@ void main() {
     final reopened = AppDatabase.forExecutor(
       schema.newConnection(),
       clock: const _MigrationClock(),
+      schemaVersionOverride: 4,
       migrationFailureHook: (_) async => migrationCalls++,
     );
     addTearDown(reopened.close);
@@ -329,6 +336,7 @@ Future<void> _expectV3MigrationRejected(QueryExecutor executor) async {
   final database = AppDatabase.forExecutor(
     executor,
     clock: const _MigrationClock(),
+    schemaVersionOverride: 4,
   );
   await expectLater(
     database.customSelect('SELECT 1').get(),

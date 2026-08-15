@@ -14,15 +14,6 @@ const activityImpactPreproductionWatermark =
     'PREPRODUCTION_ONLY_ACTIVITY_IMPACT_V1';
 const activityImpactSupportedRuleVersion = 'energy-rules-v2-mvp-a';
 
-enum ActivityImpactFeedbackCollectionSource {
-  userInitiated('userInitiated'),
-  sampledPrompt('sampledPrompt');
-
-  const ActivityImpactFeedbackCollectionSource(this.code);
-
-  final String code;
-}
-
 final class ActivityImpactKey implements Comparable<ActivityImpactKey> {
   const ActivityImpactKey({
     required this.subcategory,
@@ -89,7 +80,7 @@ final class ActivityImpactFeedbackObservation {
       ruleVersion: feedback.ruleVersionSnapshot,
       direction: feedback.direction,
       status: feedback.status,
-      collectionSource: ActivityImpactFeedbackCollectionSource.userInitiated,
+      collectionSource: ActivityFeedbackCollectionSource.userInitiated,
     );
   }
 
@@ -102,7 +93,7 @@ final class ActivityImpactFeedbackObservation {
   final String ruleVersion;
   final ActivityFeedbackDirection direction;
   final ActivityFeedbackStatus status;
-  final ActivityImpactFeedbackCollectionSource collectionSource;
+  final ActivityFeedbackCollectionSource collectionSource;
 
   ActivityImpactKey get key =>
       ActivityImpactKey(subcategory: subcategory, impactSign: impactSign);
@@ -247,7 +238,7 @@ final class ActivityImpactFeasibilityAudit {
       if (value.isComparable) {
         comparable++;
         if (value.collectionSource ==
-            ActivityImpactFeedbackCollectionSource.sampledPrompt) {
+            ActivityFeedbackCollectionSource.sampledPrompt) {
           sampledDirectionCounts.update(
             value.direction,
             (count) => count + 1,
@@ -255,7 +246,7 @@ final class ActivityImpactFeasibilityAudit {
           );
         }
         if (value.collectionSource ==
-            ActivityImpactFeedbackCollectionSource.sampledPrompt) {
+            ActivityFeedbackCollectionSource.sampledPrompt) {
           sampledLifeDays.add(value.lifeDay);
           sampledComparable++;
           if (value.direction != ActivityFeedbackDirection.directionMismatch) {

@@ -11,6 +11,7 @@ import 'package:power_manager/domain/energy/learning_eligibility_service.dart';
 import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/energy/observation_comparison_service.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/activity_impact_contract.dart';
 import 'package:power_manager/domain/learning/canonical_json.dart';
 import 'package:power_manager/domain/learning/personalization_identity.dart';
 import 'package:power_manager/domain/learning/personalization_lifecycle.dart';
@@ -37,6 +38,8 @@ final class BackupDataCounts {
     this.personalizationVersions = 0,
     this.learningConsents = 0,
     this.learningNotices = 0,
+    this.activityFactors = 0,
+    this.activityFeedbackSamples = 0,
     required this.dailySummaries,
     required this.promptReceipts,
   });
@@ -50,6 +53,8 @@ final class BackupDataCounts {
   final int personalizationVersions;
   final int learningConsents;
   final int learningNotices;
+  final int activityFactors;
+  final int activityFeedbackSamples;
   final int dailySummaries;
   final int promptReceipts;
 
@@ -63,6 +68,8 @@ final class BackupDataCounts {
       personalizationVersions +
       learningConsents +
       learningNotices +
+      activityFactors +
+      activityFeedbackSamples +
       dailySummaries +
       promptReceipts +
       1;
@@ -135,6 +142,7 @@ final class JsonBackupCodec {
         ...backup.activityRecords.map((item) => item.lifeDay),
         ...backup.energyObservations.map((item) => item.lifeDay),
         ...backup.activityFeedback.map((item) => item.lifeDay),
+        ...backup.activityFeedbackSamples.map((item) => item.lifeDay),
         ...backup.dailySummaries.map((item) => item.lifeDay),
       ]..sort();
       return BackupInspection(
@@ -150,6 +158,8 @@ final class JsonBackupCodec {
           personalizationVersions: backup.personalizationVersions.length,
           learningConsents: backup.learningConsents.length,
           learningNotices: backup.learningNotices.length,
+          activityFactors: backup.activityFactors.length,
+          activityFeedbackSamples: backup.activityFeedbackSamples.length,
           dailySummaries: backup.dailySummaries.length,
           promptReceipts: backup.promptReceipts.length,
         ),
@@ -166,8 +176,8 @@ final class JsonBackupCodec {
 
 PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
   final schemaVersion = _int(json, 'schemaVersion', '顶层');
-  if (schemaVersion < 1 || schemaVersion > 4) {
-    throw const BackupFormatException('当前应用只支持 schemaVersion 1、2、3 或 4 的备份。');
+  if (schemaVersion < 1 || schemaVersion > 5) {
+    throw const BackupFormatException('当前应用只支持 schemaVersion 1、2、3、4 或 5 的备份。');
   }
   final settingsJson = _map(json, 'appSettings', '顶层');
   final rules = _list(
@@ -180,11 +190,12 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
     'morningCheckIns',
     '顶层',
   ).map((item) => _parseMorning(_asMap(item, '晨间确认'))).toList(growable: false);
-  final activities = _list(
-    json,
-    'activityRecords',
-    '顶层',
-  ).map((item) => _parseActivity(_asMap(item, '活动记录'))).toList(growable: false);
+  final activities = _list(json, 'activityRecords', '顶层')
+      .map(
+        (item) =>
+            _parseActivity(_asMap(item, '活动记录'), schemaVersion: schemaVersion),
+      )
+      .toList(growable: false);
   final observations = _list(json, 'energyObservations', '顶层')
       .map(
         (item) => _parseObservation(
@@ -196,7 +207,12 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
   final feedback = schemaVersion == 1
       ? const <ActivityFeedback>[]
       : _list(json, 'activityFeedback', '顶层')
-            .map((item) => _parseFeedback(_asMap(item, '活动反馈')))
+            .map(
+              (item) => _parseFeedback(
+                _asMap(item, '活动反馈'),
+                schemaVersion: schemaVersion,
+              ),
+            )
             .toList(growable: false);
   final learningRuns = schemaVersion < 3
       ? const <LearningRun>[]
@@ -225,6 +241,16 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
       : _list(json, 'learningNotices', '顶层')
             .map((item) => _parseLearningNotice(_asMap(item, '学习通知')))
             .toList(growable: false);
+  final activityFactors = schemaVersion < 5
+      ? const <PersonalizationActivityFactor>[]
+      : _list(json, 'activityFactors', '顶层')
+            .map((item) => _parseActivityFactor(_asMap(item, '活动倍率')))
+            .toList(growable: false);
+  final activityFeedbackSamples = schemaVersion < 5
+      ? const <ActivityFeedbackSample>[]
+      : _list(json, 'activityFeedbackSamples', '顶层')
+            .map((item) => _parseActivityFeedbackSample(_asMap(item, '活动反馈抽样')))
+            .toList(growable: false);
   final summaries = _list(json, 'dailySummaries', '顶层')
       .map(
         (item) =>
@@ -250,6 +276,8 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
     activityFeedback: feedback,
     learningRuns: learningRuns,
     personalizationVersions: personalizationVersions,
+    activityFactors: activityFactors,
+    activityFeedbackSamples: activityFeedbackSamples,
     learningConsents: learningConsents,
     learningNotices: learningNotices,
     dailySummaries: summaries,
@@ -586,7 +614,19 @@ MorningCheckIn _parseMorning(Map<String, Object?> json) {
   );
 }
 
-StoredEstimatedActivity _parseActivity(Map<String, Object?> json) {
+StoredEstimatedActivity _parseActivity(
+  Map<String, Object?> json, {
+  required int schemaVersion,
+}) {
+  if (schemaVersion >= 5) {
+    _requireKeys(json, const {
+      'defaultTheoreticalDelta',
+      'factor',
+      'personalizedTheoreticalDelta',
+      'personalizationVersionId',
+      'factorRegimeStartedLifeDay',
+    }, '活动记录');
+  }
   return StoredEstimatedActivity(
     id: _string(json, 'id', '活动记录'),
     lifeDay: _lifeDay(json, 'lifeDay', '活动记录'),
@@ -608,6 +648,19 @@ StoredEstimatedActivity _parseActivity(Map<String, Object?> json) {
     duration: _duration(_int(json, 'durationMinutes', '活动记录')),
     theoreticalDelta: _int(json, 'theoreticalDelta', '活动记录'),
     appliedDelta: _int(json, 'appliedDelta', '活动记录'),
+    defaultTheoreticalDelta: schemaVersion >= 5
+        ? _int(json, 'defaultTheoreticalDelta', '活动记录')
+        : null,
+    factor: schemaVersion >= 5 ? _double(json, 'factor', '活动记录') : 1,
+    personalizedTheoreticalDelta: schemaVersion >= 5
+        ? _int(json, 'personalizedTheoreticalDelta', '活动记录')
+        : null,
+    personalizationVersionId: schemaVersion >= 5
+        ? _nullableString(json, 'personalizationVersionId', '活动记录')
+        : null,
+    factorRegimeStartedLifeDay: schemaVersion >= 5
+        ? _nullableLifeDay(json, 'factorRegimeStartedLifeDay', '活动记录')
+        : null,
     ruleVersion: _string(json, 'ruleVersion', '活动记录'),
     status: _enumByCode(
       ActivityRecordStatus.values,
@@ -731,7 +784,10 @@ EnergyObservation _parseObservation(
   );
 }
 
-ActivityFeedback _parseFeedback(Map<String, Object?> json) {
+ActivityFeedback _parseFeedback(
+  Map<String, Object?> json, {
+  required int schemaVersion,
+}) {
   _requireKeys(json, const {
     'id',
     'activityRecordId',
@@ -748,6 +804,19 @@ ActivityFeedback _parseFeedback(Map<String, Object?> json) {
     'invalidationReason',
     'observedAt',
   }, '活动反馈');
+  if (schemaVersion >= 5) {
+    _requireKeys(json, const {
+      'defaultTheoreticalDeltaSnapshot',
+      'factorSnapshot',
+      'personalizedTheoreticalDeltaSnapshot',
+      'personalizationVersionId',
+      'factorRegimeStartedLifeDay',
+      'collectionSource',
+      'samplingPolicyVersion',
+      'sampledAt',
+      'sampleId',
+    }, '活动反馈');
+  }
   final invalidationCode = _nullableString(json, 'invalidationReason', '活动反馈');
   return ActivityFeedback(
     id: _string(json, 'id', '活动反馈'),
@@ -790,7 +859,120 @@ ActivityFeedback _parseFeedback(Map<String, Object?> json) {
             (value) => value.code,
             '活动反馈失效原因',
           ),
+    defaultTheoreticalDeltaSnapshot: schemaVersion >= 5
+        ? _int(json, 'defaultTheoreticalDeltaSnapshot', '活动反馈')
+        : null,
+    factorSnapshot: schemaVersion >= 5
+        ? _double(json, 'factorSnapshot', '活动反馈')
+        : 1,
+    personalizedTheoreticalDeltaSnapshot: schemaVersion >= 5
+        ? _int(json, 'personalizedTheoreticalDeltaSnapshot', '活动反馈')
+        : null,
+    personalizationVersionId: schemaVersion >= 5
+        ? _nullableString(json, 'personalizationVersionId', '活动反馈')
+        : null,
+    factorRegimeStartedLifeDay: schemaVersion >= 5
+        ? _nullableLifeDay(json, 'factorRegimeStartedLifeDay', '活动反馈')
+        : null,
+    collectionSource: schemaVersion >= 5
+        ? _enumByCode(
+            ActivityFeedbackCollectionSource.values,
+            _string(json, 'collectionSource', '活动反馈'),
+            (value) => value.code,
+            '活动反馈来源',
+          )
+        : ActivityFeedbackCollectionSource.userInitiated,
+    samplingPolicyVersion: schemaVersion >= 5
+        ? _nullableString(json, 'samplingPolicyVersion', '活动反馈')
+        : null,
+    sampledAt: schemaVersion >= 5
+        ? _nullableDate(json, 'sampledAt', '活动反馈')
+        : null,
+    sampleId: schemaVersion >= 5
+        ? _nullableString(json, 'sampleId', '活动反馈')
+        : null,
     observedAt: _date(json, 'observedAt', '活动反馈'),
+  );
+}
+
+PersonalizationActivityFactor _parseActivityFactor(Map<String, Object?> json) {
+  _requireExactKeys(json, const {
+    'personalizationVersionId',
+    'subcategory',
+    'impactSign',
+    'factor',
+    'baseActivityRuleVersion',
+    'sourceLearningRunId',
+    'factorRegimeStartedLifeDay',
+  }, '活动倍率');
+  return PersonalizationActivityFactor(
+    personalizationVersionId: _string(json, 'personalizationVersionId', '活动倍率'),
+    subcategory: _enumByCode(
+      ActivitySubcategory.values,
+      _string(json, 'subcategory', '活动倍率'),
+      (value) => value.code,
+      '活动倍率子类',
+    ),
+    impactSign: _enumByCode(
+      ActivityImpactSign.values,
+      _string(json, 'impactSign', '活动倍率'),
+      (value) => value.code,
+      '活动倍率影响方向',
+    ),
+    factor: _double(json, 'factor', '活动倍率'),
+    baseActivityRuleVersion: _string(json, 'baseActivityRuleVersion', '活动倍率'),
+    sourceLearningRunId: _nullableString(json, 'sourceLearningRunId', '活动倍率'),
+    factorRegimeStartedLifeDay: _lifeDay(
+      json,
+      'factorRegimeStartedLifeDay',
+      '活动倍率',
+    ),
+  );
+}
+
+ActivityFeedbackSample _parseActivityFeedbackSample(Map<String, Object?> json) {
+  _requireExactKeys(json, const {
+    'id',
+    'activityRecordId',
+    'lifeDay',
+    'samplingPolicyVersion',
+    'status',
+    'selectedAt',
+    'promptedAt',
+    'respondedAt',
+    'feedbackId',
+    'invalidatedAt',
+    'invalidationReason',
+  }, '活动反馈抽样');
+  final invalidationCode = _nullableString(
+    json,
+    'invalidationReason',
+    '活动反馈抽样',
+  );
+  return ActivityFeedbackSample(
+    id: _string(json, 'id', '活动反馈抽样'),
+    activityRecordId: _string(json, 'activityRecordId', '活动反馈抽样'),
+    lifeDay: _lifeDay(json, 'lifeDay', '活动反馈抽样'),
+    samplingPolicyVersion: _string(json, 'samplingPolicyVersion', '活动反馈抽样'),
+    status: _enumByCode(
+      ActivityFeedbackSampleStatus.values,
+      _string(json, 'status', '活动反馈抽样'),
+      (value) => value.code,
+      '活动抽样状态',
+    ),
+    selectedAt: _date(json, 'selectedAt', '活动反馈抽样'),
+    promptedAt: _nullableDate(json, 'promptedAt', '活动反馈抽样'),
+    respondedAt: _nullableDate(json, 'respondedAt', '活动反馈抽样'),
+    feedbackId: _nullableString(json, 'feedbackId', '活动反馈抽样'),
+    invalidatedAt: _nullableDate(json, 'invalidatedAt', '活动反馈抽样'),
+    invalidationReason: invalidationCode == null
+        ? null
+        : _enumByCode<ActivityFeedbackInvalidationReason>(
+            ActivityFeedbackInvalidationReason.values,
+            invalidationCode,
+            (value) => value.code,
+            '活动抽样失效原因',
+          ),
   );
 }
 
@@ -1022,6 +1204,25 @@ void _validateBackup(
             activity.theoreticalDelta) {
       throw const BackupFormatException('活动规则版本或理论变化值不合法。');
     }
+    if (backup.schemaVersion >= 5) {
+      final expectedDefault = config.theoreticalDelta(
+        activity.subcategory,
+        activity.duration,
+      );
+      final expectedPersonalized = _roundActivityFactor(
+        expectedDefault,
+        activity.factor,
+      );
+      if (activity.defaultTheoreticalDelta != expectedDefault ||
+          activity.personalizedTheoreticalDelta != expectedPersonalized ||
+          activity.theoreticalDelta != activity.personalizedTheoreticalDelta ||
+          activity.factor <= 0 ||
+          (activity.personalizationVersionId == null) !=
+              (activity.factorRegimeStartedLifeDay == null) ||
+          (activity.personalizationVersionId == null && activity.factor != 1)) {
+        throw const BackupFormatException('活动影响快照不合法。');
+      }
+    }
     activitiesByDay.putIfAbsent(activity.lifeDay, () => []).add(activity);
   }
 
@@ -1046,6 +1247,13 @@ void _validateBackup(
       rulesByVersion: rulesByVersion,
       activeFeedbackActivities: activeFeedbackActivities,
     );
+    if (backup.schemaVersion >= 5) {
+      _validateActivityFeedbackV5(
+        feedback,
+        activity: activitiesById[feedback.activityRecordId]!,
+        rulesByVersion: rulesByVersion,
+      );
+    }
   }
 
   final learningRunIds = <String>{};
@@ -1083,6 +1291,22 @@ void _validateBackup(
     versionsById: versionsById,
     activeRuleVersion: settings.activeRuleVersion,
   );
+
+  if (backup.schemaVersion >= 5) {
+    _validateActivityFactorsV5(
+      backup.activityFactors,
+      versionsById: versionsById,
+      learningRuns: {for (final run in backup.learningRuns) run.id: run},
+      rulesByVersion: rulesByVersion,
+    );
+    _validateActivityFeedbackSamplesV5(
+      backup.activityFeedbackSamples,
+      activitiesById: activitiesById,
+      feedbackById: {
+        for (final feedback in backup.activityFeedback) feedback.id: feedback,
+      },
+    );
+  }
 
   final consentKeys = <String>{};
   for (final consent in backup.learningConsents) {
@@ -1612,6 +1836,171 @@ void _validateFeedback(
         activity.updatedAt == feedback.activityUpdatedAtSnapshot;
     if (!currentSnapshotMatches) {
       throw const BackupFormatException('Active 活动反馈与当前活动快照不一致。');
+    }
+  }
+}
+
+int _roundActivityFactor(int theoreticalDelta, double factor) =>
+    (theoreticalDelta * factor).round();
+
+void _validateActivityFeedbackV5(
+  ActivityFeedback feedback, {
+  required StoredEstimatedActivity activity,
+  required Map<String, EnergyRuleConfig> rulesByVersion,
+}) {
+  final rule = rulesByVersion[feedback.ruleVersionSnapshot];
+  if (rule == null) {
+    throw const BackupFormatException('活动反馈规则快照不存在。');
+  }
+  final expectedDefault = rule.theoreticalDelta(
+    feedback.subcategorySnapshot,
+    feedback.durationSnapshot,
+  );
+  final expectedPersonalized = _roundActivityFactor(
+    expectedDefault,
+    feedback.factorSnapshot,
+  );
+  if (feedback.defaultTheoreticalDeltaSnapshot != expectedDefault ||
+      feedback.personalizedTheoreticalDeltaSnapshot != expectedPersonalized ||
+      feedback.theoreticalDeltaSnapshot !=
+          feedback.personalizedTheoreticalDeltaSnapshot ||
+      feedback.factorSnapshot <= 0 ||
+      (feedback.personalizationVersionId == null) !=
+          (feedback.factorRegimeStartedLifeDay == null)) {
+    throw const BackupFormatException('活动反馈影响快照不合法。');
+  }
+  final isSampled =
+      feedback.collectionSource ==
+      ActivityFeedbackCollectionSource.sampledPrompt;
+  final sampledShape =
+      isSampled &&
+      feedback.sampleId != null &&
+      feedback.samplingPolicyVersion != null &&
+      feedback.sampledAt != null &&
+      feedback.personalizationVersionId != null &&
+      feedback.factorRegimeStartedLifeDay != null;
+  final userShape =
+      !isSampled &&
+      feedback.sampleId == null &&
+      feedback.samplingPolicyVersion == null &&
+      feedback.sampledAt == null;
+  if ((!isSampled && !userShape) || (isSampled && !sampledShape)) {
+    throw const BackupFormatException('活动反馈采集来源字段不完整。');
+  }
+  if (isSampled && feedback.sampledAt!.isAfter(feedback.observedAt)) {
+    throw const BackupFormatException('活动反馈抽样时间晚于反馈时间。');
+  }
+  if (feedback.status == ActivityFeedbackStatus.active &&
+      activity.status != ActivityRecordStatus.active) {
+    throw const BackupFormatException('已删除活动不能保留 active 抽样反馈。');
+  }
+}
+
+void _validateActivityFactorsV5(
+  List<PersonalizationActivityFactor> factors, {
+  required Map<String, PersonalizationVersion> versionsById,
+  required Map<String, LearningRun> learningRuns,
+  required Map<String, EnergyRuleConfig> rulesByVersion,
+}) {
+  const policy = ActivityImpactSamplingPolicyV1();
+  final keys = <String>{};
+  for (final factor in factors) {
+    final version = versionsById[factor.personalizationVersionId];
+    if (version == null ||
+        factor.impactSign == ActivityImpactSign.zero ||
+        !policy.isFactorInRange(factor.factor) ||
+        !rulesByVersion.containsKey(factor.baseActivityRuleVersion)) {
+      throw const BackupFormatException('活动影响倍率引用或范围不合法。');
+    }
+    final key =
+        '${factor.personalizationVersionId}\u0000${factor.subcategory.code}\u0000${factor.impactSign.code}';
+    if (!keys.add(key)) {
+      throw const BackupFormatException('活动影响倍率主键重复。');
+    }
+    if (factor.sourceLearningRunId case final runId?) {
+      final run = learningRuns[runId];
+      if (run == null ||
+          run.parameterFamily != LearningParameterFamily.activityImpact ||
+          run.sourcePersonalizationVersionId !=
+              factor.personalizationVersionId) {
+        throw const BackupFormatException('活动影响倍率学习运行引用不合法。');
+      }
+    }
+  }
+}
+
+void _validateActivityFeedbackSamplesV5(
+  List<ActivityFeedbackSample> samples, {
+  required Map<String, StoredEstimatedActivity> activitiesById,
+  required Map<String, ActivityFeedback> feedbackById,
+}) {
+  final ids = <String>{};
+  final activeKeys = <String>{};
+  final usedFeedbackIds = <String>{};
+  for (final sample in samples) {
+    _unique(ids, sample.id, '活动反馈抽样 ID');
+    if (!activitiesById.containsKey(sample.activityRecordId) ||
+        sample.lifeDay != activitiesById[sample.activityRecordId]!.lifeDay) {
+      throw const BackupFormatException('活动反馈抽样关联活动不合法。');
+    }
+    _nonEmpty(sample.samplingPolicyVersion, '活动抽样策略版本');
+    final invalidated =
+        sample.status == ActivityFeedbackSampleStatus.invalidated;
+    final terminal =
+        sample.status == ActivityFeedbackSampleStatus.skipped ||
+        sample.status == ActivityFeedbackSampleStatus.expired;
+    final statusShape = switch (sample.status) {
+      ActivityFeedbackSampleStatus.selected =>
+        sample.promptedAt == null &&
+            sample.respondedAt == null &&
+            sample.feedbackId == null,
+      ActivityFeedbackSampleStatus.prompted =>
+        sample.promptedAt != null &&
+            sample.respondedAt == null &&
+            sample.feedbackId == null,
+      ActivityFeedbackSampleStatus.responded =>
+        sample.promptedAt != null &&
+            sample.respondedAt != null &&
+            sample.feedbackId != null,
+      ActivityFeedbackSampleStatus.skipped ||
+      ActivityFeedbackSampleStatus.expired => sample.feedbackId == null,
+      ActivityFeedbackSampleStatus.invalidated => true,
+    };
+    if (!statusShape ||
+        (!invalidated &&
+            (sample.invalidatedAt != null ||
+                sample.invalidationReason != null)) ||
+        (invalidated &&
+            (sample.invalidatedAt == null ||
+                sample.invalidationReason == null)) ||
+        (terminal && sample.respondedAt != null)) {
+      throw const BackupFormatException('活动反馈抽样状态快照不合法。');
+    }
+    if (!invalidated &&
+        !activeKeys.add(
+          '${sample.activityRecordId}\u0000${sample.samplingPolicyVersion}',
+        )) {
+      throw const BackupFormatException('同一活动与策略存在多个有效抽样。');
+    }
+    if (sample.feedbackId case final feedbackId?) {
+      final feedback = feedbackById[feedbackId];
+      if (feedback == null ||
+          !usedFeedbackIds.add(feedbackId) ||
+          feedback.activityRecordId != sample.activityRecordId ||
+          feedback.collectionSource !=
+              ActivityFeedbackCollectionSource.sampledPrompt ||
+          feedback.sampleId != sample.id ||
+          sample.status != ActivityFeedbackSampleStatus.responded) {
+        throw const BackupFormatException('活动反馈抽样与反馈引用不合法。');
+      }
+    }
+  }
+  for (final feedback in feedbackById.values) {
+    if (feedback.collectionSource ==
+            ActivityFeedbackCollectionSource.sampledPrompt &&
+        (feedback.sampleId == null ||
+            !samples.any((sample) => sample.id == feedback.sampleId))) {
+      throw const BackupFormatException('抽样反馈缺少对应抽样记录。');
     }
   }
 }
@@ -2546,6 +2935,14 @@ int _int(Map<String, Object?> json, String key, String context) {
     throw BackupFormatException('$context.$key 必须是整数。');
   }
   return value;
+}
+
+double _double(Map<String, Object?> json, String key, String context) {
+  final value = json[key];
+  if (value is! num || !value.isFinite) {
+    throw BackupFormatException('$context.$key 必须是有限数字。');
+  }
+  return value.toDouble();
 }
 
 int? _nullableInt(Map<String, Object?> json, String key, String context) {

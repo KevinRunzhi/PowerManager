@@ -213,6 +213,36 @@ final class ActivityFeedbackInvalidationReasonConverter
   String toSql(ActivityFeedbackInvalidationReason value) => value.code;
 }
 
+final class ActivityFeedbackCollectionSourceConverter
+    extends TypeConverter<ActivityFeedbackCollectionSource, String> {
+  const ActivityFeedbackCollectionSourceConverter();
+
+  @override
+  ActivityFeedbackCollectionSource fromSql(String fromDb) => _enumFromCode(
+    ActivityFeedbackCollectionSource.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(ActivityFeedbackCollectionSource value) => value.code;
+}
+
+final class ActivityFeedbackSampleStatusConverter
+    extends TypeConverter<ActivityFeedbackSampleStatus, String> {
+  const ActivityFeedbackSampleStatusConverter();
+
+  @override
+  ActivityFeedbackSampleStatus fromSql(String fromDb) => _enumFromCode(
+    ActivityFeedbackSampleStatus.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(ActivityFeedbackSampleStatus value) => value.code;
+}
+
 final class LearningParameterFamilyConverter
     extends TypeConverter<LearningParameterFamily, String> {
   const LearningParameterFamilyConverter();
@@ -298,12 +328,11 @@ final class PersonalizationChangedParameterFamilyConverter
   const PersonalizationChangedParameterFamilyConverter();
 
   @override
-  PersonalizationChangedParameterFamily fromSql(String fromDb) =>
-      _enumFromCode(
-        PersonalizationChangedParameterFamily.values,
-        fromDb,
-        (value) => value.code,
-      );
+  PersonalizationChangedParameterFamily fromSql(String fromDb) => _enumFromCode(
+    PersonalizationChangedParameterFamily.values,
+    fromDb,
+    (value) => value.code,
+  );
 
   @override
   String toSql(PersonalizationChangedParameterFamily value) => value.code;
@@ -341,11 +370,8 @@ final class LearningNoticeStatusConverter
   const LearningNoticeStatusConverter();
 
   @override
-  LearningNoticeStatus fromSql(String fromDb) => _enumFromCode(
-    LearningNoticeStatus.values,
-    fromDb,
-    (value) => value.code,
-  );
+  LearningNoticeStatus fromSql(String fromDb) =>
+      _enumFromCode(LearningNoticeStatus.values, fromDb, (value) => value.code);
 
   @override
   String toSql(LearningNoticeStatus value) => value.code;

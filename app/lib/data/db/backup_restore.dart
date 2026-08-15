@@ -34,8 +34,10 @@ extension BackupRestoreDatabase on AppDatabase {
     await delete(promptReceiptsTable).go();
     await delete(energyObservationsTable).go();
     await delete(morningCheckInsTable).go();
+    await delete(activityFeedbackSamplesTable).go();
     await delete(activityFeedbackTable).go();
     await delete(activityRecordsTable).go();
+    await delete(personalizationActivityFactorsTable).go();
     await delete(dailySummariesTable).go();
     await delete(appSettingsTable).go();
     await delete(personalizationVersionsTable).go();
@@ -67,12 +69,8 @@ extension BackupRestoreDatabase on AppDatabase {
         ),
         onboardingCompleted: Value(settings.onboardingCompleted),
         baselineLearningMode: Value(settings.baselineLearningMode),
-        activityImpactLearningMode: Value(
-          settings.activityImpactLearningMode,
-        ),
-        baselineLearningSuspended: Value(
-          settings.baselineLearningSuspended,
-        ),
+        activityImpactLearningMode: Value(settings.activityImpactLearningMode),
+        baselineLearningSuspended: Value(settings.baselineLearningSuspended),
         baselineLearningSuspendedAt: Value(
           settings.baselineLearningSuspendedAt?.toUtc(),
         ),
@@ -127,6 +125,15 @@ extension BackupRestoreDatabase on AppDatabase {
           duration: activity.duration,
           theoreticalDelta: activity.theoreticalDelta,
           appliedDelta: activity.appliedDelta,
+          defaultTheoreticalDelta: Value(activity.defaultTheoreticalDelta),
+          factor: Value(activity.factor),
+          personalizedTheoreticalDelta: Value(
+            activity.personalizedTheoreticalDelta,
+          ),
+          personalizationVersionId: Value(activity.personalizationVersionId),
+          factorRegimeStartedLifeDay: Value(
+            activity.factorRegimeStartedLifeDay,
+          ),
           ruleVersion: activity.ruleVersion,
           status: activity.status,
           deletedAt: Value(activity.deletedAt?.toUtc()),
@@ -151,11 +158,44 @@ extension BackupRestoreDatabase on AppDatabase {
           direction: feedback.direction,
           status: feedback.status,
           invalidationReason: Value(feedback.invalidationReason),
+          defaultTheoreticalDeltaSnapshot: Value(
+            feedback.defaultTheoreticalDeltaSnapshot,
+          ),
+          factorSnapshot: Value(feedback.factorSnapshot),
+          personalizedTheoreticalDeltaSnapshot: Value(
+            feedback.personalizedTheoreticalDeltaSnapshot,
+          ),
+          personalizationVersionId: Value(feedback.personalizationVersionId),
+          factorRegimeStartedLifeDay: Value(
+            feedback.factorRegimeStartedLifeDay,
+          ),
+          collectionSource: Value(feedback.collectionSource),
+          samplingPolicyVersion: Value(feedback.samplingPolicyVersion),
+          sampledAt: Value(feedback.sampledAt?.toUtc()),
+          sampleId: Value(feedback.sampleId),
           observedAt: feedback.observedAt.toUtc(),
         ),
       );
     }
     await failureHook?.call('after-feedback');
+
+    for (final sample in backup.activityFeedbackSamples) {
+      await into(activityFeedbackSamplesTable).insert(
+        ActivityFeedbackSamplesTableCompanion.insert(
+          id: sample.id,
+          activityRecordId: sample.activityRecordId,
+          lifeDay: sample.lifeDay,
+          samplingPolicyVersion: sample.samplingPolicyVersion,
+          status: sample.status,
+          selectedAt: sample.selectedAt.toUtc(),
+          promptedAt: Value(sample.promptedAt?.toUtc()),
+          respondedAt: Value(sample.respondedAt?.toUtc()),
+          feedbackId: Value(sample.feedbackId),
+          invalidatedAt: Value(sample.invalidatedAt?.toUtc()),
+          invalidationReason: Value(sample.invalidationReason),
+        ),
+      );
+    }
 
     for (final observation in backup.energyObservations) {
       await into(energyObservationsTable).insert(
@@ -195,6 +235,30 @@ extension BackupRestoreDatabase on AppDatabase {
         ),
       );
     }
+    for (final version in backup.personalizationVersions) {
+      await into(personalizationVersionsTable).insert(
+        PersonalizationVersionsTableCompanion.insert(
+          id: version.id,
+          parentVersionId: Value(version.parentVersionId),
+          effectiveModelFingerprint: version.effectiveModelFingerprint,
+          modelRegimeEpoch: version.modelRegimeEpoch,
+          creationSource: version.creationSource,
+          scheduleSource: Value(version.scheduleSource),
+          sourceLearningRunId: Value(version.sourceLearningRunId),
+          algorithmVersion: version.algorithmVersion,
+          configVersion: version.configVersion,
+          changedParameterFamily: version.changedParameterFamily,
+          baseEnergy: version.baseEnergy,
+          baselineAnchorEnergy: version.baselineAnchorEnergy,
+          status: version.status,
+          effectiveLifeDay: Value(version.effectiveLifeDay),
+          createdAt: version.createdAt.toUtc(),
+          activatedAt: Value(version.activatedAt?.toUtc()),
+          endedAt: Value(version.endedAt?.toUtc()),
+          transitionReason: version.transitionReason,
+        ),
+      );
+    }
     for (final run in backup.learningRuns) {
       await into(learningRunsTable).insert(
         LearningRunsTableCompanion.insert(
@@ -219,27 +283,16 @@ extension BackupRestoreDatabase on AppDatabase {
         ),
       );
     }
-    for (final version in backup.personalizationVersions) {
-      await into(personalizationVersionsTable).insert(
-        PersonalizationVersionsTableCompanion.insert(
-          id: version.id,
-          parentVersionId: Value(version.parentVersionId),
-          effectiveModelFingerprint: version.effectiveModelFingerprint,
-          modelRegimeEpoch: version.modelRegimeEpoch,
-          creationSource: version.creationSource,
-          scheduleSource: Value(version.scheduleSource),
-          sourceLearningRunId: Value(version.sourceLearningRunId),
-          algorithmVersion: version.algorithmVersion,
-          configVersion: version.configVersion,
-          changedParameterFamily: version.changedParameterFamily,
-          baseEnergy: version.baseEnergy,
-          baselineAnchorEnergy: version.baselineAnchorEnergy,
-          status: version.status,
-          effectiveLifeDay: Value(version.effectiveLifeDay),
-          createdAt: version.createdAt.toUtc(),
-          activatedAt: Value(version.activatedAt?.toUtc()),
-          endedAt: Value(version.endedAt?.toUtc()),
-          transitionReason: version.transitionReason,
+    for (final factor in backup.activityFactors) {
+      await into(personalizationActivityFactorsTable).insert(
+        PersonalizationActivityFactorsTableCompanion.insert(
+          personalizationVersionId: factor.personalizationVersionId,
+          subcategory: factor.subcategory,
+          impactSign: factor.impactSign,
+          factor: factor.factor,
+          baseActivityRuleVersion: factor.baseActivityRuleVersion,
+          sourceLearningRunId: Value(factor.sourceLearningRunId),
+          factorRegimeStartedLifeDay: factor.factorRegimeStartedLifeDay,
         ),
       );
     }
@@ -297,9 +350,7 @@ extension BackupRestoreDatabase on AppDatabase {
           id: notice.id,
           parameterFamily: notice.parameterFamily,
           type: notice.type,
-          personalizationVersionId: Value(
-            notice.personalizationVersionId,
-          ),
+          personalizationVersionId: Value(notice.personalizationVersionId),
           learningRunId: Value(notice.learningRunId),
           dedupKey: notice.dedupKey,
           status: notice.status,
@@ -331,8 +382,10 @@ extension BackupRestoreDatabase on AppDatabase {
       'activity_records': backup.activityRecords.length,
       'energy_observations': backup.energyObservations.length,
       'activity_feedback': backup.activityFeedback.length,
+      'activity_feedback_samples': backup.activityFeedbackSamples.length,
       'learning_runs': backup.learningRuns.length,
       'personalization_versions': backup.personalizationVersions.length,
+      'personalization_activity_factors': backup.activityFactors.length,
       'learning_consents': backup.learningConsents.length,
       'learning_notices': backup.learningNotices.length,
       'daily_summaries': backup.dailySummaries.length,
@@ -363,6 +416,7 @@ const _protectionTriggerNames = [
   'app_settings_reject_delete',
   'daily_summaries_reject_delete',
   'referenced_rule_versions_reject_update',
+  'referenced_rule_versions_reject_update_v5',
   'learning_runs_reject_final_update',
   'personalization_versions_reject_delete',
   'personalization_versions_reject_identity_update',
