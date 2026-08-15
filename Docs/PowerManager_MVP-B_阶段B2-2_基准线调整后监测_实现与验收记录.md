@@ -7,6 +7,7 @@
 - 模拟器结论：正式 gate 通过；只使用 Android 模拟器临时调试运行。
 - 产品结论：`inconclusive`。尚未安装到实体手机，不能把 fixture 或模拟器结果写成真实改善。
 - 生产门：`automaticLearningEngineEnabled=false`、正式生产配置为空、生产自动应用保持关闭。
+- 代码提交：`65b8827`。
 
 ## 2. 实现范围
 
