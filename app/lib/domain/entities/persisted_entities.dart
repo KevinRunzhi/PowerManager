@@ -7,26 +7,122 @@ import 'package:power_manager/domain/life_day/life_day.dart';
 
 final class AppSettings {
   const AppSettings({
-    required this.baseEstimatedEnergy,
-    required this.pendingBaseEstimatedEnergy,
-    required this.baseEnergyEffectiveLifeDay,
     required this.activeRuleVersion,
     required this.pendingRuleVersion,
     required this.pendingRuleEffectiveLifeDay,
     required this.onboardingCompleted,
+    this.baselineLearningMode = LearningMode.off,
+    this.activityImpactLearningMode = LearningMode.off,
+    this.baselineLearningSuspended = false,
+    this.baselineLearningSuspendedAt,
+    this.baselineLearningSuspensionReason,
+    this.activityImpactLearningSuspended = false,
+    this.activityImpactLearningSuspendedAt,
+    this.activityImpactLearningSuspensionReason,
+    this.baselineLearningCooldownUntil,
+    this.activityImpactLearningCooldownUntil,
     required this.createdAt,
     required this.updatedAt,
   });
 
-  final int baseEstimatedEnergy;
-  final int? pendingBaseEstimatedEnergy;
-  final LifeDay? baseEnergyEffectiveLifeDay;
   final String activeRuleVersion;
   final String? pendingRuleVersion;
   final LifeDay? pendingRuleEffectiveLifeDay;
   final bool onboardingCompleted;
+  final LearningMode baselineLearningMode;
+  final LearningMode activityImpactLearningMode;
+  final bool baselineLearningSuspended;
+  final DateTime? baselineLearningSuspendedAt;
+  final String? baselineLearningSuspensionReason;
+  final bool activityImpactLearningSuspended;
+  final DateTime? activityImpactLearningSuspendedAt;
+  final String? activityImpactLearningSuspensionReason;
+  final DateTime? baselineLearningCooldownUntil;
+  final DateTime? activityImpactLearningCooldownUntil;
   final DateTime createdAt;
   final DateTime updatedAt;
+}
+
+final class PersonalizationVersion {
+  const PersonalizationVersion({
+    required this.id,
+    required this.parentVersionId,
+    required this.effectiveModelFingerprint,
+    required this.modelRegimeEpoch,
+    required this.creationSource,
+    required this.scheduleSource,
+    required this.sourceLearningRunId,
+    required this.algorithmVersion,
+    required this.configVersion,
+    required this.changedParameterFamily,
+    required this.baseEnergy,
+    required this.baselineAnchorEnergy,
+    required this.status,
+    required this.effectiveLifeDay,
+    required this.createdAt,
+    required this.activatedAt,
+    required this.endedAt,
+    required this.transitionReason,
+  });
+
+  final String id;
+  final String? parentVersionId;
+  final String effectiveModelFingerprint;
+  final String modelRegimeEpoch;
+  final PersonalizationCreationSource creationSource;
+  final PersonalizationScheduleSource? scheduleSource;
+  final String? sourceLearningRunId;
+  final String algorithmVersion;
+  final String configVersion;
+  final PersonalizationChangedParameterFamily changedParameterFamily;
+  final int baseEnergy;
+  final int baselineAnchorEnergy;
+  final PersonalizationVersionStatus status;
+  final LifeDay? effectiveLifeDay;
+  final DateTime createdAt;
+  final DateTime? activatedAt;
+  final DateTime? endedAt;
+  final String transitionReason;
+}
+
+final class LearningConsent {
+  const LearningConsent({
+    required this.parameterFamily,
+    required this.disclosureVersion,
+    required this.acceptedAt,
+  });
+
+  final LearningParameterFamily parameterFamily;
+  final String disclosureVersion;
+  final DateTime acceptedAt;
+}
+
+final class LearningNotice {
+  const LearningNotice({
+    required this.id,
+    required this.parameterFamily,
+    required this.type,
+    required this.personalizationVersionId,
+    required this.learningRunId,
+    required this.dedupKey,
+    required this.status,
+    required this.reasonCode,
+    required this.createdAt,
+    required this.seenAt,
+    required this.dismissedAt,
+  });
+
+  final String id;
+  final LearningParameterFamily parameterFamily;
+  final LearningNoticeType type;
+  final String? personalizationVersionId;
+  final String? learningRunId;
+  final String dedupKey;
+  final LearningNoticeStatus status;
+  final String reasonCode;
+  final DateTime createdAt;
+  final DateTime? seenAt;
+  final DateTime? dismissedAt;
 }
 
 final class RuleConfigVersion {
@@ -240,6 +336,8 @@ final class DailySummary {
     required Map<ActivityCategory, CategoryEstimatedSummary> categorySummaries,
     required this.isStandardEffectiveDay,
     required this.isWeakEffectiveDay,
+    this.modelSnapshotSource = DailySummaryModelSnapshotSource.legacyInline,
+    this.personalizationVersionId,
     required this.settledAt,
   }) : categorySummaries = UnmodifiableMapView(Map.of(categorySummaries));
 
@@ -255,6 +353,8 @@ final class DailySummary {
   final Map<ActivityCategory, CategoryEstimatedSummary> categorySummaries;
   final bool isStandardEffectiveDay;
   final bool isWeakEffectiveDay;
+  final DailySummaryModelSnapshotSource modelSnapshotSource;
+  final String? personalizationVersionId;
   final DateTime settledAt;
 }
 

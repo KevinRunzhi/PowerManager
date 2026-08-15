@@ -1,5 +1,6 @@
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_calculator.dart';
+import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 
@@ -8,6 +9,9 @@ final class CurrentDayProjection {
     required this.lifeDay,
     required this.baseEstimatedEnergy,
     required this.ruleVersion,
+    this.personalizationVersionId = fixedMvpAPersonalizationVersion,
+    this.effectiveModelFingerprint = fixedMvpAEffectiveModelFingerprint,
+    this.modelRegimeEpoch = fixedMvpAInitialModelRegimeEpoch,
     required this.morningAdjustment,
     required this.shortTermAdjustment,
     required this.previousFinalEstimate,
@@ -18,6 +22,9 @@ final class CurrentDayProjection {
   final LifeDay lifeDay;
   final int baseEstimatedEnergy;
   final String ruleVersion;
+  final String personalizationVersionId;
+  final String effectiveModelFingerprint;
+  final String modelRegimeEpoch;
   final int morningAdjustment;
   final int shortTermAdjustment;
   final int? previousFinalEstimate;
@@ -44,6 +51,9 @@ final class CurrentDayProjectionService {
     required LifeDay lifeDay,
     required int baseEstimatedEnergy,
     required String ruleVersion,
+    String personalizationVersionId = fixedMvpAPersonalizationVersion,
+    String effectiveModelFingerprint = fixedMvpAEffectiveModelFingerprint,
+    String modelRegimeEpoch = fixedMvpAInitialModelRegimeEpoch,
   }) async {
     final morning = await morningCheckIns.findByLifeDay(lifeDay);
     final previous = await summaries.findByLifeDay(lifeDay.previous);
@@ -70,6 +80,9 @@ final class CurrentDayProjectionService {
       lifeDay: lifeDay,
       baseEstimatedEnergy: baseEstimatedEnergy,
       ruleVersion: ruleVersion,
+      personalizationVersionId: personalizationVersionId,
+      effectiveModelFingerprint: effectiveModelFingerprint,
+      modelRegimeEpoch: modelRegimeEpoch,
       morningAdjustment: morningAdjustment,
       shortTermAdjustment: shortTermAdjustment,
       previousFinalEstimate: previous?.finalEstimatedEnergy,

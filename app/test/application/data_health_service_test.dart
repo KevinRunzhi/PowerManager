@@ -55,7 +55,7 @@ void main() {
     expect(report.relativeCorrections, 1);
     expect(report.activityRecords, 2);
     expect(report.deletedActivityRecords, 1);
-    expect(report.schemaVersion, 3);
+    expect(report.schemaVersion, 4);
     expect(report.legacyObservations, 3);
     expect(report.contractObservations, 0);
     expect(report.activityFeedback, 2);
@@ -259,6 +259,7 @@ DataHealthService _service({
     observations: _Observations(observations),
     feedback: _Feedback(feedback),
     learningRuns: _LearningRuns(learningRuns),
+    personalizationVersions: const _Versions(),
     summaries: _Summaries(summaries),
     localBackupStore: _BackupStore(),
     upgradeReadiness: const _ReadinessChecker(),
@@ -413,9 +414,6 @@ final class _Settings implements AppSettingsRepository {
 
   @override
   Future<AppSettings> get() async => AppSettings(
-    baseEstimatedEnergy: 100,
-    pendingBaseEstimatedEnergy: null,
-    baseEnergyEffectiveLifeDay: null,
     activeRuleVersion: 'test',
     pendingRuleVersion: null,
     pendingRuleEffectiveLifeDay: null,
@@ -426,6 +424,52 @@ final class _Settings implements AppSettingsRepository {
 
   @override
   Future<void> save(AppSettings settings) => throw UnimplementedError();
+}
+
+final class _Versions implements PersonalizationVersionsRepository {
+  const _Versions();
+
+  PersonalizationVersion get _active => PersonalizationVersion(
+    id: fixedMvpAPersonalizationVersion,
+    parentVersionId: null,
+    effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
+    modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+    creationSource: PersonalizationCreationSource.initial,
+    scheduleSource: null,
+    sourceLearningRunId: null,
+    algorithmVersion: initialPersonalizationAlgorithmV1,
+    configVersion: initialPersonalizationConfigV1,
+    changedParameterFamily: PersonalizationChangedParameterFamily.none,
+    baseEnergy: 100,
+    baselineAnchorEnergy: 100,
+    status: PersonalizationVersionStatus.active,
+    effectiveLifeDay: null,
+    createdAt: backupFixtureNow,
+    activatedAt: backupFixtureNow,
+    endedAt: null,
+    transitionReason: 'testInitial',
+  );
+
+  @override
+  Future<PersonalizationVersion> getActive() async => _active;
+  @override
+  Future<List<PersonalizationVersion>> list() async => [_active];
+  @override
+  Future<PersonalizationVersion?> find(String id) async =>
+      id == _active.id ? _active : null;
+  @override
+  Future<PersonalizationVersion?> findPending() async => null;
+  @override
+  Future<void> insert(PersonalizationVersion version) =>
+      throw UnimplementedError();
+  @override
+  Future<void> update(PersonalizationVersion version) =>
+      throw UnimplementedError();
+  @override
+  Future<bool> updateIfStatus(
+    PersonalizationVersion version,
+    PersonalizationVersionStatus expectedStatus,
+  ) => throw UnimplementedError();
 }
 
 final class _BackupStore implements LocalBackupStore {

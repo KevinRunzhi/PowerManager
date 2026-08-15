@@ -5,6 +5,7 @@ import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/personalization_identity.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:test/test.dart';
 
@@ -359,6 +360,176 @@ void main() {
     },
   );
 
+  test(
+    'personalization guards one active, one pending, identity, and terminal history',
+    () async {
+      final repository = DriftPersonalizationVersionsRepository(
+        database.personalizationVersionsDao,
+      );
+      final active = await repository.getActive();
+      final firstPending = scheduledManualPersonalizationVersion(
+        parent: active,
+        baseEnergy: 101,
+        effectiveLifeDay: LifeDay(2026, 7, 27),
+        createdAt: testNow.add(const Duration(minutes: 1)),
+        ruleVersion: energyRulesV2MvpAVersion,
+        legacy: false,
+      );
+      final secondPending = scheduledManualPersonalizationVersion(
+        parent: active,
+        baseEnergy: 102,
+        effectiveLifeDay: LifeDay(2026, 7, 28),
+        createdAt: testNow.add(const Duration(minutes: 2)),
+        ruleVersion: energyRulesV2MvpAVersion,
+        legacy: false,
+      );
+      await repository.insert(firstPending);
+
+      await expectLater(
+        repository.insert(secondPending),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        repository.insert(
+          _personalizationState(
+            secondPending,
+            status: PersonalizationVersionStatus.active,
+            effectiveLifeDay: secondPending.effectiveLifeDay,
+            activatedAt: testNow.add(const Duration(minutes: 3)),
+          ),
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        database.personalizationVersionsDao.updateById(
+          active.id,
+          const PersonalizationVersionsTableCompanion(baseEnergy: Value(99)),
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        (database.delete(
+          database.personalizationVersionsTable,
+        )..where((row) => row.id.equals(firstPending.id))).go(),
+        throwsA(isA<Exception>()),
+      );
+
+      final canceled = _personalizationState(
+        firstPending,
+        status: PersonalizationVersionStatus.canceled,
+        scheduleSource: null,
+        effectiveLifeDay: null,
+        endedAt: testNow.add(const Duration(minutes: 4)),
+      );
+      await repository.update(canceled);
+      await expectLater(
+        repository.update(
+          _personalizationState(
+            canceled,
+            status: PersonalizationVersionStatus.scheduled,
+            scheduleSource: PersonalizationScheduleSource.manual,
+            effectiveLifeDay: LifeDay(2026, 7, 29),
+            endedAt: null,
+          ),
+        ),
+        throwsA(isA<Exception>()),
+      );
+    },
+  );
+
+  test(
+    'learning consent and notice audit identity cannot be rewritten',
+    () async {
+      final versions = DriftPersonalizationVersionsRepository(
+        database.personalizationVersionsDao,
+      );
+      final consents = DriftLearningConsentsRepository(
+        database.learningConsentsDao,
+      );
+      final notices = DriftLearningNoticesRepository(
+        database.learningNoticesDao,
+      );
+      final active = await versions.getActive();
+      final pending = scheduledManualPersonalizationVersion(
+        parent: active,
+        baseEnergy: 101,
+        effectiveLifeDay: LifeDay(2026, 7, 27),
+        createdAt: testNow.add(const Duration(minutes: 1)),
+        ruleVersion: energyRulesV2MvpAVersion,
+        legacy: false,
+      );
+      await versions.insert(pending);
+
+      const disclosure = 'baseline-learning-disclosure-v1';
+      await consents.insert(
+        LearningConsent(
+          parameterFamily: LearningParameterFamily.baseline,
+          disclosureVersion: disclosure,
+          acceptedAt: testNow,
+        ),
+      );
+      await expectLater(
+        database.customStatement(
+          'UPDATE learning_consents SET accepted_at = ? '
+          'WHERE parameter_family = ? AND disclosure_version = ?',
+          [
+            testNow.add(const Duration(minutes: 1)).microsecondsSinceEpoch,
+            LearningParameterFamily.baseline.code,
+            disclosure,
+          ],
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        database.customStatement(
+          'DELETE FROM learning_consents WHERE parameter_family = ?',
+          [LearningParameterFamily.baseline.code],
+        ),
+        throwsA(isA<Exception>()),
+      );
+
+      const identities = PersonalizationIdentityBuilder();
+      final dedupKey = identities.noticeDedupKey(
+        parameterFamily: LearningParameterFamily.baseline,
+        type: LearningNoticeType.changeScheduled,
+        personalizationVersionId: pending.id,
+        learningRunId: null,
+        reasonCode: 'manualBaselineScheduled',
+      );
+      final notice = LearningNotice(
+        id: identities.noticeId(dedupKey),
+        parameterFamily: LearningParameterFamily.baseline,
+        type: LearningNoticeType.changeScheduled,
+        personalizationVersionId: pending.id,
+        learningRunId: null,
+        dedupKey: dedupKey,
+        status: LearningNoticeStatus.unseen,
+        reasonCode: 'manualBaselineScheduled',
+        createdAt: testNow,
+        seenAt: null,
+        dismissedAt: null,
+      );
+      await notices.insert(notice);
+      await notices.update(
+        _noticeState(
+          notice,
+          status: LearningNoticeStatus.seen,
+          seenAt: testNow.add(const Duration(minutes: 1)),
+        ),
+      );
+      await expectLater(
+        database.learningNoticesDao.updateById(
+          notice.id,
+          const LearningNoticesTableCompanion(
+            reasonCode: Value('rewrittenReason'),
+          ),
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(notices.insert(notice), throwsA(isA<Exception>()));
+    },
+  );
+
   test('daily summaries are unique and reject update or delete', () async {
     final repository = DriftDailySummariesRepository(
       DailySummariesDao(database),
@@ -399,6 +570,7 @@ void main() {
               categorySummaryJson: '{}',
               isStandardEffectiveDay: true,
               isWeakEffectiveDay: true,
+              modelSnapshotSource: DailySummaryModelSnapshotSource.legacyInline,
               settledAt: testNow,
             ),
           ),
@@ -465,7 +637,7 @@ void main() {
     );
   });
 
-  test('app settings enforce singleton id and base estimate range', () async {
+  test('app settings enforce singleton id and pending rule pairing', () async {
     await database.appSettingsDao.getSettings();
     await expectLater(
       database
@@ -478,18 +650,6 @@ void main() {
               updatedAt: testNow,
             ),
           ),
-      throwsA(isA<Exception>()),
-    );
-    await expectLater(
-      database.appSettingsDao.updateSettings(
-        const AppSettingsTableCompanion(baseEstimatedEnergy: Value(141)),
-      ),
-      throwsA(isA<Exception>()),
-    );
-    await expectLater(
-      database.appSettingsDao.updateSettings(
-        const AppSettingsTableCompanion(pendingBaseEstimatedEnergy: Value(105)),
-      ),
       throwsA(isA<Exception>()),
     );
     await expectLater(
@@ -547,6 +707,57 @@ LearningRun _learningRunState(
     reasonCodesJson: reasonCodesJson,
     triggeredAt: source.triggeredAt,
     completedAt: completedAt,
+  );
+}
+
+PersonalizationVersion _personalizationState(
+  PersonalizationVersion source, {
+  required PersonalizationVersionStatus status,
+  PersonalizationScheduleSource? scheduleSource,
+  LifeDay? effectiveLifeDay,
+  DateTime? activatedAt,
+  DateTime? endedAt,
+}) {
+  return PersonalizationVersion(
+    id: source.id,
+    parentVersionId: source.parentVersionId,
+    effectiveModelFingerprint: source.effectiveModelFingerprint,
+    modelRegimeEpoch: source.modelRegimeEpoch,
+    creationSource: source.creationSource,
+    scheduleSource: scheduleSource,
+    sourceLearningRunId: source.sourceLearningRunId,
+    algorithmVersion: source.algorithmVersion,
+    configVersion: source.configVersion,
+    changedParameterFamily: source.changedParameterFamily,
+    baseEnergy: source.baseEnergy,
+    baselineAnchorEnergy: source.baselineAnchorEnergy,
+    status: status,
+    effectiveLifeDay: effectiveLifeDay,
+    createdAt: source.createdAt,
+    activatedAt: activatedAt,
+    endedAt: endedAt,
+    transitionReason: 'constraintTestTransition',
+  );
+}
+
+LearningNotice _noticeState(
+  LearningNotice source, {
+  required LearningNoticeStatus status,
+  DateTime? seenAt,
+  DateTime? dismissedAt,
+}) {
+  return LearningNotice(
+    id: source.id,
+    parameterFamily: source.parameterFamily,
+    type: source.type,
+    personalizationVersionId: source.personalizationVersionId,
+    learningRunId: source.learningRunId,
+    dedupKey: source.dedupKey,
+    status: status,
+    reasonCode: source.reasonCode,
+    createdAt: source.createdAt,
+    seenAt: seenAt,
+    dismissedAt: dismissedAt,
   );
 }
 

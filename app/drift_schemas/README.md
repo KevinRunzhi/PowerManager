@@ -4,7 +4,7 @@
 因此同时包含 Drift 声明的表和索引，以及 `onCreate` 创建的 partial index 与保护触发器。
 
 - 已发布版本的 `drift_schema_vN.json` 禁止覆盖或回写；
-- 当前不可变快照为 v1、v2、v3；v3 来自实际启动并完成 `onCreate` 的 SQLite 文件；
+- 当前不可变快照为 v1、v2、v3、v4；v3、v4 均来自实际启动并完成 `onCreate` 的 SQLite 文件；
 - 每次提升 `AppDatabase.schemaVersion`，先从实际创建的新版本数据库导出新的快照；
 - 导出后运行：
 

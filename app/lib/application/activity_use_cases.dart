@@ -372,6 +372,9 @@ final class ActivityUseCases implements ActivityMutator {
       lifeDay: context.lifeDay,
       baseEstimatedEnergy: context.baseEstimatedEnergy,
       ruleVersion: context.ruleVersion,
+      personalizationVersionId: context.personalizationVersionId,
+      effectiveModelFingerprint: context.effectiveModelFingerprint,
+      modelRegimeEpoch: context.modelRegimeEpoch,
     );
     final byId = {
       for (final projected in replayed.projection.activities)
@@ -411,6 +414,9 @@ final class ActivityUseCases implements ActivityMutator {
       lifeDay: context.lifeDay,
       baseEstimatedEnergy: context.baseEstimatedEnergy,
       ruleVersion: context.ruleVersion,
+      personalizationVersionId: context.personalizationVersionId,
+      effectiveModelFingerprint: context.effectiveModelFingerprint,
+      modelRegimeEpoch: context.modelRegimeEpoch,
     );
     return replayed;
   }

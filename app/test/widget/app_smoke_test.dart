@@ -18,6 +18,7 @@ import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/application/settings_service.dart';
 import 'package:power_manager/application/local_backup_service.dart';
 import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
+import 'package:power_manager/application/model_activation_service.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/core/time/clock.dart';
@@ -25,6 +26,7 @@ import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/personalization_identity.dart';
 import 'package:power_manager/domain/learning/shadow_learning.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/debug/presentation/debug_environment_page.dart';
@@ -794,7 +796,117 @@ void main() {
     await tester.tap(find.byKey(const Key('save-base-estimate-button')));
     await tester.pumpAndSettle();
     expect(settingsMutator.scheduled, [140]);
-    expect(find.textContaining('规则编辑或迁移入口'), findsOneWidget);
+    expect(find.text('已保存，将从下一生活日起生效。'), findsOneWidget);
+  });
+
+  testWidgets('formal settings gate keeps both learning families off', (
+    tester,
+  ) async {
+    final settingsMutator = _FakeSettingsMutator();
+    await tester.pumpWidget(_testApp(settingsMutator: settingsMutator));
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('learning-preproduction-watermark')),
+      findsNothing,
+    );
+    final settingsScroll = find
+        .descendant(
+          of: find.byKey(SettingsPage.pageKey),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    for (final key in const [
+      'learning-mode-baseline-review',
+      'learning-mode-baseline-automatic',
+      'learning-mode-activityImpact-review',
+      'learning-mode-activityImpact-automatic',
+    ]) {
+      await tester.scrollUntilVisible(
+        find.byKey(Key(key)),
+        200,
+        scrollable: settingsScroll,
+      );
+      await tester.ensureVisible(find.byKey(Key(key)));
+      await tester.pumpAndSettle();
+      final row = tester.widget<ListTile>(
+        find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(ListTile),
+        ),
+      );
+      expect(row.enabled, isFalse, reason: key);
+      expect(row.onTap, isNull, reason: key);
+    }
+    expect(settingsMutator.learningModeChanges, isEmpty);
+  });
+
+  testWidgets('preproduction watermark and family mode controls are explicit', (
+    tester,
+  ) async {
+    const gate = LearningProductionGate(
+      baselineProductionLearningEnabled: true,
+      activityImpactProductionLearningEnabled: true,
+      isPreproductionValidationOverride: true,
+    );
+    final settingsMutator = _FakeSettingsMutator();
+    await tester.pumpWidget(
+      _testApp(settingsMutator: settingsMutator, learningGate: gate),
+    );
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('learning-preproduction-watermark')),
+      findsOneWidget,
+    );
+    expect(find.text('工程预生产验证 · 不会进入正式版本'), findsOneWidget);
+    final semantics = tester.ensureSemantics();
+    expect(find.bySemanticsLabel(RegExp('预生产')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('learning-mode-baseline-review')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('learning-disclosure-dialog')), findsOneWidget);
+    expect(find.textContaining('至少提前 24 小时'), findsOneWidget);
+    expect(find.textContaining('相对锚点累计不超过 ±8'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const Key('accept-learning-disclosure-button')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('learning-mode-activityImpact-automatic')),
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byKey(SettingsPage.pageKey),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('learning-mode-activityImpact-automatic')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('learning-mode-activityImpact-automatic')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('accept-learning-disclosure-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(settingsMutator.learningModeChanges, [
+      'baseline:review',
+      'activityImpact:automatic',
+    ]);
+    semantics.dispose();
   });
 
   testWidgets('backup controls survive 200 percent text scaling', (
@@ -811,7 +923,16 @@ void main() {
       matching: find.byType(ListView),
     );
     expect(settingsList, findsOneWidget);
-    await tester.drag(settingsList, const Offset(0, -1200));
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('restore-json-button')),
+      400,
+      scrollable: find
+          .descendant(
+            of: find.byKey(SettingsPage.pageKey),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('restore-json-button')), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -1281,6 +1402,7 @@ Widget _testApp({
   HistoryReview? history,
   AppSettings? appSettings,
   SettingsMutator? settingsMutator,
+  LearningProductionGate? learningGate,
   EnergyObservation? currentActual,
   Map<String, ActivityFeedback> currentActivityFeedback = const {},
   bool canSupplementYesterday = false,
@@ -1338,9 +1460,18 @@ Widget _testApp({
         }
         return appSettings ?? _appSettings(onboardingCompleted: true);
       }),
+      activePersonalizationVersionProvider.overrideWith(
+        (ref) async => initialPersonalizationVersion(
+          baseEnergy: 100,
+          createdAt: DateTime.utc(2026, 7, 26),
+        ),
+      ),
+      pendingPersonalizationVersionProvider.overrideWith((ref) async => null),
       settingsServiceProvider.overrideWithValue(
         settingsMutator ?? _FakeSettingsMutator(),
       ),
+      if (learningGate != null)
+        learningProductionGateProvider.overrideWithValue(learningGate),
       backupSafetyPathProvider.overrideWith((ref) async => null),
       localBackupServiceProvider.overrideWithValue(
         localBackupSaver ?? _FakeLocalBackupSaver(),
@@ -1488,6 +1619,7 @@ ActivityImpactCatalog _impactCatalog() => {
 
 final class _FakeSettingsMutator implements SettingsMutator {
   final scheduled = <int>[];
+  final learningModeChanges = <String>[];
   var onboardingCount = 0;
 
   @override
@@ -1499,9 +1631,25 @@ final class _FakeSettingsMutator implements SettingsMutator {
   @override
   Future<AppSettings> scheduleBaseEstimate(int value) async {
     scheduled.add(value);
+    return _appSettings(onboardingCompleted: true);
+  }
+
+  @override
+  Future<AppSettings> setLearningMode({
+    required LearningParameterFamily parameterFamily,
+    required LearningMode mode,
+    required bool acceptCurrentDisclosure,
+  }) async {
+    learningModeChanges.add('${parameterFamily.code}:${mode.code}');
     return _appSettings(
       onboardingCompleted: true,
-      pendingBaseEstimatedEnergy: value,
+      baselineLearningMode: parameterFamily == LearningParameterFamily.baseline
+          ? mode
+          : LearningMode.off,
+      activityImpactLearningMode:
+          parameterFamily == LearningParameterFamily.activityImpact
+          ? mode
+          : LearningMode.off,
     );
   }
 }
@@ -1874,18 +2022,16 @@ DailySummary _dailySummary(LifeDay day) {
 
 AppSettings _appSettings({
   required bool onboardingCompleted,
-  int? pendingBaseEstimatedEnergy,
+  LearningMode baselineLearningMode = LearningMode.off,
+  LearningMode activityImpactLearningMode = LearningMode.off,
 }) {
   return AppSettings(
-    baseEstimatedEnergy: 100,
-    pendingBaseEstimatedEnergy: pendingBaseEstimatedEnergy,
-    baseEnergyEffectiveLifeDay: pendingBaseEstimatedEnergy == null
-        ? null
-        : LifeDay(2026, 7, 27),
     activeRuleVersion: 'energy-rules-v2-mvp-a',
     pendingRuleVersion: null,
     pendingRuleEffectiveLifeDay: null,
     onboardingCompleted: onboardingCompleted,
+    baselineLearningMode: baselineLearningMode,
+    activityImpactLearningMode: activityImpactLearningMode,
     createdAt: DateTime.utc(2026, 7, 26),
     updatedAt: DateTime.utc(2026, 7, 26),
   );

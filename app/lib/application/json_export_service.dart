@@ -28,13 +28,16 @@ final class JsonExportService implements JsonExporter {
     required this.observations,
     required this.feedback,
     required this.learningRuns,
+    required this.personalizationVersions,
+    required this.learningConsents,
+    required this.learningNotices,
     required this.summaries,
     required this.receipts,
     required this.appVersionLoader,
     required this.transactionRunner,
   });
 
-  static const schemaVersion = 3;
+  static const schemaVersion = 4;
 
   final AppSettingsRepository settings;
   final RuleConfigVersionsRepository rules;
@@ -43,6 +46,9 @@ final class JsonExportService implements JsonExporter {
   final EnergyObservationsRepository observations;
   final ActivityFeedbackRepository feedback;
   final LearningRunsRepository learningRuns;
+  final PersonalizationVersionsRepository personalizationVersions;
+  final LearningConsentsRepository learningConsents;
+  final LearningNoticesRepository learningNotices;
   final DailySummariesRepository summaries;
   final PromptReceiptsRepository receipts;
   final AppVersionLoader appVersionLoader;
@@ -59,6 +65,10 @@ final class JsonExportService implements JsonExporter {
       final energyObservations = await observations.list();
       final activityFeedback = await feedback.list();
       final learningRunItems = await learningRuns.list();
+      final personalizationVersionItems =
+          await personalizationVersions.list();
+      final learningConsentItems = await learningConsents.list();
+      final learningNoticeItems = await learningNotices.list();
       final dailySummaries = await summaries.list();
       final promptReceipts = await receipts.list();
       return _ExportSnapshot(
@@ -69,6 +79,9 @@ final class JsonExportService implements JsonExporter {
         energyObservations: energyObservations,
         activityFeedback: activityFeedback,
         learningRuns: learningRunItems,
+        personalizationVersions: personalizationVersionItems,
+        learningConsents: learningConsentItems,
+        learningNotices: learningNoticeItems,
         dailySummaries: dailySummaries,
         promptReceipts: promptReceipts,
       );
@@ -84,6 +97,9 @@ final class JsonExportService implements JsonExporter {
       energyObservations: snapshot.energyObservations,
       activityFeedback: snapshot.activityFeedback,
       learningRuns: snapshot.learningRuns,
+      personalizationVersions: snapshot.personalizationVersions,
+      learningConsents: snapshot.learningConsents,
+      learningNotices: snapshot.learningNotices,
       dailySummaries: snapshot.dailySummaries,
       promptReceipts: snapshot.promptReceipts,
     );
@@ -112,6 +128,9 @@ final class _ExportSnapshot {
     required this.energyObservations,
     required this.activityFeedback,
     required this.learningRuns,
+    required this.personalizationVersions,
+    required this.learningConsents,
+    required this.learningNotices,
     required this.dailySummaries,
     required this.promptReceipts,
   });
@@ -123,6 +142,9 @@ final class _ExportSnapshot {
   final List<EnergyObservation> energyObservations;
   final List<ActivityFeedback> activityFeedback;
   final List<LearningRun> learningRuns;
+  final List<PersonalizationVersion> personalizationVersions;
+  final List<LearningConsent> learningConsents;
+  final List<LearningNotice> learningNotices;
   final List<DailySummary> dailySummaries;
   final List<PromptReceipt> promptReceipts;
 }

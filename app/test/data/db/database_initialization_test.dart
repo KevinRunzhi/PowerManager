@@ -7,12 +7,14 @@ import 'package:power_manager/data/db/app_database.dart';
 import 'package:power_manager/data/repositories/drift_repositories.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/personalization_identity.dart';
+import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:test/test.dart';
 
 import 'test_database.dart';
 
 void main() {
-  test('schema v3 creates exactly nine business tables', () async {
+  test('schema v4 creates exactly twelve business tables', () async {
     final database = createTestDatabase();
     addTearDown(database.close);
 
@@ -46,12 +48,15 @@ void main() {
       'app_settings',
       'daily_summaries',
       'energy_observations',
+      'learning_consents',
+      'learning_notices',
       'learning_runs',
       'morning_check_ins',
+      'personalization_versions',
       'prompt_receipts',
       'rule_config_versions',
     ]);
-    expect(version.read<int>('user_version'), 3);
+    expect(version.read<int>('user_version'), 4);
     expect(foreignKeys.read<int>('foreign_keys'), 1);
     expect(integrity.read<String>('integrity_check'), 'ok');
     expect(
@@ -71,6 +76,14 @@ void main() {
         'learning_runs_source_time',
         'learning_runs_status_time',
         'learning_runs_reject_final_update',
+        'learning_consents_reject_delete',
+        'learning_consents_reject_update',
+        'learning_notices_reject_identity_update',
+        'personalization_versions_one_active',
+        'personalization_versions_one_pending',
+        'personalization_versions_reject_delete',
+        'personalization_versions_reject_identity_update',
+        'personalization_versions_reject_terminal_update',
         'referenced_rule_versions_reject_update',
       ]),
     );
@@ -85,15 +98,18 @@ void main() {
     final ruleRepository = DriftRuleConfigVersionsRepository(
       RuleConfigVersionsDao(database),
     );
+    final versionsRepository = DriftPersonalizationVersionsRepository(
+      PersonalizationVersionsDao(database),
+    );
 
     final settings = await settingsRepository.get();
+    final activeModel = await versionsRepository.getActive();
     final rule = await ruleRepository.find(energyRulesV2MvpAVersion);
     final rules = rule!.values['activityRules']! as Map<String, Object?>;
 
-    expect(settings.baseEstimatedEnergy, 100);
+    expect(activeModel.baseEnergy, 100);
     expect(settings.activeRuleVersion, energyRulesV2MvpAVersion);
-    expect(settings.pendingBaseEstimatedEnergy, isNull);
-    expect(settings.baseEnergyEffectiveLifeDay, isNull);
+    expect(await versionsRepository.findPending(), isNull);
     expect(settings.pendingRuleVersion, isNull);
     expect(settings.pendingRuleEffectiveLifeDay, isNull);
     expect(settings.createdAt, testNow);
@@ -114,7 +130,7 @@ void main() {
     'closing and reopening a file database preserves data and seeds idempotently',
     () async {
       final temporaryDirectory = await Directory.systemTemp.createTemp(
-        'power_manager_stage3_',
+        'power_manager_schema_v4_',
       );
       final databaseFile = File(
         '${temporaryDirectory.path}${Platform.pathSeparator}power_manager.sqlite',
@@ -130,18 +146,28 @@ void main() {
         clock: const _FileTestClock(),
       );
       final firstSettings = DriftAppSettingsRepository(AppSettingsDao(first));
+      final firstVersions = DriftPersonalizationVersionsRepository(
+        PersonalizationVersionsDao(first),
+      );
       final original = await firstSettings.get();
       await firstSettings.save(
         AppSettings(
-          baseEstimatedEnergy: 112,
-          pendingBaseEstimatedEnergy: null,
-          baseEnergyEffectiveLifeDay: null,
           activeRuleVersion: original.activeRuleVersion,
           pendingRuleVersion: null,
           pendingRuleEffectiveLifeDay: null,
           onboardingCompleted: true,
           createdAt: original.createdAt,
           updatedAt: DateTime.utc(2026, 7, 26, 13),
+        ),
+      );
+      await firstVersions.insert(
+        scheduledManualPersonalizationVersion(
+          parent: await firstVersions.getActive(),
+          baseEnergy: 112,
+          effectiveLifeDay: LifeDay(2026, 7, 27),
+          createdAt: DateTime.utc(2026, 7, 26, 13),
+          ruleVersion: original.activeRuleVersion,
+          legacy: false,
         ),
       );
       await first.close();
@@ -156,9 +182,13 @@ void main() {
       final reopenedRules = DriftRuleConfigVersionsRepository(
         RuleConfigVersionsDao(reopened),
       );
+      final reopenedVersions = DriftPersonalizationVersionsRepository(
+        PersonalizationVersionsDao(reopened),
+      );
       final persisted = await reopenedSettings.get();
 
-      expect(persisted.baseEstimatedEnergy, 112);
+      expect((await reopenedVersions.getActive()).baseEnergy, 100);
+      expect((await reopenedVersions.findPending())!.baseEnergy, 112);
       expect(persisted.onboardingCompleted, isTrue);
       expect(await reopenedRules.list(), hasLength(1));
       await reopened.close();

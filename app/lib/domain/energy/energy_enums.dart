@@ -224,6 +224,19 @@ const shadowLearningAlgorithmV1 = 'evidence-shadow-v1';
 const shadowLearningConfigV1 = 'evidence-readiness-14x21-v1';
 const canonicalEvidenceHashV1 = 'canonical-evidence-sha256-v1';
 const deterministicLearningRunIdV1 = 'learning-run-sha256-v1';
+const deterministicPersonalizationVersionIdV1 =
+    'personalization-version-sha256-v1';
+const deterministicLearningNoticeIdV1 = 'learning-notice-sha256-v1';
+const effectiveModelFingerprintV1 = 'effective-model-sha256-v1';
+const modelRegimeEpochV1 = 'model-regime-epoch-sha256-v1';
+const initialPersonalizationAlgorithmV1 = 'initial-fixed-mvp-a-v1';
+const initialPersonalizationConfigV1 = 'initial-fixed-mvp-a-v1';
+const legacyStage19PendingVersionV1 = 'legacy-stage19-pending-v1';
+const manualBaselineVersionV1 = 'manual-baseline-v1';
+const revertPersonalizationVersionV1 = 'revert-personalization-v1';
+const baselineLearningDisclosureV1 = 'baseline-learning-disclosure-v1';
+const activityImpactLearningDisclosureV1 =
+    'activity-impact-learning-disclosure-v1';
 
 enum ObservationReferenceType {
   currentMoment('currentMoment'),
@@ -300,9 +313,124 @@ enum LearningRunStatus {
 enum LearningRunResult {
   insufficientEvidence('insufficientEvidence'),
   readyForAudit('readyForAudit'),
-  configurationBlocked('configurationBlocked');
+  unstable('unstable'),
+  noChange('noChange'),
+  candidate('candidate'),
+  configurationBlocked('configurationBlocked'),
+  improved('improved'),
+  worsened('worsened');
 
   const LearningRunResult(this.code);
+  final String code;
+}
+
+enum LearningMode {
+  off('off'),
+  review('review'),
+  automatic('automatic');
+
+  const LearningMode(this.code);
+  final String code;
+}
+
+enum PersonalizationCreationSource {
+  initial('initial'),
+  learningRun('learningRun'),
+  manual('manual'),
+  legacyManualPending('legacyManualPending'),
+  revert('revert');
+
+  const PersonalizationCreationSource(this.code);
+  final String code;
+}
+
+enum PersonalizationScheduleSource {
+  automatic('automatic'),
+  reviewAccepted('reviewAccepted'),
+  manual('manual'),
+  legacyManualPending('legacyManualPending'),
+  revert('revert');
+
+  const PersonalizationScheduleSource(this.code);
+  final String code;
+}
+
+enum PersonalizationChangedParameterFamily {
+  none('none'),
+  baseline('baseline'),
+  activityImpact('activityImpact');
+
+  const PersonalizationChangedParameterFamily(this.code);
+  final String code;
+
+  LearningParameterFamily? get parameterFamily => switch (this) {
+    PersonalizationChangedParameterFamily.none => null,
+    PersonalizationChangedParameterFamily.baseline =>
+      LearningParameterFamily.baseline,
+    PersonalizationChangedParameterFamily.activityImpact =>
+      LearningParameterFamily.activityImpact,
+  };
+}
+
+enum PersonalizationVersionStatus {
+  candidate('candidate'),
+  awaitingReview('awaitingReview'),
+  deferred('deferred'),
+  scheduled('scheduled'),
+  active('active'),
+  superseded('superseded'),
+  rejected('rejected'),
+  reverted('reverted'),
+  canceled('canceled'),
+  invalidated('invalidated');
+
+  const PersonalizationVersionStatus(this.code);
+  final String code;
+
+  bool get isPending => switch (this) {
+    PersonalizationVersionStatus.candidate ||
+    PersonalizationVersionStatus.awaitingReview ||
+    PersonalizationVersionStatus.deferred ||
+    PersonalizationVersionStatus.scheduled => true,
+    _ => false,
+  };
+
+  bool get isTerminal => switch (this) {
+    PersonalizationVersionStatus.superseded ||
+    PersonalizationVersionStatus.rejected ||
+    PersonalizationVersionStatus.reverted ||
+    PersonalizationVersionStatus.canceled ||
+    PersonalizationVersionStatus.invalidated => true,
+    _ => false,
+  };
+}
+
+enum LearningNoticeType {
+  candidateAvailable('candidateAvailable'),
+  changeScheduled('changeScheduled'),
+  changeActivated('changeActivated'),
+  learningSuspended('learningSuspended'),
+  changeCanceled('changeCanceled'),
+  changeReverted('changeReverted');
+
+  const LearningNoticeType(this.code);
+  final String code;
+}
+
+enum LearningNoticeStatus {
+  unseen('unseen'),
+  seen('seen'),
+  dismissed('dismissed');
+
+  const LearningNoticeStatus(this.code);
+  final String code;
+}
+
+enum DailySummaryModelSnapshotSource {
+  legacyInline('legacyInline'),
+  personalizationVersion('personalizationVersion');
+
+  const DailySummaryModelSnapshotSource(this.code);
   final String code;
 }
 

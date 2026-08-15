@@ -252,6 +252,120 @@ final class LearningRunResultConverter
   String toSql(LearningRunResult value) => value.code;
 }
 
+final class LearningModeConverter extends TypeConverter<LearningMode, String> {
+  const LearningModeConverter();
+
+  @override
+  LearningMode fromSql(String fromDb) =>
+      _enumFromCode(LearningMode.values, fromDb, (value) => value.code);
+
+  @override
+  String toSql(LearningMode value) => value.code;
+}
+
+final class PersonalizationCreationSourceConverter
+    extends TypeConverter<PersonalizationCreationSource, String> {
+  const PersonalizationCreationSourceConverter();
+
+  @override
+  PersonalizationCreationSource fromSql(String fromDb) => _enumFromCode(
+    PersonalizationCreationSource.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(PersonalizationCreationSource value) => value.code;
+}
+
+final class PersonalizationScheduleSourceConverter
+    extends TypeConverter<PersonalizationScheduleSource, String> {
+  const PersonalizationScheduleSourceConverter();
+
+  @override
+  PersonalizationScheduleSource fromSql(String fromDb) => _enumFromCode(
+    PersonalizationScheduleSource.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(PersonalizationScheduleSource value) => value.code;
+}
+
+final class PersonalizationChangedParameterFamilyConverter
+    extends TypeConverter<PersonalizationChangedParameterFamily, String> {
+  const PersonalizationChangedParameterFamilyConverter();
+
+  @override
+  PersonalizationChangedParameterFamily fromSql(String fromDb) =>
+      _enumFromCode(
+        PersonalizationChangedParameterFamily.values,
+        fromDb,
+        (value) => value.code,
+      );
+
+  @override
+  String toSql(PersonalizationChangedParameterFamily value) => value.code;
+}
+
+final class PersonalizationVersionStatusConverter
+    extends TypeConverter<PersonalizationVersionStatus, String> {
+  const PersonalizationVersionStatusConverter();
+
+  @override
+  PersonalizationVersionStatus fromSql(String fromDb) => _enumFromCode(
+    PersonalizationVersionStatus.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(PersonalizationVersionStatus value) => value.code;
+}
+
+final class LearningNoticeTypeConverter
+    extends TypeConverter<LearningNoticeType, String> {
+  const LearningNoticeTypeConverter();
+
+  @override
+  LearningNoticeType fromSql(String fromDb) =>
+      _enumFromCode(LearningNoticeType.values, fromDb, (value) => value.code);
+
+  @override
+  String toSql(LearningNoticeType value) => value.code;
+}
+
+final class LearningNoticeStatusConverter
+    extends TypeConverter<LearningNoticeStatus, String> {
+  const LearningNoticeStatusConverter();
+
+  @override
+  LearningNoticeStatus fromSql(String fromDb) => _enumFromCode(
+    LearningNoticeStatus.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(LearningNoticeStatus value) => value.code;
+}
+
+final class DailySummaryModelSnapshotSourceConverter
+    extends TypeConverter<DailySummaryModelSnapshotSource, String> {
+  const DailySummaryModelSnapshotSourceConverter();
+
+  @override
+  DailySummaryModelSnapshotSource fromSql(String fromDb) => _enumFromCode(
+    DailySummaryModelSnapshotSource.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(DailySummaryModelSnapshotSource value) => value.code;
+}
+
 final class AbsoluteEnergyStateConverter
     extends TypeConverter<AbsoluteEnergyState, String> {
   const AbsoluteEnergyStateConverter();

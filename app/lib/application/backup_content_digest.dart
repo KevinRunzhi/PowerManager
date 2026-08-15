@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:power_manager/data/export/power_manager_export_dto.dart';
 
-/// Produces a stable digest of schema-v1/v2/v3 business data.
+/// Produces a stable digest of schema-v1/v2/v3/v4 business data.
 ///
 /// Export timestamps and app versions are transport metadata, so they are not
 /// part of the digest. Top-level entity arrays are sets in the backup contract
@@ -21,6 +21,9 @@ final class BackupContentDigester {
     'energyObservations',
     'activityFeedback',
     'learningRuns',
+    'personalizationVersions',
+    'learningConsents',
+    'learningNotices',
     'dailySummaries',
     'promptReceipts',
   };

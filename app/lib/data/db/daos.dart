@@ -14,6 +14,142 @@ final class AppSettingsDao extends DatabaseAccessor<AppDatabase>
   }
 }
 
+@DriftAccessor(tables: [PersonalizationVersionsTable])
+final class PersonalizationVersionsDao extends DatabaseAccessor<AppDatabase>
+    with _$PersonalizationVersionsDaoMixin {
+  PersonalizationVersionsDao(super.attachedDatabase);
+
+  Future<void> insertVersion(
+    PersonalizationVersionsTableCompanion version,
+  ) async {
+    await into(personalizationVersionsTable).insert(version);
+  }
+
+  Future<PersonalizationVersionRow?> findById(String id) {
+    return (select(
+      personalizationVersionsTable,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+  }
+
+  Future<PersonalizationVersionRow> getActive() {
+    return (select(personalizationVersionsTable)..where(
+          (row) => row.status.equalsValue(PersonalizationVersionStatus.active),
+        ))
+        .getSingle();
+  }
+
+  Future<PersonalizationVersionRow?> findPending() {
+    const statuses = {
+      PersonalizationVersionStatus.candidate,
+      PersonalizationVersionStatus.awaitingReview,
+      PersonalizationVersionStatus.deferred,
+      PersonalizationVersionStatus.scheduled,
+    };
+    return (select(personalizationVersionsTable)..where(
+          (row) => row.status.isInValues(statuses),
+        ))
+        .getSingleOrNull();
+  }
+
+  Future<List<PersonalizationVersionRow>> listAll() {
+    return (select(personalizationVersionsTable)..orderBy([
+          (row) => OrderingTerm.asc(row.createdAt),
+          (row) => OrderingTerm.asc(row.id),
+        ]))
+        .get();
+  }
+
+  Future<int> updateById(
+    String id,
+    PersonalizationVersionsTableCompanion changes,
+  ) {
+    return (update(
+      personalizationVersionsTable,
+    )..where((row) => row.id.equals(id))).write(changes);
+  }
+
+  Future<int> updateByIdAndStatus(
+    String id,
+    PersonalizationVersionStatus expectedStatus,
+    PersonalizationVersionsTableCompanion changes,
+  ) {
+    return (update(personalizationVersionsTable)..where(
+          (row) =>
+              row.id.equals(id) & row.status.equalsValue(expectedStatus),
+        ))
+        .write(changes);
+  }
+}
+
+@DriftAccessor(tables: [LearningConsentsTable])
+final class LearningConsentsDao extends DatabaseAccessor<AppDatabase>
+    with _$LearningConsentsDaoMixin {
+  LearningConsentsDao(super.attachedDatabase);
+
+  Future<void> insertConsent(LearningConsentsTableCompanion consent) async {
+    await into(
+      learningConsentsTable,
+    ).insert(consent, mode: InsertMode.insertOrIgnore);
+  }
+
+  Future<bool> exists({
+    required LearningParameterFamily parameterFamily,
+    required String disclosureVersion,
+  }) async {
+    final row =
+        await (select(learningConsentsTable)
+              ..where(
+                (row) =>
+                    row.parameterFamily.equalsValue(parameterFamily) &
+                    row.disclosureVersion.equals(disclosureVersion),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    return row != null;
+  }
+
+  Future<List<LearningConsentRow>> listAll() {
+    return (select(learningConsentsTable)..orderBy([
+          (row) => OrderingTerm.asc(row.parameterFamily),
+          (row) => OrderingTerm.asc(row.disclosureVersion),
+        ]))
+        .get();
+  }
+}
+
+@DriftAccessor(tables: [LearningNoticesTable])
+final class LearningNoticesDao extends DatabaseAccessor<AppDatabase>
+    with _$LearningNoticesDaoMixin {
+  LearningNoticesDao(super.attachedDatabase);
+
+  Future<void> insertNotice(LearningNoticesTableCompanion notice) async {
+    await into(learningNoticesTable).insert(notice);
+  }
+
+  Future<LearningNoticeRow?> findById(String id) {
+    return (select(
+      learningNoticesTable,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+  }
+
+  Future<List<LearningNoticeRow>> listAll() {
+    return (select(learningNoticesTable)..orderBy([
+          (row) => OrderingTerm.asc(row.createdAt),
+          (row) => OrderingTerm.asc(row.id),
+        ]))
+        .get();
+  }
+
+  Future<int> updateById(
+    String id,
+    LearningNoticesTableCompanion changes,
+  ) {
+    return (update(
+      learningNoticesTable,
+    )..where((row) => row.id.equals(id))).write(changes);
+  }
+}
+
 @DriftAccessor(tables: [RuleConfigVersionsTable])
 final class RuleConfigVersionsDao extends DatabaseAccessor<AppDatabase>
     with _$RuleConfigVersionsDaoMixin {

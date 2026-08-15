@@ -20,19 +20,201 @@ final class DriftAppSettingsRepository implements AppSettingsRepository {
   Future<void> save(AppSettings settings) async {
     final changed = await dao.updateSettings(
       AppSettingsTableCompanion(
-        baseEstimatedEnergy: Value(settings.baseEstimatedEnergy),
-        pendingBaseEstimatedEnergy: Value(settings.pendingBaseEstimatedEnergy),
-        baseEnergyEffectiveLifeDay: Value(settings.baseEnergyEffectiveLifeDay),
         activeRuleVersion: Value(settings.activeRuleVersion),
         pendingRuleVersion: Value(settings.pendingRuleVersion),
         pendingRuleEffectiveLifeDay: Value(
           settings.pendingRuleEffectiveLifeDay,
         ),
         onboardingCompleted: Value(settings.onboardingCompleted),
+        baselineLearningMode: Value(settings.baselineLearningMode),
+        activityImpactLearningMode: Value(
+          settings.activityImpactLearningMode,
+        ),
+        baselineLearningSuspended: Value(
+          settings.baselineLearningSuspended,
+        ),
+        baselineLearningSuspendedAt: Value(
+          settings.baselineLearningSuspendedAt?.toUtc(),
+        ),
+        baselineLearningSuspensionReason: Value(
+          settings.baselineLearningSuspensionReason,
+        ),
+        activityImpactLearningSuspended: Value(
+          settings.activityImpactLearningSuspended,
+        ),
+        activityImpactLearningSuspendedAt: Value(
+          settings.activityImpactLearningSuspendedAt?.toUtc(),
+        ),
+        activityImpactLearningSuspensionReason: Value(
+          settings.activityImpactLearningSuspensionReason,
+        ),
+        baselineLearningCooldownUntil: Value(
+          settings.baselineLearningCooldownUntil?.toUtc(),
+        ),
+        activityImpactLearningCooldownUntil: Value(
+          settings.activityImpactLearningCooldownUntil?.toUtc(),
+        ),
         updatedAt: Value(settings.updatedAt.toUtc()),
       ),
     );
     _expectOneChanged(changed, 'app settings');
+  }
+}
+
+final class DriftPersonalizationVersionsRepository
+    implements PersonalizationVersionsRepository {
+  const DriftPersonalizationVersionsRepository(this.dao);
+
+  final PersonalizationVersionsDao dao;
+
+  @override
+  Future<void> insert(PersonalizationVersion version) {
+    return dao.insertVersion(_personalizationVersionCompanion(version));
+  }
+
+  @override
+  Future<void> update(PersonalizationVersion version) async {
+    final changed = await dao.updateById(
+      version.id,
+      PersonalizationVersionsTableCompanion(
+        parentVersionId: Value(version.parentVersionId),
+        effectiveModelFingerprint: Value(version.effectiveModelFingerprint),
+        modelRegimeEpoch: Value(version.modelRegimeEpoch),
+        creationSource: Value(version.creationSource),
+        scheduleSource: Value(version.scheduleSource),
+        sourceLearningRunId: Value(version.sourceLearningRunId),
+        algorithmVersion: Value(version.algorithmVersion),
+        configVersion: Value(version.configVersion),
+        changedParameterFamily: Value(version.changedParameterFamily),
+        baseEnergy: Value(version.baseEnergy),
+        baselineAnchorEnergy: Value(version.baselineAnchorEnergy),
+        status: Value(version.status),
+        effectiveLifeDay: Value(version.effectiveLifeDay),
+        createdAt: Value(version.createdAt.toUtc()),
+        activatedAt: Value(version.activatedAt?.toUtc()),
+        endedAt: Value(version.endedAt?.toUtc()),
+        transitionReason: Value(version.transitionReason),
+      ),
+    );
+    _expectOneChanged(changed, 'personalization version ${version.id}');
+  }
+
+  @override
+  Future<bool> updateIfStatus(
+    PersonalizationVersion version,
+    PersonalizationVersionStatus expectedStatus,
+  ) async {
+    final companion = _personalizationVersionUpdateCompanion(version);
+    final changed = await dao.updateByIdAndStatus(
+      version.id,
+      expectedStatus,
+      companion,
+    );
+    if (changed > 1) {
+      throw StateError(
+        'Expected at most one personalization version ${version.id}',
+      );
+    }
+    return changed == 1;
+  }
+
+  @override
+  Future<PersonalizationVersion?> find(String id) async {
+    final row = await dao.findById(id);
+    return row == null ? null : _mapPersonalizationVersion(row);
+  }
+
+  @override
+  Future<PersonalizationVersion> getActive() async {
+    return _mapPersonalizationVersion(await dao.getActive());
+  }
+
+  @override
+  Future<PersonalizationVersion?> findPending() async {
+    final row = await dao.findPending();
+    return row == null ? null : _mapPersonalizationVersion(row);
+  }
+
+  @override
+  Future<List<PersonalizationVersion>> list() async {
+    return (await dao.listAll()).map(_mapPersonalizationVersion).toList();
+  }
+}
+
+final class DriftLearningConsentsRepository
+    implements LearningConsentsRepository {
+  const DriftLearningConsentsRepository(this.dao);
+
+  final LearningConsentsDao dao;
+
+  @override
+  Future<void> insert(LearningConsent consent) {
+    return dao.insertConsent(
+      LearningConsentsTableCompanion.insert(
+        parameterFamily: consent.parameterFamily,
+        disclosureVersion: consent.disclosureVersion,
+        acceptedAt: consent.acceptedAt.toUtc(),
+      ),
+    );
+  }
+
+  @override
+  Future<bool> exists({
+    required LearningParameterFamily parameterFamily,
+    required String disclosureVersion,
+  }) {
+    return dao.exists(
+      parameterFamily: parameterFamily,
+      disclosureVersion: disclosureVersion,
+    );
+  }
+
+  @override
+  Future<List<LearningConsent>> list() async {
+    return (await dao.listAll()).map(_mapLearningConsent).toList();
+  }
+}
+
+final class DriftLearningNoticesRepository
+    implements LearningNoticesRepository {
+  const DriftLearningNoticesRepository(this.dao);
+
+  final LearningNoticesDao dao;
+
+  @override
+  Future<void> insert(LearningNotice notice) {
+    return dao.insertNotice(_learningNoticeCompanion(notice));
+  }
+
+  @override
+  Future<void> update(LearningNotice notice) async {
+    final changed = await dao.updateById(
+      notice.id,
+      LearningNoticesTableCompanion(
+        parameterFamily: Value(notice.parameterFamily),
+        type: Value(notice.type),
+        personalizationVersionId: Value(notice.personalizationVersionId),
+        learningRunId: Value(notice.learningRunId),
+        dedupKey: Value(notice.dedupKey),
+        status: Value(notice.status),
+        reasonCode: Value(notice.reasonCode),
+        createdAt: Value(notice.createdAt.toUtc()),
+        seenAt: Value(notice.seenAt?.toUtc()),
+        dismissedAt: Value(notice.dismissedAt?.toUtc()),
+      ),
+    );
+    _expectOneChanged(changed, 'learning notice ${notice.id}');
+  }
+
+  @override
+  Future<LearningNotice?> find(String id) async {
+    final row = await dao.findById(id);
+    return row == null ? null : _mapLearningNotice(row);
+  }
+
+  @override
+  Future<List<LearningNotice>> list() async {
+    return (await dao.listAll()).map(_mapLearningNotice).toList();
   }
 }
 
@@ -444,6 +626,8 @@ final class DriftDailySummariesRepository implements DailySummariesRepository {
           ),
           isStandardEffectiveDay: summary.isStandardEffectiveDay,
           isWeakEffectiveDay: summary.isWeakEffectiveDay,
+          modelSnapshotSource: summary.modelSnapshotSource,
+          personalizationVersionId: Value(summary.personalizationVersionId),
           settledAt: summary.settledAt.toUtc(),
         ),
       ),
@@ -497,15 +681,142 @@ final class DriftPromptReceiptsRepository implements PromptReceiptsRepository {
 
 AppSettings _mapSettings(AppSettingsRow row) {
   return AppSettings(
-    baseEstimatedEnergy: row.baseEstimatedEnergy,
-    pendingBaseEstimatedEnergy: row.pendingBaseEstimatedEnergy,
-    baseEnergyEffectiveLifeDay: row.baseEnergyEffectiveLifeDay,
     activeRuleVersion: row.activeRuleVersion,
     pendingRuleVersion: row.pendingRuleVersion,
     pendingRuleEffectiveLifeDay: row.pendingRuleEffectiveLifeDay,
     onboardingCompleted: row.onboardingCompleted,
+    baselineLearningMode: row.baselineLearningMode,
+    activityImpactLearningMode: row.activityImpactLearningMode,
+    baselineLearningSuspended: row.baselineLearningSuspended,
+    baselineLearningSuspendedAt: row.baselineLearningSuspendedAt?.toUtc(),
+    baselineLearningSuspensionReason: row.baselineLearningSuspensionReason,
+    activityImpactLearningSuspended: row.activityImpactLearningSuspended,
+    activityImpactLearningSuspendedAt:
+        row.activityImpactLearningSuspendedAt?.toUtc(),
+    activityImpactLearningSuspensionReason:
+        row.activityImpactLearningSuspensionReason,
+    baselineLearningCooldownUntil:
+        row.baselineLearningCooldownUntil?.toUtc(),
+    activityImpactLearningCooldownUntil:
+        row.activityImpactLearningCooldownUntil?.toUtc(),
     createdAt: row.createdAt.toUtc(),
     updatedAt: row.updatedAt.toUtc(),
+  );
+}
+
+PersonalizationVersion _mapPersonalizationVersion(
+  PersonalizationVersionRow row,
+) {
+  return PersonalizationVersion(
+    id: row.id,
+    parentVersionId: row.parentVersionId,
+    effectiveModelFingerprint: row.effectiveModelFingerprint,
+    modelRegimeEpoch: row.modelRegimeEpoch,
+    creationSource: row.creationSource,
+    scheduleSource: row.scheduleSource,
+    sourceLearningRunId: row.sourceLearningRunId,
+    algorithmVersion: row.algorithmVersion,
+    configVersion: row.configVersion,
+    changedParameterFamily: row.changedParameterFamily,
+    baseEnergy: row.baseEnergy,
+    baselineAnchorEnergy: row.baselineAnchorEnergy,
+    status: row.status,
+    effectiveLifeDay: row.effectiveLifeDay,
+    createdAt: row.createdAt.toUtc(),
+    activatedAt: row.activatedAt?.toUtc(),
+    endedAt: row.endedAt?.toUtc(),
+    transitionReason: row.transitionReason,
+  );
+}
+
+PersonalizationVersionsTableCompanion _personalizationVersionCompanion(
+  PersonalizationVersion version,
+) {
+  return PersonalizationVersionsTableCompanion.insert(
+    id: version.id,
+    parentVersionId: Value(version.parentVersionId),
+    effectiveModelFingerprint: version.effectiveModelFingerprint,
+    modelRegimeEpoch: version.modelRegimeEpoch,
+    creationSource: version.creationSource,
+    scheduleSource: Value(version.scheduleSource),
+    sourceLearningRunId: Value(version.sourceLearningRunId),
+    algorithmVersion: version.algorithmVersion,
+    configVersion: version.configVersion,
+    changedParameterFamily: version.changedParameterFamily,
+    baseEnergy: version.baseEnergy,
+    baselineAnchorEnergy: version.baselineAnchorEnergy,
+    status: version.status,
+    effectiveLifeDay: Value(version.effectiveLifeDay),
+    createdAt: version.createdAt.toUtc(),
+    activatedAt: Value(version.activatedAt?.toUtc()),
+    endedAt: Value(version.endedAt?.toUtc()),
+    transitionReason: version.transitionReason,
+  );
+}
+
+PersonalizationVersionsTableCompanion _personalizationVersionUpdateCompanion(
+  PersonalizationVersion version,
+) {
+  return PersonalizationVersionsTableCompanion(
+    parentVersionId: Value(version.parentVersionId),
+    effectiveModelFingerprint: Value(version.effectiveModelFingerprint),
+    modelRegimeEpoch: Value(version.modelRegimeEpoch),
+    creationSource: Value(version.creationSource),
+    scheduleSource: Value(version.scheduleSource),
+    sourceLearningRunId: Value(version.sourceLearningRunId),
+    algorithmVersion: Value(version.algorithmVersion),
+    configVersion: Value(version.configVersion),
+    changedParameterFamily: Value(version.changedParameterFamily),
+    baseEnergy: Value(version.baseEnergy),
+    baselineAnchorEnergy: Value(version.baselineAnchorEnergy),
+    status: Value(version.status),
+    effectiveLifeDay: Value(version.effectiveLifeDay),
+    createdAt: Value(version.createdAt.toUtc()),
+    activatedAt: Value(version.activatedAt?.toUtc()),
+    endedAt: Value(version.endedAt?.toUtc()),
+    transitionReason: Value(version.transitionReason),
+  );
+}
+
+LearningConsent _mapLearningConsent(LearningConsentRow row) {
+  return LearningConsent(
+    parameterFamily: row.parameterFamily,
+    disclosureVersion: row.disclosureVersion,
+    acceptedAt: row.acceptedAt.toUtc(),
+  );
+}
+
+LearningNotice _mapLearningNotice(LearningNoticeRow row) {
+  return LearningNotice(
+    id: row.id,
+    parameterFamily: row.parameterFamily,
+    type: row.type,
+    personalizationVersionId: row.personalizationVersionId,
+    learningRunId: row.learningRunId,
+    dedupKey: row.dedupKey,
+    status: row.status,
+    reasonCode: row.reasonCode,
+    createdAt: row.createdAt.toUtc(),
+    seenAt: row.seenAt?.toUtc(),
+    dismissedAt: row.dismissedAt?.toUtc(),
+  );
+}
+
+LearningNoticesTableCompanion _learningNoticeCompanion(
+  LearningNotice notice,
+) {
+  return LearningNoticesTableCompanion.insert(
+    id: notice.id,
+    parameterFamily: notice.parameterFamily,
+    type: notice.type,
+    personalizationVersionId: Value(notice.personalizationVersionId),
+    learningRunId: Value(notice.learningRunId),
+    dedupKey: notice.dedupKey,
+    status: notice.status,
+    reasonCode: notice.reasonCode,
+    createdAt: notice.createdAt.toUtc(),
+    seenAt: Value(notice.seenAt?.toUtc()),
+    dismissedAt: Value(notice.dismissedAt?.toUtc()),
   );
 }
 
@@ -706,6 +1017,8 @@ DailySummary _mapSummary(DailySummaryRow row) {
     categorySummaries: _decodeCategorySummaries(row.categorySummaryJson),
     isStandardEffectiveDay: row.isStandardEffectiveDay,
     isWeakEffectiveDay: row.isWeakEffectiveDay,
+    modelSnapshotSource: row.modelSnapshotSource,
+    personalizationVersionId: row.personalizationVersionId,
     settledAt: row.settledAt.toUtc(),
   );
 }

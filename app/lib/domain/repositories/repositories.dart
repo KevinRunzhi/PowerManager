@@ -7,6 +7,35 @@ abstract interface class AppSettingsRepository {
   Future<void> save(AppSettings settings);
 }
 
+abstract interface class PersonalizationVersionsRepository {
+  Future<void> insert(PersonalizationVersion version);
+  Future<void> update(PersonalizationVersion version);
+  Future<bool> updateIfStatus(
+    PersonalizationVersion version,
+    PersonalizationVersionStatus expectedStatus,
+  );
+  Future<PersonalizationVersion?> find(String id);
+  Future<PersonalizationVersion> getActive();
+  Future<PersonalizationVersion?> findPending();
+  Future<List<PersonalizationVersion>> list();
+}
+
+abstract interface class LearningConsentsRepository {
+  Future<void> insert(LearningConsent consent);
+  Future<bool> exists({
+    required LearningParameterFamily parameterFamily,
+    required String disclosureVersion,
+  });
+  Future<List<LearningConsent>> list();
+}
+
+abstract interface class LearningNoticesRepository {
+  Future<void> insert(LearningNotice notice);
+  Future<void> update(LearningNotice notice);
+  Future<LearningNotice?> find(String id);
+  Future<List<LearningNotice>> list();
+}
+
 abstract interface class RuleConfigVersionsRepository {
   Future<void> insert(RuleConfigVersion version);
   Future<RuleConfigVersion?> find(String version);

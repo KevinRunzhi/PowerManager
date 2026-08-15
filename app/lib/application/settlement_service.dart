@@ -21,7 +21,7 @@ final class SettlementService {
 
   Future<List<DailySummary>> settleBefore({
     required LifeDay currentLifeDay,
-    required int baseEstimatedEnergy,
+    required PersonalizationVersion personalizationVersion,
     required String ruleVersion,
     required DateTime settledAt,
   }) async {
@@ -42,14 +42,18 @@ final class SettlementService {
       }
       final result = await projectionService.project(
         lifeDay: lifeDay,
-        baseEstimatedEnergy: baseEstimatedEnergy,
+        baseEstimatedEnergy: personalizationVersion.baseEnergy,
         ruleVersion: ruleVersion,
+        personalizationVersionId: personalizationVersion.id,
+        effectiveModelFingerprint:
+            personalizationVersion.effectiveModelFingerprint,
+        modelRegimeEpoch: personalizationVersion.modelRegimeEpoch,
       );
       final projection = result.projection;
       final summary = await summaries.insertOrGet(
         DailySummary(
           lifeDay: lifeDay,
-          baseEstimatedEnergy: baseEstimatedEnergy,
+          baseEstimatedEnergy: personalizationVersion.baseEnergy,
           ruleVersion: ruleVersion,
           morningAdjustment: result.morningAdjustment,
           shortTermAdjustment: result.shortTermAdjustment,
@@ -60,6 +64,9 @@ final class SettlementService {
           categorySummaries: projection.categorySummaries,
           isStandardEffectiveDay: projection.isStandardEffectiveDay,
           isWeakEffectiveDay: projection.isWeakEffectiveDay,
+          modelSnapshotSource:
+              DailySummaryModelSnapshotSource.personalizationVersion,
+          personalizationVersionId: personalizationVersion.id,
           settledAt: settledAt,
         ),
       );

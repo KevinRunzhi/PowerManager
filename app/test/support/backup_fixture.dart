@@ -4,6 +4,7 @@ import 'package:power_manager/domain/energy/energy_rule_config.dart';
 import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/learning/canonical_json.dart';
+import 'package:power_manager/domain/learning/personalization_identity.dart';
 import 'package:power_manager/domain/learning/shadow_learning.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 
@@ -16,15 +17,17 @@ PowerManagerExportDto backupFixture({int baseEnergy = 100}) {
     exportedAt: backupFixtureNow,
     appVersion: '0.1.0+fixture',
     appSettings: AppSettings(
-      baseEstimatedEnergy: baseEnergy,
-      pendingBaseEstimatedEnergy: null,
-      baseEnergyEffectiveLifeDay: null,
       activeRuleVersion: config.ruleVersion,
       pendingRuleVersion: null,
       pendingRuleEffectiveLifeDay: null,
       onboardingCompleted: true,
       createdAt: backupFixtureNow,
       updatedAt: backupFixtureNow,
+    ),
+    legacyBaseSettings: LegacyBaseSettingsBridge(
+      baseEstimatedEnergy: baseEnergy,
+      pendingBaseEstimatedEnergy: null,
+      baseEnergyEffectiveLifeDay: null,
     ),
     ruleVersions: [
       RuleConfigVersion(
@@ -102,6 +105,7 @@ PowerManagerExportDto backupFixtureV2({int baseEnergy = 100}) {
     exportedAt: legacy.exportedAt,
     appVersion: '0.1.2+fixture',
     appSettings: legacy.appSettings,
+    legacyBaseSettings: legacy.legacyBaseSettings,
     ruleVersions: legacy.ruleVersions,
     morningCheckIns: legacy.morningCheckIns,
     activityRecords: activities,
@@ -233,12 +237,40 @@ PowerManagerExportDto backupFixtureV3({int baseEnergy = 100}) {
     exportedAt: previous.exportedAt,
     appVersion: '0.1.3+fixture',
     appSettings: previous.appSettings,
+    legacyBaseSettings: previous.legacyBaseSettings,
     ruleVersions: previous.ruleVersions,
     morningCheckIns: previous.morningCheckIns,
     activityRecords: previous.activityRecords,
     energyObservations: previous.energyObservations,
     activityFeedback: previous.activityFeedback,
     learningRuns: [run],
+    dailySummaries: previous.dailySummaries,
+    promptReceipts: previous.promptReceipts,
+  );
+}
+
+PowerManagerExportDto backupFixtureV4({int baseEnergy = 100}) {
+  final previous = backupFixtureV3(baseEnergy: baseEnergy);
+  return PowerManagerExportDto(
+    schemaVersion: 4,
+    exportedAt: previous.exportedAt,
+    appVersion: '0.1.4+fixture',
+    appSettings: previous.appSettings,
+    ruleVersions: previous.ruleVersions,
+    morningCheckIns: previous.morningCheckIns,
+    activityRecords: previous.activityRecords,
+    energyObservations: previous.energyObservations,
+    activityFeedback: previous.activityFeedback,
+    learningRuns: previous.learningRuns,
+    personalizationVersions: [
+      initialPersonalizationVersion(
+        baseEnergy: baseEnergy,
+        createdAt: previous.appSettings.createdAt,
+        transitionReason: 'backupFixtureV4',
+      ),
+    ],
+    learningConsents: const [],
+    learningNotices: const [],
     dailySummaries: previous.dailySummaries,
     promptReceipts: previous.promptReceipts,
   );

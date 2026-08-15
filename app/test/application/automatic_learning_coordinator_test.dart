@@ -27,7 +27,8 @@ void main() {
   tearDown(() => harness.close());
 
   test('settled evidence creates a completed read-only run', () async {
-    final before = await harness.settings.get();
+    final before = await harness.models.getActive();
+    final settingsBefore = await harness.settings.get();
 
     final report = await harness.coordinator().request(
       AutomaticLearningTrigger.settlement,
@@ -42,10 +43,10 @@ void main() {
     expect(runs.single.result, LearningRunResult.insufficientEvidence);
     expect(runs.single.candidateValuesJson, isNull);
     expect(
-      (await harness.settings.get()).baseEstimatedEnergy,
-      before.baseEstimatedEnergy,
+      (await harness.models.getActive()).baseEnergy,
+      before.baseEnergy,
     );
-    expect((await harness.settings.get()).updatedAt, before.updatedAt);
+    expect((await harness.settings.get()).updatedAt, settingsBefore.updatedAt);
   });
 
   test(
@@ -55,6 +56,7 @@ void main() {
         await harness.seedDay(index * 2);
       }
       final settingsBefore = await harness.settings.get();
+      final modelBefore = await harness.models.getActive();
 
       final thirteen = await harness.coordinator().request(
         AutomaticLearningTrigger.settlement,
@@ -78,12 +80,8 @@ void main() {
       expect(runs.every((run) => run.candidateValuesJson == null), isTrue);
       final settingsAfter = await harness.settings.get();
       expect(
-        settingsAfter.baseEstimatedEnergy,
-        settingsBefore.baseEstimatedEnergy,
-      );
-      expect(
-        settingsAfter.pendingBaseEstimatedEnergy,
-        settingsBefore.pendingBaseEstimatedEnergy,
+        (await harness.models.getActive()).id,
+        modelBefore.id,
       );
       expect(settingsAfter.activeRuleVersion, settingsBefore.activeRuleVersion);
       expect(
@@ -311,6 +309,9 @@ final class _Harness {
     : database = createTestDatabase(),
       clock = _MutableClock(DateTime.utc(2026, 8, 15, 12)) {
     settings = DriftAppSettingsRepository(database.appSettingsDao);
+    models = DriftPersonalizationVersionsRepository(
+      database.personalizationVersionsDao,
+    );
     mornings = DriftMorningCheckInsRepository(database.morningCheckInsDao);
     observations = DriftEnergyObservationsRepository(
       database.energyObservationsDao,
@@ -323,6 +324,7 @@ final class _Harness {
   final AppDatabase database;
   final _MutableClock clock;
   late final DriftAppSettingsRepository settings;
+  late final DriftPersonalizationVersionsRepository models;
   late final DriftMorningCheckInsRepository mornings;
   late final DriftEnergyObservationsRepository observations;
   late final DriftDailySummariesRepository summaries;

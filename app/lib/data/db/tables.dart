@@ -6,14 +6,6 @@ class AppSettingsTable extends Table {
   String get tableName => 'app_settings';
 
   IntColumn get id => integer().withDefault(const Constant(1))();
-  IntColumn get baseEstimatedEnergy =>
-      integer().named('base_energy').withDefault(const Constant(100))();
-  IntColumn get pendingBaseEstimatedEnergy =>
-      integer().named('pending_base_energy').nullable()();
-  TextColumn get baseEnergyEffectiveLifeDay => text()
-      .named('base_energy_effective_life_day')
-      .map(const LifeDayConverter())
-      .nullable()();
   TextColumn get activeRuleVersion => text().named('active_rule_version')();
   TextColumn get pendingRuleVersion =>
       text().named('pending_rule_version').nullable()();
@@ -24,6 +16,32 @@ class AppSettingsTable extends Table {
   BoolColumn get onboardingCompleted => boolean()
       .named('onboarding_completed')
       .withDefault(const Constant(false))();
+  TextColumn get baselineLearningMode => text()
+      .named('baseline_learning_mode')
+      .map(const LearningModeConverter())
+      .withDefault(const Constant('off'))();
+  TextColumn get activityImpactLearningMode => text()
+      .named('activity_impact_learning_mode')
+      .map(const LearningModeConverter())
+      .withDefault(const Constant('off'))();
+  BoolColumn get baselineLearningSuspended => boolean()
+      .named('baseline_learning_suspended')
+      .withDefault(const Constant(false))();
+  DateTimeColumn get baselineLearningSuspendedAt =>
+      dateTime().named('baseline_learning_suspended_at').nullable()();
+  TextColumn get baselineLearningSuspensionReason =>
+      text().named('baseline_learning_suspension_reason').nullable()();
+  BoolColumn get activityImpactLearningSuspended => boolean()
+      .named('activity_impact_learning_suspended')
+      .withDefault(const Constant(false))();
+  DateTimeColumn get activityImpactLearningSuspendedAt =>
+      dateTime().named('activity_impact_learning_suspended_at').nullable()();
+  TextColumn get activityImpactLearningSuspensionReason =>
+      text().named('activity_impact_learning_suspension_reason').nullable()();
+  DateTimeColumn get baselineLearningCooldownUntil =>
+      dateTime().named('baseline_learning_cooldown_until').nullable()();
+  DateTimeColumn get activityImpactLearningCooldownUntil =>
+      dateTime().named('activity_impact_learning_cooldown_until').nullable()();
   DateTimeColumn get createdAt => dateTime().named('created_at')();
   DateTimeColumn get updatedAt => dateTime().named('updated_at')();
 
@@ -33,12 +51,160 @@ class AppSettingsTable extends Table {
   @override
   List<String> get customConstraints => const [
     'CHECK (id = 1)',
-    'CHECK (base_energy BETWEEN 60 AND 140)',
-    'CHECK (pending_base_energy IS NULL OR pending_base_energy BETWEEN 60 AND 140)',
-    'CHECK ((pending_base_energy IS NULL AND base_energy_effective_life_day IS NULL) OR (pending_base_energy IS NOT NULL AND base_energy_effective_life_day IS NOT NULL))',
+    "CHECK (baseline_learning_mode IN ('off', 'review', 'automatic'))",
+    "CHECK (activity_impact_learning_mode IN ('off', 'review', 'automatic'))",
+    "CHECK ((baseline_learning_suspended = 0 AND baseline_learning_suspended_at IS NULL AND baseline_learning_suspension_reason IS NULL) OR (baseline_learning_suspended = 1 AND baseline_learning_suspended_at IS NOT NULL AND length(trim(baseline_learning_suspension_reason)) > 0))",
+    "CHECK ((activity_impact_learning_suspended = 0 AND activity_impact_learning_suspended_at IS NULL AND activity_impact_learning_suspension_reason IS NULL) OR (activity_impact_learning_suspended = 1 AND activity_impact_learning_suspended_at IS NOT NULL AND length(trim(activity_impact_learning_suspension_reason)) > 0))",
     'CHECK ((pending_rule_version IS NULL AND pending_rule_effective_life_day IS NULL) OR (pending_rule_version IS NOT NULL AND pending_rule_effective_life_day IS NOT NULL))',
     'FOREIGN KEY (active_rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
     'FOREIGN KEY (pending_rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  ];
+}
+
+@DataClassName('PersonalizationVersionRow')
+@TableIndex(
+  name: 'personalization_versions_parent',
+  columns: {#parentVersionId},
+)
+@TableIndex(
+  name: 'personalization_versions_status_time',
+  columns: {#status, #createdAt, #id},
+)
+class PersonalizationVersionsTable extends Table {
+  @override
+  String get tableName => 'personalization_versions';
+
+  TextColumn get id => text()();
+  TextColumn get parentVersionId =>
+      text().named('parent_version_id').nullable()();
+  TextColumn get effectiveModelFingerprint =>
+      text().named('effective_model_fingerprint')();
+  TextColumn get modelRegimeEpoch =>
+      text().named('model_regime_epoch').unique()();
+  TextColumn get creationSource => text()
+      .named('creation_source')
+      .map(const PersonalizationCreationSourceConverter())();
+  TextColumn get scheduleSource => text()
+      .named('schedule_source')
+      .map(const PersonalizationScheduleSourceConverter())
+      .nullable()();
+  TextColumn get sourceLearningRunId =>
+      text().named('source_learning_run_id').nullable()();
+  TextColumn get algorithmVersion => text().named('algorithm_version')();
+  TextColumn get configVersion => text().named('config_version')();
+  TextColumn get changedParameterFamily => text()
+      .named('changed_parameter_family')
+      .map(const PersonalizationChangedParameterFamilyConverter())();
+  IntColumn get baseEnergy => integer().named('base_energy')();
+  IntColumn get baselineAnchorEnergy =>
+      integer().named('baseline_anchor_energy')();
+  TextColumn get status =>
+      text().map(const PersonalizationVersionStatusConverter())();
+  TextColumn get effectiveLifeDay => text()
+      .named('effective_life_day')
+      .map(const LifeDayConverter())
+      .nullable()();
+  DateTimeColumn get createdAt => dateTime().named('created_at')();
+  DateTimeColumn get activatedAt =>
+      dateTime().named('activated_at').nullable()();
+  DateTimeColumn get endedAt => dateTime().named('ended_at').nullable()();
+  TextColumn get transitionReason => text().named('transition_reason')();
+
+  @override
+  Set<Column> get primaryKey => {id};
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+    {sourceLearningRunId},
+  ];
+
+  @override
+  List<String> get customConstraints => const [
+    "CHECK (length(trim(id)) > 0)",
+    "CHECK (parent_version_id IS NULL OR length(trim(parent_version_id)) > 0)",
+    "CHECK (length(trim(effective_model_fingerprint)) > 0)",
+    "CHECK (length(trim(model_regime_epoch)) > 0)",
+    "CHECK (creation_source IN ('initial', 'learningRun', 'manual', 'legacyManualPending', 'revert'))",
+    "CHECK (schedule_source IS NULL OR schedule_source IN ('automatic', 'reviewAccepted', 'manual', 'legacyManualPending', 'revert'))",
+    "CHECK (source_learning_run_id IS NULL OR length(trim(source_learning_run_id)) > 0)",
+    "CHECK (length(trim(algorithm_version)) > 0)",
+    "CHECK (length(trim(config_version)) > 0)",
+    "CHECK (changed_parameter_family IN ('none', 'baseline', 'activityImpact'))",
+    'CHECK (base_energy BETWEEN 60 AND 140)',
+    'CHECK (baseline_anchor_energy BETWEEN 60 AND 140)',
+    "CHECK (status IN ('candidate', 'awaitingReview', 'deferred', 'scheduled', 'active', 'superseded', 'rejected', 'reverted', 'canceled', 'invalidated'))",
+    "CHECK (length(trim(transition_reason)) > 0)",
+    "CHECK ((creation_source = 'initial' AND parent_version_id IS NULL AND schedule_source IS NULL AND source_learning_run_id IS NULL AND changed_parameter_family = 'none') OR (creation_source != 'initial' AND parent_version_id IS NOT NULL AND changed_parameter_family != 'none'))",
+    "CHECK ((creation_source = 'learningRun' AND source_learning_run_id IS NOT NULL) OR (creation_source != 'learningRun' AND source_learning_run_id IS NULL))",
+    "CHECK ((status IN ('candidate', 'awaitingReview', 'deferred') AND effective_life_day IS NULL AND activated_at IS NULL AND ended_at IS NULL) OR (status = 'scheduled' AND schedule_source IS NOT NULL AND effective_life_day IS NOT NULL AND activated_at IS NULL AND ended_at IS NULL) OR (status = 'active' AND activated_at IS NOT NULL AND ended_at IS NULL AND (creation_source = 'initial' OR effective_life_day IS NOT NULL)) OR (status IN ('superseded', 'reverted') AND activated_at IS NOT NULL AND ended_at IS NOT NULL AND (creation_source = 'initial' OR effective_life_day IS NOT NULL)) OR (status IN ('rejected', 'canceled', 'invalidated') AND activated_at IS NULL AND ended_at IS NOT NULL))",
+    'FOREIGN KEY (parent_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+    'FOREIGN KEY (source_learning_run_id) REFERENCES learning_runs(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  ];
+}
+
+@DataClassName('LearningConsentRow')
+class LearningConsentsTable extends Table {
+  @override
+  String get tableName => 'learning_consents';
+
+  TextColumn get parameterFamily => text()
+      .named('parameter_family')
+      .map(const LearningParameterFamilyConverter())();
+  TextColumn get disclosureVersion => text().named('disclosure_version')();
+  DateTimeColumn get acceptedAt => dateTime().named('accepted_at')();
+
+  @override
+  Set<Column> get primaryKey => {parameterFamily, disclosureVersion};
+
+  @override
+  List<String> get customConstraints => const [
+    "CHECK (parameter_family IN ('baseline', 'activityImpact'))",
+    "CHECK (length(trim(disclosure_version)) > 0)",
+  ];
+}
+
+@DataClassName('LearningNoticeRow')
+@TableIndex(
+  name: 'learning_notices_status_time',
+  columns: {#status, #createdAt, #id},
+)
+class LearningNoticesTable extends Table {
+  @override
+  String get tableName => 'learning_notices';
+
+  TextColumn get id => text()();
+  TextColumn get parameterFamily => text()
+      .named('parameter_family')
+      .map(const LearningParameterFamilyConverter())();
+  TextColumn get type => text().map(const LearningNoticeTypeConverter())();
+  TextColumn get personalizationVersionId =>
+      text().named('personalization_version_id').nullable()();
+  TextColumn get learningRunId =>
+      text().named('learning_run_id').nullable()();
+  TextColumn get dedupKey => text().named('dedup_key').unique()();
+  TextColumn get status =>
+      text().map(const LearningNoticeStatusConverter())();
+  TextColumn get reasonCode => text().named('reason_code')();
+  DateTimeColumn get createdAt => dateTime().named('created_at')();
+  DateTimeColumn get seenAt => dateTime().named('seen_at').nullable()();
+  DateTimeColumn get dismissedAt =>
+      dateTime().named('dismissed_at').nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+
+  @override
+  List<String> get customConstraints => const [
+    "CHECK (length(trim(id)) > 0)",
+    "CHECK (parameter_family IN ('baseline', 'activityImpact'))",
+    "CHECK (type IN ('candidateAvailable', 'changeScheduled', 'changeActivated', 'learningSuspended', 'changeCanceled', 'changeReverted'))",
+    "CHECK (length(trim(dedup_key)) > 0)",
+    "CHECK (status IN ('unseen', 'seen', 'dismissed'))",
+    "CHECK (length(trim(reason_code)) > 0)",
+    "CHECK ((status = 'unseen' AND seen_at IS NULL AND dismissed_at IS NULL) OR (status = 'seen' AND seen_at IS NOT NULL AND dismissed_at IS NULL) OR (status = 'dismissed' AND seen_at IS NOT NULL AND dismissed_at IS NOT NULL))",
+    "CHECK ((type IN ('candidateAvailable', 'changeScheduled', 'changeActivated', 'changeCanceled', 'changeReverted') AND personalization_version_id IS NOT NULL) OR type = 'learningSuspended')",
+    'FOREIGN KEY (personalization_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+    'FOREIGN KEY (learning_run_id) REFERENCES learning_runs(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   ];
 }
 
@@ -340,20 +506,21 @@ class LearningRunsTable extends Table {
     "CHECK (length(trim(id)) > 0)",
     "CHECK (parameter_family IN ('baseline', 'activityImpact'))",
     "CHECK (length(trim(source_model_identity)) > 0)",
-    'CHECK (source_personalization_version_id IS NULL)',
     "CHECK (status IN ('pending', 'running', 'completed', 'retryableFailure', 'terminalFailure'))",
-    "CHECK (result IS NULL OR result IN ('insufficientEvidence', 'readyForAudit', 'configurationBlocked'))",
+    "CHECK (result IS NULL OR result IN ('insufficientEvidence', 'readyForAudit', 'unstable', 'noChange', 'candidate', 'configurationBlocked', 'improved', 'worsened'))",
     "CHECK (json_valid(evidence_snapshot_json) AND json_type(evidence_snapshot_json) = 'object')",
     "CHECK (length(evidence_hash) = 64 AND evidence_hash = lower(evidence_hash) AND evidence_hash NOT GLOB '*[^0-9a-f]*')",
-    "CHECK (evidence_hash_version = 'canonical-evidence-sha256-v1')",
-    "CHECK (algorithm_version = 'evidence-shadow-v1')",
-    "CHECK (config_version = 'evidence-readiness-14x21-v1')",
+    "CHECK (length(trim(evidence_hash_version)) > 0)",
+    "CHECK (length(trim(algorithm_version)) > 0)",
+    "CHECK (length(trim(config_version)) > 0)",
     "CHECK (json_valid(current_values_json) AND json_type(current_values_json) = 'object')",
     "CHECK (json_type(current_values_json, '\$.baseEnergy') = 'integer' AND json_extract(current_values_json, '\$.baseEnergy') BETWEEN 60 AND 140)",
     "CHECK (current_values_json = json_object('baseEnergy', json_extract(current_values_json, '\$.baseEnergy')))",
-    'CHECK (candidate_values_json IS NULL)',
+    "CHECK ((result = 'candidate' AND parameter_family = 'baseline' AND status = 'completed' AND candidate_values_json IS NOT NULL AND json_valid(candidate_values_json) AND json_type(candidate_values_json) = 'object' AND json_type(candidate_values_json, '\$.baseEnergy') = 'integer' AND json_extract(candidate_values_json, '\$.baseEnergy') BETWEEN 60 AND 140 AND candidate_values_json = json_object('baseEnergy', json_extract(candidate_values_json, '\$.baseEnergy'))) OR (result IS NULL OR result != 'candidate') AND candidate_values_json IS NULL)",
     "CHECK (json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array')",
     "CHECK (((status IN ('pending', 'running')) AND result IS NULL AND completed_at IS NULL) OR (status = 'completed' AND result IS NOT NULL AND completed_at IS NOT NULL) OR (status IN ('retryableFailure', 'terminalFailure') AND result IS NULL AND completed_at IS NOT NULL))",
+    "CHECK ((algorithm_version = 'evidence-shadow-v1' AND source_personalization_version_id IS NULL AND candidate_values_json IS NULL) OR (algorithm_version != 'evidence-shadow-v1' AND source_personalization_version_id IS NOT NULL))",
+    'FOREIGN KEY (source_personalization_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   ];
 }
 
@@ -380,6 +547,11 @@ class DailySummariesTable extends Table {
       boolean().named('is_standard_effective_day')();
   BoolColumn get isWeakEffectiveDay =>
       boolean().named('is_weak_effective_day')();
+  TextColumn get modelSnapshotSource => text()
+      .named('model_snapshot_source')
+      .map(const DailySummaryModelSnapshotSourceConverter())();
+  TextColumn get personalizationVersionId =>
+      text().named('personalization_version_id').nullable()();
   DateTimeColumn get settledAt => dateTime().named('settled_at')();
 
   @override
@@ -394,7 +566,9 @@ class DailySummariesTable extends Table {
     'CHECK (total_recovery >= 0)',
     'CHECK (json_valid(category_summary_json))',
     'CHECK (NOT (is_standard_effective_day = 1 AND is_weak_effective_day = 1))',
+    "CHECK ((model_snapshot_source = 'legacyInline' AND personalization_version_id IS NULL) OR (model_snapshot_source = 'personalizationVersion' AND personalization_version_id IS NOT NULL))",
     'FOREIGN KEY (rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
+    'FOREIGN KEY (personalization_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   ];
 }
 

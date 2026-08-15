@@ -25,6 +25,9 @@ void main() {
   late DriftEnergyObservationsRepository observationsRepository;
   late DriftActivityFeedbackRepository feedbackRepository;
   late DriftLearningRunsRepository learningRunsRepository;
+  late DriftPersonalizationVersionsRepository personalizationVersionsRepository;
+  late DriftLearningConsentsRepository learningConsentsRepository;
+  late DriftLearningNoticesRepository learningNoticesRepository;
   late DriftDailySummariesRepository summariesRepository;
   late DriftPromptReceiptsRepository receiptsRepository;
 
@@ -48,6 +51,15 @@ void main() {
     );
     learningRunsRepository = DriftLearningRunsRepository(
       LearningRunsDao(database),
+    );
+    personalizationVersionsRepository = DriftPersonalizationVersionsRepository(
+      PersonalizationVersionsDao(database),
+    );
+    learningConsentsRepository = DriftLearningConsentsRepository(
+      LearningConsentsDao(database),
+    );
+    learningNoticesRepository = DriftLearningNoticesRepository(
+      LearningNoticesDao(database),
     );
     summariesRepository = DriftDailySummariesRepository(
       DailySummariesDao(database),
@@ -75,13 +87,13 @@ void main() {
     final original = await settingsRepository.get();
     await settingsRepository.save(
       AppSettings(
-        baseEstimatedEnergy: 110,
-        pendingBaseEstimatedEnergy: 108,
-        baseEnergyEffectiveLifeDay: LifeDay(2026, 7, 27),
         activeRuleVersion: original.activeRuleVersion,
         pendingRuleVersion: null,
         pendingRuleEffectiveLifeDay: null,
         onboardingCompleted: true,
+        baselineLearningMode: LearningMode.review,
+        activityImpactLearningMode: LearningMode.automatic,
+        baselineLearningCooldownUntil: DateTime.utc(2026, 8, 16),
         createdAt: original.createdAt,
         updatedAt: DateTime.utc(2026, 7, 26, 13),
       ),
@@ -93,8 +105,12 @@ void main() {
     final storedCheckIn = await checkInsRepository.findByLifeDay(
       checkIn.lifeDay,
     );
-    expect(updatedSettings.baseEstimatedEnergy, 110);
-    expect(updatedSettings.baseEnergyEffectiveLifeDay, LifeDay(2026, 7, 27));
+    expect(updatedSettings.baselineLearningMode, LearningMode.review);
+    expect(updatedSettings.activityImpactLearningMode, LearningMode.automatic);
+    expect(
+      updatedSettings.baselineLearningCooldownUntil,
+      DateTime.utc(2026, 8, 16),
+    );
     expect(updatedSettings.updatedAt.isUtc, isTrue);
     expect(storedCheckIn, isA<MorningCheckIn>());
     expect(storedCheckIn!.overallState, MorningOverallState.good);
@@ -381,6 +397,9 @@ void main() {
         observations: observationsRepository,
         feedback: feedbackRepository,
         learningRuns: learningRunsRepository,
+        personalizationVersions: personalizationVersionsRepository,
+        learningConsents: learningConsentsRepository,
+        learningNotices: learningNoticesRepository,
         summaries: summariesRepository,
         receipts: receiptsRepository,
         transactionRunner: transactionRunner,
@@ -393,12 +412,15 @@ void main() {
       final deleted = records.single as Map<String, Object?>;
 
       expect(result.fileName, 'powermanager-20260726-120000Z.json');
-      expect(json['schemaVersion'], 3);
+      expect(json['schemaVersion'], 4);
       expect(json['appVersion'], '0.1.0+1');
       expect(json['exportedAt'], testNow.toIso8601String());
       expect(json['ruleConfigVersions'], isA<List<Object?>>());
       expect(json['activityFeedback'], isEmpty);
       expect(json['learningRuns'], isEmpty);
+      expect(json['personalizationVersions'], hasLength(1));
+      expect(json['learningConsents'], isEmpty);
+      expect(json['learningNotices'], isEmpty);
       expect(deleted['status'], 'deleted');
       expect(deleted, isNot(contains('rowid')));
       expect(deleted, isNot(contains('internalId')));

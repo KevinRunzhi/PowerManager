@@ -50,6 +50,7 @@ final class WellbeingUseCases implements WellbeingMutator {
     required this.activities,
     required this.observations,
     required this.summaries,
+    required this.personalizationVersions,
     required this.receipts,
     required this.projectionService,
     required this.feedbackMaintenance,
@@ -64,6 +65,7 @@ final class WellbeingUseCases implements WellbeingMutator {
   final ActivityRecordsRepository activities;
   final EnergyObservationsRepository observations;
   final DailySummariesRepository summaries;
+  final PersonalizationVersionsRepository personalizationVersions;
   final PromptReceiptsRepository receipts;
   final CurrentDayProjectionService projectionService;
   final ActivityFeedbackMaintenance feedbackMaintenance;
@@ -197,6 +199,30 @@ final class WellbeingUseCases implements WellbeingMutator {
         final ruleVersion = isCurrent
             ? prepared.current.ruleVersion
             : summary!.ruleVersion;
+        final PersonalizationVersion? historicalModel;
+        if (isCurrent ||
+            summary!.modelSnapshotSource ==
+                DailySummaryModelSnapshotSource.legacyInline) {
+          historicalModel = null;
+        } else {
+          historicalModel = await personalizationVersions.find(
+            summary.personalizationVersionId!,
+          );
+          if (historicalModel == null) {
+            throw StateError('missingPersonalizationVersion');
+          }
+        }
+        final personalizationVersionId = isCurrent
+            ? prepared.current.personalizationVersionId
+            : historicalModel?.id ?? fixedMvpAPersonalizationVersion;
+        final effectiveModelFingerprint = isCurrent
+            ? prepared.current.effectiveModelFingerprint
+            : historicalModel?.effectiveModelFingerprint ??
+                  fixedMvpAEffectiveModelFingerprint;
+        final modelRegimeEpoch = isCurrent
+            ? prepared.current.modelRegimeEpoch
+            : historicalModel?.modelRegimeEpoch ??
+                  fixedMvpAInitialModelRegimeEpoch;
         final comparison = comparisonService.compare(
           actualState: state,
           estimate: estimate,
@@ -213,8 +239,8 @@ final class WellbeingUseCases implements WellbeingMutator {
           baseEnergy: baseEnergy,
           ruleVersion: ruleVersion,
           comparisonBandVersion: mvpBComparisonBandV1,
-          effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
-          modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+          effectiveModelFingerprint: effectiveModelFingerprint,
+          modelRegimeEpoch: modelRegimeEpoch,
         );
         final observation = EnergyObservation(
           id: existing?.id ?? observationId,
@@ -231,10 +257,9 @@ final class WellbeingUseCases implements WellbeingMutator {
           baseEnergyAtObservation: baseEnergy,
           ruleVersionAtObservation: ruleVersion,
           comparisonBandVersion: mvpBComparisonBandV1,
-          personalizationVersionAtObservation: fixedMvpAPersonalizationVersion,
-          effectiveModelFingerprintAtObservation:
-              fixedMvpAEffectiveModelFingerprint,
-          modelRegimeEpochAtObservation: fixedMvpAInitialModelRegimeEpoch,
+          personalizationVersionAtObservation: personalizationVersionId,
+          effectiveModelFingerprintAtObservation: effectiveModelFingerprint,
+          modelRegimeEpochAtObservation: modelRegimeEpoch,
           activeActivityCountAtObservation: activityCount,
           coverageState: coverageState,
           modelRegimeKey: modelRegimeKey,
@@ -285,6 +310,9 @@ final class WellbeingUseCases implements WellbeingMutator {
       lifeDay: context.lifeDay,
       baseEstimatedEnergy: context.baseEstimatedEnergy,
       ruleVersion: context.ruleVersion,
+      personalizationVersionId: context.personalizationVersionId,
+      effectiveModelFingerprint: context.effectiveModelFingerprint,
+      modelRegimeEpoch: context.modelRegimeEpoch,
     );
     final appliedById = {
       for (final item in replayed.projection.activities)

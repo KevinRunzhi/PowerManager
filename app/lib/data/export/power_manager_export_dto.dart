@@ -1,18 +1,34 @@
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 
-/// Canonical schema-v1/v2/v3 transport shape shared by JSON export and restore.
+final class LegacyBaseSettingsBridge {
+  const LegacyBaseSettingsBridge({
+    required this.baseEstimatedEnergy,
+    required this.pendingBaseEstimatedEnergy,
+    required this.baseEnergyEffectiveLifeDay,
+  });
+
+  final int baseEstimatedEnergy;
+  final int? pendingBaseEstimatedEnergy;
+  final String? baseEnergyEffectiveLifeDay;
+}
+
+/// Canonical schema-v1/v2/v3/v4 transport shared by JSON export and restore.
 final class PowerManagerExportDto {
   PowerManagerExportDto({
     required this.schemaVersion,
     required this.exportedAt,
     required this.appVersion,
     required this.appSettings,
+    this.legacyBaseSettings,
     required List<RuleConfigVersion> ruleVersions,
     required List<MorningCheckIn> morningCheckIns,
     required List<StoredEstimatedActivity> activityRecords,
     required List<EnergyObservation> energyObservations,
     List<ActivityFeedback> activityFeedback = const [],
     List<LearningRun> learningRuns = const [],
+    List<PersonalizationVersion> personalizationVersions = const [],
+    List<LearningConsent> learningConsents = const [],
+    List<LearningNotice> learningNotices = const [],
     required List<DailySummary> dailySummaries,
     required List<PromptReceipt> promptReceipts,
   }) : ruleVersions = List.unmodifiable(ruleVersions),
@@ -21,6 +37,9 @@ final class PowerManagerExportDto {
        energyObservations = List.unmodifiable(energyObservations),
        activityFeedback = List.unmodifiable(activityFeedback),
        learningRuns = List.unmodifiable(learningRuns),
+       personalizationVersions = List.unmodifiable(personalizationVersions),
+       learningConsents = List.unmodifiable(learningConsents),
+       learningNotices = List.unmodifiable(learningNotices),
        dailySummaries = List.unmodifiable(dailySummaries),
        promptReceipts = List.unmodifiable(promptReceipts);
 
@@ -28,6 +47,7 @@ final class PowerManagerExportDto {
   final DateTime exportedAt;
   final String appVersion;
   final AppSettings appSettings;
+  final LegacyBaseSettingsBridge? legacyBaseSettings;
   final List<RuleConfigVersion> ruleVersions;
   final List<MorningCheckIn> morningCheckIns;
 
@@ -36,6 +56,9 @@ final class PowerManagerExportDto {
   final List<EnergyObservation> energyObservations;
   final List<ActivityFeedback> activityFeedback;
   final List<LearningRun> learningRuns;
+  final List<PersonalizationVersion> personalizationVersions;
+  final List<LearningConsent> learningConsents;
+  final List<LearningNotice> learningNotices;
   final List<DailySummary> dailySummaries;
   final List<PromptReceipt> promptReceipts;
 
@@ -44,7 +67,9 @@ final class PowerManagerExportDto {
       'schemaVersion': schemaVersion,
       'exportedAt': _utc(exportedAt),
       'appVersion': appVersion,
-      'appSettings': _settingsJson(appSettings),
+      'appSettings': schemaVersion >= 4
+          ? _settingsJson(appSettings)
+          : _legacySettingsJson(appSettings, legacyBaseSettings!),
       'ruleConfigVersions': ruleVersions.map(_ruleVersionJson).toList(),
       'morningCheckIns': morningCheckIns.map(_checkInJson).toList(),
       'activityRecords': activityRecords.map(_activityJson).toList(),
@@ -55,7 +80,16 @@ final class PowerManagerExportDto {
         'activityFeedback': activityFeedback.map(_feedbackJson).toList(),
       if (schemaVersion >= 3)
         'learningRuns': learningRuns.map(_learningRunJson).toList(),
-      'dailySummaries': dailySummaries.map(_summaryJson).toList(),
+      if (schemaVersion >= 4) ...{
+        'personalizationVersions': personalizationVersions
+            .map(_personalizationVersionJson)
+            .toList(),
+        'learningConsents': learningConsents.map(_learningConsentJson).toList(),
+        'learningNotices': learningNotices.map(_learningNoticeJson).toList(),
+      },
+      'dailySummaries': dailySummaries
+          .map((item) => _summaryJson(item, schemaVersion: schemaVersion))
+          .toList(),
       'promptReceipts': promptReceipts.map(_receiptJson).toList(),
     };
   }
@@ -84,10 +118,48 @@ Map<String, Object?> _learningRunJson(LearningRun run) {
 
 Map<String, Object?> _settingsJson(AppSettings settings) {
   return {
-    'baseEstimatedEnergy': settings.baseEstimatedEnergy,
-    'pendingBaseEstimatedEnergy': settings.pendingBaseEstimatedEnergy,
-    'baseEnergyEffectiveLifeDay': settings.baseEnergyEffectiveLifeDay
+    'activeRuleVersion': settings.activeRuleVersion,
+    'pendingRuleVersion': settings.pendingRuleVersion,
+    'pendingRuleEffectiveLifeDay': settings.pendingRuleEffectiveLifeDay
         ?.toString(),
+    'onboardingCompleted': settings.onboardingCompleted,
+    'baselineLearningMode': settings.baselineLearningMode.code,
+    'activityImpactLearningMode': settings.activityImpactLearningMode.code,
+    'baselineLearningSuspended': settings.baselineLearningSuspended,
+    'baselineLearningSuspendedAt': settings.baselineLearningSuspendedAt == null
+        ? null
+        : _utc(settings.baselineLearningSuspendedAt!),
+    'baselineLearningSuspensionReason':
+        settings.baselineLearningSuspensionReason,
+    'activityImpactLearningSuspended':
+        settings.activityImpactLearningSuspended,
+    'activityImpactLearningSuspendedAt':
+        settings.activityImpactLearningSuspendedAt == null
+        ? null
+        : _utc(settings.activityImpactLearningSuspendedAt!),
+    'activityImpactLearningSuspensionReason':
+        settings.activityImpactLearningSuspensionReason,
+    'baselineLearningCooldownUntil':
+        settings.baselineLearningCooldownUntil == null
+        ? null
+        : _utc(settings.baselineLearningCooldownUntil!),
+    'activityImpactLearningCooldownUntil':
+        settings.activityImpactLearningCooldownUntil == null
+        ? null
+        : _utc(settings.activityImpactLearningCooldownUntil!),
+    'createdAt': _utc(settings.createdAt),
+    'updatedAt': _utc(settings.updatedAt),
+  };
+}
+
+Map<String, Object?> _legacySettingsJson(
+  AppSettings settings,
+  LegacyBaseSettingsBridge bridge,
+) {
+  return {
+    'baseEstimatedEnergy': bridge.baseEstimatedEnergy,
+    'pendingBaseEstimatedEnergy': bridge.pendingBaseEstimatedEnergy,
+    'baseEnergyEffectiveLifeDay': bridge.baseEnergyEffectiveLifeDay,
     'activeRuleVersion': settings.activeRuleVersion,
     'pendingRuleVersion': settings.pendingRuleVersion,
     'pendingRuleEffectiveLifeDay': settings.pendingRuleEffectiveLifeDay
@@ -95,6 +167,59 @@ Map<String, Object?> _settingsJson(AppSettings settings) {
     'onboardingCompleted': settings.onboardingCompleted,
     'createdAt': _utc(settings.createdAt),
     'updatedAt': _utc(settings.updatedAt),
+  };
+}
+
+Map<String, Object?> _personalizationVersionJson(
+  PersonalizationVersion version,
+) {
+  return {
+    'id': version.id,
+    'parentVersionId': version.parentVersionId,
+    'effectiveModelFingerprint': version.effectiveModelFingerprint,
+    'modelRegimeEpoch': version.modelRegimeEpoch,
+    'creationSource': version.creationSource.code,
+    'scheduleSource': version.scheduleSource?.code,
+    'sourceLearningRunId': version.sourceLearningRunId,
+    'algorithmVersion': version.algorithmVersion,
+    'configVersion': version.configVersion,
+    'changedParameterFamily': version.changedParameterFamily.code,
+    'baseEnergy': version.baseEnergy,
+    'baselineAnchorEnergy': version.baselineAnchorEnergy,
+    'status': version.status.code,
+    'effectiveLifeDay': version.effectiveLifeDay?.toString(),
+    'createdAt': _utc(version.createdAt),
+    'activatedAt': version.activatedAt == null
+        ? null
+        : _utc(version.activatedAt!),
+    'endedAt': version.endedAt == null ? null : _utc(version.endedAt!),
+    'transitionReason': version.transitionReason,
+  };
+}
+
+Map<String, Object?> _learningConsentJson(LearningConsent consent) {
+  return {
+    'parameterFamily': consent.parameterFamily.code,
+    'disclosureVersion': consent.disclosureVersion,
+    'acceptedAt': _utc(consent.acceptedAt),
+  };
+}
+
+Map<String, Object?> _learningNoticeJson(LearningNotice notice) {
+  return {
+    'id': notice.id,
+    'parameterFamily': notice.parameterFamily.code,
+    'type': notice.type.code,
+    'personalizationVersionId': notice.personalizationVersionId,
+    'learningRunId': notice.learningRunId,
+    'dedupKey': notice.dedupKey,
+    'status': notice.status.code,
+    'reasonCode': notice.reasonCode,
+    'createdAt': _utc(notice.createdAt),
+    'seenAt': notice.seenAt == null ? null : _utc(notice.seenAt!),
+    'dismissedAt': notice.dismissedAt == null
+        ? null
+        : _utc(notice.dismissedAt!),
   };
 }
 
@@ -191,7 +316,10 @@ Map<String, Object?> _feedbackJson(ActivityFeedback feedback) {
   };
 }
 
-Map<String, Object?> _summaryJson(DailySummary summary) {
+Map<String, Object?> _summaryJson(
+  DailySummary summary, {
+  required int schemaVersion,
+}) {
   return {
     'lifeDay': summary.lifeDay.toString(),
     'baseEstimatedEnergy': summary.baseEstimatedEnergy,
@@ -213,6 +341,10 @@ Map<String, Object?> _summaryJson(DailySummary summary) {
     },
     'isStandardEffectiveDay': summary.isStandardEffectiveDay,
     'isWeakEffectiveDay': summary.isWeakEffectiveDay,
+    if (schemaVersion >= 4) ...{
+      'modelSnapshotSource': summary.modelSnapshotSource.code,
+      'personalizationVersionId': summary.personalizationVersionId,
+    },
     'settledAt': _utc(summary.settledAt),
   };
 }

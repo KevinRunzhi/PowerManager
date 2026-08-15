@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:power_manager/application/json_backup_codec.dart';
@@ -9,6 +10,14 @@ import 'package:power_manager/domain/repositories/repositories.dart';
 abstract interface class BackupSafetyStore {
   Future<void> save(String contents);
   Future<String?> existingPath();
+}
+
+typedef PostRestorePreparation = Future<void> Function();
+
+final class BackupRestoreResult {
+  const BackupRestoreResult({required this.postRestoreChecksPassed});
+
+  final bool postRestoreChecksPassed;
 }
 
 final class JsonBackupRestoreService {
@@ -24,8 +33,12 @@ final class JsonBackupRestoreService {
     required this.observations,
     required this.feedback,
     required this.learningRuns,
+    required this.personalizationVersions,
+    required this.learningConsents,
+    required this.learningNotices,
     required this.summaries,
     required this.receipts,
+    required this.postRestorePreparation,
   });
 
   final JsonBackupCodec codec;
@@ -39,8 +52,12 @@ final class JsonBackupRestoreService {
   final EnergyObservationsRepository observations;
   final ActivityFeedbackRepository feedback;
   final LearningRunsRepository learningRuns;
+  final PersonalizationVersionsRepository personalizationVersions;
+  final LearningConsentsRepository learningConsents;
+  final LearningNoticesRepository learningNotices;
   final DailySummariesRepository summaries;
   final PromptReceiptsRepository receipts;
+  final PostRestorePreparation postRestorePreparation;
 
   BackupInspection inspect({
     required String fileName,
@@ -55,6 +72,9 @@ final class JsonBackupRestoreService {
       final energyObservations = await observations.list();
       final activityFeedback = await feedback.list();
       final learningRunItems = await learningRuns.list();
+      final personalizationVersionItems = await personalizationVersions.list();
+      final learningConsentItems = await learningConsents.list();
+      final learningNoticeItems = await learningNotices.list();
       final dailySummaries = await summaries.list();
       final promptReceipts = await receipts.list();
       return BackupDataCounts(
@@ -64,17 +84,31 @@ final class JsonBackupRestoreService {
         energyObservations: energyObservations.length,
         activityFeedback: activityFeedback.length,
         learningRuns: learningRunItems.length,
+        personalizationVersions: personalizationVersionItems.length,
+        learningConsents: learningConsentItems.length,
+        learningNotices: learningNoticeItems.length,
         dailySummaries: dailySummaries.length,
         promptReceipts: promptReceipts.length,
       );
     });
   }
 
-  Future<void> restore(BackupInspection inspection) async {
+  Future<BackupRestoreResult> restore(BackupInspection inspection) async {
     await database.transaction(() async {
       final safety = await exportService.create(exportedAt: clock.now());
       await safetyStore.save(safety.contents);
       await database.replaceWithBackup(inspection.backup);
     });
+    try {
+      await postRestorePreparation();
+      final verified = await exportService.create(exportedAt: clock.now());
+      codec.inspect(
+        fileName: verified.fileName,
+        bytes: Uint8List.fromList(utf8.encode(verified.contents)),
+      );
+      return const BackupRestoreResult(postRestoreChecksPassed: true);
+    } on Object {
+      return const BackupRestoreResult(postRestoreChecksPassed: false);
+    }
   }
 }

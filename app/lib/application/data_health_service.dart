@@ -149,6 +149,7 @@ final class DataHealthService {
     required this.observations,
     required this.feedback,
     required this.learningRuns,
+    required this.personalizationVersions,
     required this.summaries,
     required this.localBackupStore,
     required this.upgradeReadiness,
@@ -166,6 +167,7 @@ final class DataHealthService {
   final EnergyObservationsRepository observations;
   final ActivityFeedbackRepository feedback;
   final LearningRunsRepository learningRuns;
+  final PersonalizationVersionsRepository personalizationVersions;
   final DailySummariesRepository summaries;
   final LocalBackupStore localBackupStore;
   final MvpBUpgradeReadinessChecker upgradeReadiness;
@@ -185,6 +187,7 @@ final class DataHealthService {
       localBackupStore.metadata(),
       upgradeReadiness.check(),
       settings.get(),
+      personalizationVersions.getActive(),
     ]);
     final morningItems = values[0] as List<MorningCheckIn>;
     final activityItems = values[1] as List<StoredEstimatedActivity>;
@@ -195,6 +198,7 @@ final class DataHealthService {
     final localBackup = values[6] as LocalBackupMetadata?;
     final upgradeReadinessReport = values[7] as MvpBUpgradeReadinessReport;
     final appSettings = values[8] as AppSettings;
+    final activeModel = values[9] as PersonalizationVersion;
     var integrityPassed = false;
     try {
       final exported = await exportService.create(exportedAt: checkedAt);
@@ -234,11 +238,12 @@ final class DataHealthService {
           ? null
           : regimeKeyBuilder.build(
               referenceType: referenceType,
-              baseEnergy: appSettings.baseEstimatedEnergy,
+              baseEnergy: activeModel.baseEnergy,
               ruleVersion: appSettings.activeRuleVersion,
               comparisonBandVersion: mvpBComparisonBandV1,
-              effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
-              modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+              effectiveModelFingerprint:
+                  activeModel.effectiveModelFingerprint,
+              modelRegimeEpoch: activeModel.modelRegimeEpoch,
             );
       final eligibility = eligibilityService.evaluate(
         observation: observation,
@@ -282,11 +287,11 @@ final class DataHealthService {
       for (final referenceType in ObservationReferenceType.values)
         referenceType: regimeKeyBuilder.build(
           referenceType: referenceType,
-          baseEnergy: appSettings.baseEstimatedEnergy,
+          baseEnergy: activeModel.baseEnergy,
           ruleVersion: appSettings.activeRuleVersion,
           comparisonBandVersion: mvpBComparisonBandV1,
-          effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
-          modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+          effectiveModelFingerprint: activeModel.effectiveModelFingerprint,
+          modelRegimeEpoch: activeModel.modelRegimeEpoch,
         ),
     };
     final latestRunBySource = <String, LearningRun>{};

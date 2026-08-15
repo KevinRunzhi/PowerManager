@@ -12,6 +12,8 @@ import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/energy/observation_comparison_service.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/learning/canonical_json.dart';
+import 'package:power_manager/domain/learning/personalization_identity.dart';
+import 'package:power_manager/domain/learning/personalization_lifecycle.dart';
 import 'package:power_manager/domain/learning/shadow_learning.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 
@@ -32,6 +34,9 @@ final class BackupDataCounts {
     required this.energyObservations,
     this.activityFeedback = 0,
     this.learningRuns = 0,
+    this.personalizationVersions = 0,
+    this.learningConsents = 0,
+    this.learningNotices = 0,
     required this.dailySummaries,
     required this.promptReceipts,
   });
@@ -42,6 +47,9 @@ final class BackupDataCounts {
   final int energyObservations;
   final int activityFeedback;
   final int learningRuns;
+  final int personalizationVersions;
+  final int learningConsents;
+  final int learningNotices;
   final int dailySummaries;
   final int promptReceipts;
 
@@ -52,6 +60,9 @@ final class BackupDataCounts {
       energyObservations +
       activityFeedback +
       learningRuns +
+      personalizationVersions +
+      learningConsents +
+      learningNotices +
       dailySummaries +
       promptReceipts +
       1;
@@ -74,9 +85,15 @@ final class BackupInspection {
 }
 
 final class JsonBackupCodec {
-  const JsonBackupCodec();
+  const JsonBackupCodec({
+    this.supportedBaselineAlgorithms = const {},
+    this.supportedBaselineConfigs = const {},
+  });
 
   static const maxBytes = 10 * 1024 * 1024;
+
+  final Set<String> supportedBaselineAlgorithms;
+  final Set<String> supportedBaselineConfigs;
 
   BackupInspection inspect({
     required String fileName,
@@ -108,7 +125,11 @@ final class JsonBackupCodec {
 
     try {
       final backup = _parseBackup(decoded);
-      _validateBackup(backup);
+      _validateBackup(
+        backup,
+        supportedBaselineAlgorithms: supportedBaselineAlgorithms,
+        supportedBaselineConfigs: supportedBaselineConfigs,
+      );
       final lifeDays = <LifeDay>[
         ...backup.morningCheckIns.map((item) => item.lifeDay),
         ...backup.activityRecords.map((item) => item.lifeDay),
@@ -126,6 +147,9 @@ final class JsonBackupCodec {
           energyObservations: backup.energyObservations.length,
           activityFeedback: backup.activityFeedback.length,
           learningRuns: backup.learningRuns.length,
+          personalizationVersions: backup.personalizationVersions.length,
+          learningConsents: backup.learningConsents.length,
+          learningNotices: backup.learningNotices.length,
           dailySummaries: backup.dailySummaries.length,
           promptReceipts: backup.promptReceipts.length,
         ),
@@ -142,8 +166,8 @@ final class JsonBackupCodec {
 
 PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
   final schemaVersion = _int(json, 'schemaVersion', '顶层');
-  if (schemaVersion != 1 && schemaVersion != 2 && schemaVersion != 3) {
-    throw const BackupFormatException('当前应用只支持 schemaVersion 1、2 或 3 的备份。');
+  if (schemaVersion < 1 || schemaVersion > 4) {
+    throw const BackupFormatException('当前应用只支持 schemaVersion 1、2、3 或 4 的备份。');
   }
   final settingsJson = _map(json, 'appSettings', '顶层');
   final rules = _list(
@@ -179,11 +203,34 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
       : _list(json, 'learningRuns', '顶层')
             .map((item) => _parseLearningRun(_asMap(item, '影子学习运行')))
             .toList(growable: false);
-  final summaries = _list(
-    json,
-    'dailySummaries',
-    '顶层',
-  ).map((item) => _parseSummary(_asMap(item, '日总结'))).toList(growable: false);
+  final parsedSettings = schemaVersion < 4
+      ? _parseLegacySettingsBridge(settingsJson)
+      : _ParsedSettings(
+          settings: _parseSettingsV4(settingsJson),
+          legacyBase: null,
+          bridgedVersions: const [],
+        );
+  final personalizationVersions = schemaVersion < 4
+      ? parsedSettings.bridgedVersions
+      : _list(json, 'personalizationVersions', '顶层')
+            .map((item) => _parsePersonalizationVersion(_asMap(item, '个人模型版本')))
+            .toList(growable: false);
+  final learningConsents = schemaVersion < 4
+      ? const <LearningConsent>[]
+      : _list(json, 'learningConsents', '顶层')
+            .map((item) => _parseLearningConsent(_asMap(item, '学习授权')))
+            .toList(growable: false);
+  final learningNotices = schemaVersion < 4
+      ? const <LearningNotice>[]
+      : _list(json, 'learningNotices', '顶层')
+            .map((item) => _parseLearningNotice(_asMap(item, '学习通知')))
+            .toList(growable: false);
+  final summaries = _list(json, 'dailySummaries', '顶层')
+      .map(
+        (item) =>
+            _parseSummary(_asMap(item, '日总结'), schemaVersion: schemaVersion),
+      )
+      .toList(growable: false);
   final receipts = _list(
     json,
     'promptReceipts',
@@ -194,31 +241,30 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
     schemaVersion: schemaVersion,
     exportedAt: _date(json, 'exportedAt', '顶层'),
     appVersion: _string(json, 'appVersion', '顶层'),
-    appSettings: _parseSettings(settingsJson),
+    appSettings: parsedSettings.settings,
+    legacyBaseSettings: parsedSettings.legacyBase,
     ruleVersions: rules,
     morningCheckIns: mornings,
     activityRecords: activities,
     energyObservations: observations,
     activityFeedback: feedback,
     learningRuns: learningRuns,
+    personalizationVersions: personalizationVersions,
+    learningConsents: learningConsents,
+    learningNotices: learningNotices,
     dailySummaries: summaries,
     promptReceipts: receipts,
   );
 }
 
-AppSettings _parseSettings(Map<String, Object?> json) {
-  return AppSettings(
-    baseEstimatedEnergy: _int(json, 'baseEstimatedEnergy', '设置'),
-    pendingBaseEstimatedEnergy: _nullableInt(
-      json,
-      'pendingBaseEstimatedEnergy',
-      '设置',
-    ),
-    baseEnergyEffectiveLifeDay: _nullableLifeDay(
-      json,
-      'baseEnergyEffectiveLifeDay',
-      '设置',
-    ),
+_ParsedSettings _parseLegacySettingsBridge(Map<String, Object?> json) {
+  final base = _int(json, 'baseEstimatedEnergy', '设置');
+  final pending = _nullableInt(json, 'pendingBaseEstimatedEnergy', '设置');
+  final pendingDay = _nullableLifeDay(json, 'baseEnergyEffectiveLifeDay', '设置');
+  final createdAt = _date(json, 'createdAt', '设置');
+  final updatedAt = _date(json, 'updatedAt', '设置');
+  final activeRuleVersion = _string(json, 'activeRuleVersion', '设置');
+  final settings = AppSettings(
     activeRuleVersion: _string(json, 'activeRuleVersion', '设置'),
     pendingRuleVersion: _nullableString(json, 'pendingRuleVersion', '设置'),
     pendingRuleEffectiveLifeDay: _nullableLifeDay(
@@ -227,8 +273,274 @@ AppSettings _parseSettings(Map<String, Object?> json) {
       '设置',
     ),
     onboardingCompleted: _bool(json, 'onboardingCompleted', '设置'),
+    baselineLearningMode: LearningMode.off,
+    activityImpactLearningMode: LearningMode.off,
+    baselineLearningSuspended: false,
+    baselineLearningSuspendedAt: null,
+    baselineLearningSuspensionReason: null,
+    activityImpactLearningSuspended: false,
+    activityImpactLearningSuspendedAt: null,
+    activityImpactLearningSuspensionReason: null,
+    baselineLearningCooldownUntil: null,
+    activityImpactLearningCooldownUntil: null,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+  );
+  final initial = initialPersonalizationVersion(
+    baseEnergy: base,
+    createdAt: createdAt,
+    transitionReason: 'legacyBackupInitialBridge',
+  );
+  final versions = <PersonalizationVersion>[initial];
+  if (pending != null && pendingDay != null) {
+    versions.add(
+      scheduledManualPersonalizationVersion(
+        parent: initial,
+        baseEnergy: pending,
+        effectiveLifeDay: pendingDay,
+        createdAt: updatedAt,
+        ruleVersion: activeRuleVersion,
+        legacy: true,
+      ),
+    );
+  }
+  return _ParsedSettings(
+    settings: settings,
+    legacyBase: LegacyBaseSettingsBridge(
+      baseEstimatedEnergy: base,
+      pendingBaseEstimatedEnergy: pending,
+      baseEnergyEffectiveLifeDay: pendingDay?.toString(),
+    ),
+    bridgedVersions: versions,
+  );
+}
+
+AppSettings _parseSettingsV4(Map<String, Object?> json) {
+  _requireExactKeys(json, const {
+    'activeRuleVersion',
+    'pendingRuleVersion',
+    'pendingRuleEffectiveLifeDay',
+    'onboardingCompleted',
+    'baselineLearningMode',
+    'activityImpactLearningMode',
+    'baselineLearningSuspended',
+    'baselineLearningSuspendedAt',
+    'baselineLearningSuspensionReason',
+    'activityImpactLearningSuspended',
+    'activityImpactLearningSuspendedAt',
+    'activityImpactLearningSuspensionReason',
+    'baselineLearningCooldownUntil',
+    'activityImpactLearningCooldownUntil',
+    'createdAt',
+    'updatedAt',
+  }, '设置');
+  return AppSettings(
+    activeRuleVersion: _string(json, 'activeRuleVersion', '设置'),
+    pendingRuleVersion: _nullableString(json, 'pendingRuleVersion', '设置'),
+    pendingRuleEffectiveLifeDay: _nullableLifeDay(
+      json,
+      'pendingRuleEffectiveLifeDay',
+      '设置',
+    ),
+    onboardingCompleted: _bool(json, 'onboardingCompleted', '设置'),
+    baselineLearningMode: _enumByCode(
+      LearningMode.values,
+      _string(json, 'baselineLearningMode', '设置'),
+      (value) => value.code,
+      '基准线学习模式',
+    ),
+    activityImpactLearningMode: _enumByCode(
+      LearningMode.values,
+      _string(json, 'activityImpactLearningMode', '设置'),
+      (value) => value.code,
+      '活动影响学习模式',
+    ),
+    baselineLearningSuspended: _bool(json, 'baselineLearningSuspended', '设置'),
+    baselineLearningSuspendedAt: _nullableDate(
+      json,
+      'baselineLearningSuspendedAt',
+      '设置',
+    ),
+    baselineLearningSuspensionReason: _nullableString(
+      json,
+      'baselineLearningSuspensionReason',
+      '设置',
+    ),
+    activityImpactLearningSuspended: _bool(
+      json,
+      'activityImpactLearningSuspended',
+      '设置',
+    ),
+    activityImpactLearningSuspendedAt: _nullableDate(
+      json,
+      'activityImpactLearningSuspendedAt',
+      '设置',
+    ),
+    activityImpactLearningSuspensionReason: _nullableString(
+      json,
+      'activityImpactLearningSuspensionReason',
+      '设置',
+    ),
+    baselineLearningCooldownUntil: _nullableDate(
+      json,
+      'baselineLearningCooldownUntil',
+      '设置',
+    ),
+    activityImpactLearningCooldownUntil: _nullableDate(
+      json,
+      'activityImpactLearningCooldownUntil',
+      '设置',
+    ),
     createdAt: _date(json, 'createdAt', '设置'),
     updatedAt: _date(json, 'updatedAt', '设置'),
+  );
+}
+
+final class _ParsedSettings {
+  const _ParsedSettings({
+    required this.settings,
+    required this.legacyBase,
+    required this.bridgedVersions,
+  });
+
+  final AppSettings settings;
+  final LegacyBaseSettingsBridge? legacyBase;
+  final List<PersonalizationVersion> bridgedVersions;
+}
+
+PersonalizationVersion _parsePersonalizationVersion(Map<String, Object?> json) {
+  _requireExactKeys(json, const {
+    'id',
+    'parentVersionId',
+    'effectiveModelFingerprint',
+    'modelRegimeEpoch',
+    'creationSource',
+    'scheduleSource',
+    'sourceLearningRunId',
+    'algorithmVersion',
+    'configVersion',
+    'changedParameterFamily',
+    'baseEnergy',
+    'baselineAnchorEnergy',
+    'status',
+    'effectiveLifeDay',
+    'createdAt',
+    'activatedAt',
+    'endedAt',
+    'transitionReason',
+  }, '个人模型版本');
+  final scheduleCode = _nullableString(json, 'scheduleSource', '个人模型版本');
+  return PersonalizationVersion(
+    id: _string(json, 'id', '个人模型版本'),
+    parentVersionId: _nullableString(json, 'parentVersionId', '个人模型版本'),
+    effectiveModelFingerprint: _string(
+      json,
+      'effectiveModelFingerprint',
+      '个人模型版本',
+    ),
+    modelRegimeEpoch: _string(json, 'modelRegimeEpoch', '个人模型版本'),
+    creationSource: _enumByCode(
+      PersonalizationCreationSource.values,
+      _string(json, 'creationSource', '个人模型版本'),
+      (value) => value.code,
+      '个人模型创建来源',
+    ),
+    scheduleSource: scheduleCode == null
+        ? null
+        : _enumByCode<PersonalizationScheduleSource>(
+            PersonalizationScheduleSource.values,
+            scheduleCode,
+            (value) => value.code,
+            '个人模型安排来源',
+          ),
+    sourceLearningRunId: _nullableString(json, 'sourceLearningRunId', '个人模型版本'),
+    algorithmVersion: _string(json, 'algorithmVersion', '个人模型版本'),
+    configVersion: _string(json, 'configVersion', '个人模型版本'),
+    changedParameterFamily: _enumByCode(
+      PersonalizationChangedParameterFamily.values,
+      _string(json, 'changedParameterFamily', '个人模型版本'),
+      (value) => value.code,
+      '个人模型变化参数族',
+    ),
+    baseEnergy: _int(json, 'baseEnergy', '个人模型版本'),
+    baselineAnchorEnergy: _int(json, 'baselineAnchorEnergy', '个人模型版本'),
+    status: _enumByCode(
+      PersonalizationVersionStatus.values,
+      _string(json, 'status', '个人模型版本'),
+      (value) => value.code,
+      '个人模型状态',
+    ),
+    effectiveLifeDay: _nullableLifeDay(json, 'effectiveLifeDay', '个人模型版本'),
+    createdAt: _date(json, 'createdAt', '个人模型版本'),
+    activatedAt: _nullableDate(json, 'activatedAt', '个人模型版本'),
+    endedAt: _nullableDate(json, 'endedAt', '个人模型版本'),
+    transitionReason: _string(json, 'transitionReason', '个人模型版本'),
+  );
+}
+
+LearningConsent _parseLearningConsent(Map<String, Object?> json) {
+  _requireExactKeys(json, const {
+    'parameterFamily',
+    'disclosureVersion',
+    'acceptedAt',
+  }, '学习授权');
+  return LearningConsent(
+    parameterFamily: _enumByCode(
+      LearningParameterFamily.values,
+      _string(json, 'parameterFamily', '学习授权'),
+      (value) => value.code,
+      '学习授权参数族',
+    ),
+    disclosureVersion: _string(json, 'disclosureVersion', '学习授权'),
+    acceptedAt: _date(json, 'acceptedAt', '学习授权'),
+  );
+}
+
+LearningNotice _parseLearningNotice(Map<String, Object?> json) {
+  _requireExactKeys(json, const {
+    'id',
+    'parameterFamily',
+    'type',
+    'personalizationVersionId',
+    'learningRunId',
+    'dedupKey',
+    'status',
+    'reasonCode',
+    'createdAt',
+    'seenAt',
+    'dismissedAt',
+  }, '学习通知');
+  return LearningNotice(
+    id: _string(json, 'id', '学习通知'),
+    parameterFamily: _enumByCode(
+      LearningParameterFamily.values,
+      _string(json, 'parameterFamily', '学习通知'),
+      (value) => value.code,
+      '学习通知参数族',
+    ),
+    type: _enumByCode(
+      LearningNoticeType.values,
+      _string(json, 'type', '学习通知'),
+      (value) => value.code,
+      '学习通知类型',
+    ),
+    personalizationVersionId: _nullableString(
+      json,
+      'personalizationVersionId',
+      '学习通知',
+    ),
+    learningRunId: _nullableString(json, 'learningRunId', '学习通知'),
+    dedupKey: _string(json, 'dedupKey', '学习通知'),
+    status: _enumByCode(
+      LearningNoticeStatus.values,
+      _string(json, 'status', '学习通知'),
+      (value) => value.code,
+      '学习通知状态',
+    ),
+    reasonCode: _string(json, 'reasonCode', '学习通知'),
+    createdAt: _date(json, 'createdAt', '学习通知'),
+    seenAt: _nullableDate(json, 'seenAt', '学习通知'),
+    dismissedAt: _nullableDate(json, 'dismissedAt', '学习通知'),
   );
 }
 
@@ -543,7 +855,16 @@ LearningRun _parseLearningRun(Map<String, Object?> json) {
   );
 }
 
-DailySummary _parseSummary(Map<String, Object?> json) {
+DailySummary _parseSummary(
+  Map<String, Object?> json, {
+  required int schemaVersion,
+}) {
+  if (schemaVersion >= 4) {
+    _requireKeys(json, const {
+      'modelSnapshotSource',
+      'personalizationVersionId',
+    }, '日总结');
+  }
   final categoriesJson = _map(json, 'categorySummaries', '日总结');
   final categories = <ActivityCategory, CategoryEstimatedSummary>{};
   for (final entry in categoriesJson.entries) {
@@ -577,6 +898,17 @@ DailySummary _parseSummary(Map<String, Object?> json) {
     categorySummaries: categories,
     isStandardEffectiveDay: _bool(json, 'isStandardEffectiveDay', '日总结'),
     isWeakEffectiveDay: _bool(json, 'isWeakEffectiveDay', '日总结'),
+    modelSnapshotSource: schemaVersion >= 4
+        ? _enumByCode(
+            DailySummaryModelSnapshotSource.values,
+            _string(json, 'modelSnapshotSource', '日总结'),
+            (value) => value.code,
+            '日总结模型来源',
+          )
+        : DailySummaryModelSnapshotSource.legacyInline,
+    personalizationVersionId: schemaVersion >= 4
+        ? _nullableString(json, 'personalizationVersionId', '日总结')
+        : null,
     settledAt: _date(json, 'settledAt', '日总结'),
   );
 }
@@ -601,26 +933,43 @@ PromptReceipt _parseReceipt(Map<String, Object?> json) {
   );
 }
 
-void _validateBackup(PowerManagerExportDto backup) {
+void _validateBackup(
+  PowerManagerExportDto backup, {
+  required Set<String> supportedBaselineAlgorithms,
+  required Set<String> supportedBaselineConfigs,
+}) {
   final settings = backup.appSettings;
-  _range(settings.baseEstimatedEnergy, 60, 140, '基准线');
-  if (settings.pendingBaseEstimatedEnergy case final pending?) {
-    _range(pending, 60, 140, '待生效基准线');
+  final legacy = backup.legacyBaseSettings;
+  if (legacy case final legacy?) {
+    _range(legacy.baseEstimatedEnergy, 60, 140, '基准线');
+    if (legacy.pendingBaseEstimatedEnergy case final pending?) {
+      _range(pending, 60, 140, '待生效基准线');
+    }
+    _paired(
+      legacy.pendingBaseEstimatedEnergy,
+      legacy.baseEnergyEffectiveLifeDay,
+      '待生效基准线',
+    );
   }
-  _paired(
-    settings.pendingBaseEstimatedEnergy,
-    settings.baseEnergyEffectiveLifeDay,
-    '待生效基准线',
+  if (settings.pendingRuleVersion != null ||
+      settings.pendingRuleEffectiveLifeDay != null) {
+    throw const BackupFormatException('备份包含尚未结清的规则切换。');
+  }
+  _pairedSuspension(
+    settings.baselineLearningSuspended,
+    settings.baselineLearningSuspendedAt,
+    settings.baselineLearningSuspensionReason,
+    '基准线学习暂停',
   );
-  _paired(
-    settings.pendingRuleVersion,
-    settings.pendingRuleEffectiveLifeDay,
-    '待生效规则',
+  _pairedSuspension(
+    settings.activityImpactLearningSuspended,
+    settings.activityImpactLearningSuspendedAt,
+    settings.activityImpactLearningSuspensionReason,
+    '活动影响学习暂停',
   );
   if (settings.createdAt.isAfter(settings.updatedAt)) {
     throw const BackupFormatException('设置时间顺序不合法。');
   }
-
   final rulesByVersion = <String, EnergyRuleConfig>{};
   for (final version in backup.ruleVersions) {
     _nonEmpty(version.version, '规则版本');
@@ -703,7 +1052,12 @@ void _validateBackup(PowerManagerExportDto backup) {
   final learningRunKeys = <String>{};
   for (final run in backup.learningRuns) {
     _unique(learningRunIds, run.id, '影子学习运行 ID');
-    _validateLearningRun(run);
+    _validateLearningRun(
+      run,
+      schemaVersion: backup.schemaVersion,
+      supportedBaselineAlgorithms: supportedBaselineAlgorithms,
+      supportedBaselineConfigs: supportedBaselineConfigs,
+    );
     final idempotencyKey = [
       run.parameterFamily.code,
       run.sourceModelIdentity,
@@ -715,6 +1069,40 @@ void _validateBackup(PowerManagerExportDto backup) {
       throw const BackupFormatException('影子学习运行幂等键重复。');
     }
   }
+
+  final versionsById = _validatePersonalizationVersions(
+    backup.personalizationVersions,
+    learningRuns: {for (final run in backup.learningRuns) run.id: run},
+    activeRuleVersion: settings.activeRuleVersion,
+  );
+  final activeModel = versionsById.values.singleWhere(
+    (version) => version.status == PersonalizationVersionStatus.active,
+  );
+  _validateLearningRunSources(
+    backup.learningRuns,
+    versionsById: versionsById,
+    activeRuleVersion: settings.activeRuleVersion,
+  );
+
+  final consentKeys = <String>{};
+  for (final consent in backup.learningConsents) {
+    _nonEmpty(consent.disclosureVersion, '学习授权说明版本');
+    final key =
+        '${consent.parameterFamily.code}\u0000${consent.disclosureVersion}';
+    if (!consentKeys.add(key)) {
+      throw const BackupFormatException('学习授权记录重复。');
+    }
+  }
+  _validateLearningModeConsents(settings, consentKeys);
+  _validateLearningNotices(
+    backup.learningNotices,
+    versionsById: versionsById,
+    learningRunsById: {for (final run in backup.learningRuns) run.id: run},
+  );
+  _validateScheduledNotices(
+    versionsById.values,
+    notices: backup.learningNotices,
+  );
 
   final summariesByDay = <LifeDay, DailySummary>{};
   for (final summary in backup.dailySummaries) {
@@ -737,10 +1125,20 @@ void _validateBackup(PowerManagerExportDto backup) {
         )) {
       throw const BackupFormatException('日总结分类汇总不完整。');
     }
+    final versionId = summary.personalizationVersionId;
+    final version = versionId == null ? null : versionsById[versionId];
+    final validSnapshot = switch (summary.modelSnapshotSource) {
+      DailySummaryModelSnapshotSource.legacyInline => versionId == null,
+      DailySummaryModelSnapshotSource.personalizationVersion =>
+        version != null && version.baseEnergy == summary.baseEstimatedEnergy,
+    };
+    if (!validSnapshot) {
+      throw const BackupFormatException('日总结模型快照引用不合法。');
+    }
   }
 
   _validateReplays(
-    settings: settings,
+    activeBaseEnergy: activeModel.baseEnergy,
     morningsByDay: morningsByDay,
     activitiesByDay: activitiesByDay,
     summariesByDay: summariesByDay,
@@ -755,6 +1153,312 @@ void _validateBackup(PowerManagerExportDto backup) {
         '${receipt.type.code}\u0000${receipt.scopeKey}\u0000${receipt.action.code}';
     if (!receiptKeys.add(key)) {
       throw const BackupFormatException('提醒回执唯一键重复。');
+    }
+  }
+}
+
+Map<String, PersonalizationVersion> _validatePersonalizationVersions(
+  List<PersonalizationVersion> versions, {
+  required Map<String, LearningRun> learningRuns,
+  required String activeRuleVersion,
+}) {
+  try {
+    const PersonalizationIntegrityValidator().validate(versions);
+  } on PersonalizationLifecycleException catch (error) {
+    throw BackupFormatException('个人模型完整性不合法：${error.code}。');
+  }
+  const identities = PersonalizationIdentityBuilder();
+  final byId = {for (final version in versions) version.id: version};
+  for (final version in versions) {
+    final expectedId = identities.versionId(
+      parentVersionId: version.parentVersionId,
+      creationSource: version.creationSource,
+      sourceLearningRunId: version.sourceLearningRunId,
+      algorithmVersion: version.algorithmVersion,
+      configVersion: version.configVersion,
+      changedParameterFamily: version.changedParameterFamily,
+      baseEnergy: version.baseEnergy,
+      baselineAnchorEnergy: version.baselineAnchorEnergy,
+      createdAt: version.createdAt,
+    );
+    if (version.id != expectedId) {
+      throw const BackupFormatException('个人模型版本 ID 不是确定性 ID。');
+    }
+    final initial =
+        version.creationSource == PersonalizationCreationSource.initial;
+    if (initial) {
+      if (version.algorithmVersion != initialPersonalizationAlgorithmV1 ||
+          version.configVersion != initialPersonalizationConfigV1 ||
+          version.effectiveModelFingerprint !=
+              fixedMvpAEffectiveModelFingerprint ||
+          version.modelRegimeEpoch != fixedMvpAInitialModelRegimeEpoch ||
+          version.baseEnergy != version.baselineAnchorEnergy) {
+        throw const BackupFormatException('初始个人模型 sentinel 不合法。');
+      }
+    } else {
+      final expectedFingerprint = identities.effectiveFingerprint(
+        baseEnergy: version.baseEnergy,
+        ruleVersion: activeRuleVersion,
+      );
+      if (version.effectiveModelFingerprint != expectedFingerprint ||
+          version.modelRegimeEpoch !=
+              identities.regimeEpoch(versionId: version.id)) {
+        throw const BackupFormatException('个人模型指纹或窗口 ID 不合法。');
+      }
+    }
+    if (version.creationSource ==
+        PersonalizationCreationSource.legacyManualPending) {
+      if (version.algorithmVersion != legacyStage19PendingVersionV1 ||
+          version.configVersion != legacyStage19PendingVersionV1 ||
+          version.scheduleSource !=
+              PersonalizationScheduleSource.legacyManualPending) {
+        throw const BackupFormatException('Legacy 手动基准线桥接不合法。');
+      }
+    }
+    if (version.creationSource == PersonalizationCreationSource.manual &&
+        (version.algorithmVersion != manualBaselineVersionV1 ||
+            version.configVersion != manualBaselineVersionV1 ||
+            version.scheduleSource != PersonalizationScheduleSource.manual)) {
+      throw const BackupFormatException('手动基准线模型来源不合法。');
+    }
+    if (version.creationSource == PersonalizationCreationSource.revert &&
+        (version.algorithmVersion != revertPersonalizationVersionV1 ||
+            version.configVersion != revertPersonalizationVersionV1 ||
+            version.scheduleSource != PersonalizationScheduleSource.revert)) {
+      throw const BackupFormatException('撤回模型来源不合法。');
+    }
+    if (version.sourceLearningRunId case final runId?) {
+      final run = learningRuns[runId];
+      final candidate = run?.candidateValuesJson;
+      if (run == null ||
+          run.status != LearningRunStatus.completed ||
+          run.result != LearningRunResult.candidate ||
+          run.parameterFamily !=
+              version.changedParameterFamily.parameterFamily ||
+          run.sourcePersonalizationVersionId != version.parentVersionId ||
+          run.algorithmVersion != version.algorithmVersion ||
+          run.configVersion != version.configVersion ||
+          candidate != jsonEncode({'baseEnergy': version.baseEnergy})) {
+        throw const BackupFormatException('个人模型引用的学习运行不合法。');
+      }
+    }
+  }
+  return byId;
+}
+
+void _validateLearningNotices(
+  List<LearningNotice> notices, {
+  required Map<String, PersonalizationVersion> versionsById,
+  required Map<String, LearningRun> learningRunsById,
+}) {
+  const identities = PersonalizationIdentityBuilder();
+  final ids = <String>{};
+  final dedupKeys = <String>{};
+  for (final notice in notices) {
+    _unique(ids, notice.id, '学习通知 ID');
+    _nonEmpty(notice.dedupKey, '学习通知去重键');
+    _nonEmpty(notice.reasonCode, '学习通知原因码');
+    if (!dedupKeys.add(notice.dedupKey)) {
+      throw const BackupFormatException('学习通知去重键重复。');
+    }
+    final expectedDedup = identities.noticeDedupKey(
+      parameterFamily: notice.parameterFamily,
+      type: notice.type,
+      personalizationVersionId: notice.personalizationVersionId,
+      learningRunId: notice.learningRunId,
+      reasonCode: notice.reasonCode,
+    );
+    if (notice.dedupKey != expectedDedup ||
+        notice.id != identities.noticeId(expectedDedup)) {
+      throw const BackupFormatException('学习通知不是确定性标识。');
+    }
+    final versionId = notice.personalizationVersionId;
+    final version = versionId == null ? null : versionsById[versionId];
+    if (notice.type == LearningNoticeType.learningSuspended) {
+      if (versionId != null && version == null) {
+        throw const BackupFormatException('学习暂停通知引用不存在的模型。');
+      }
+    } else if (version == null ||
+        version.changedParameterFamily.parameterFamily !=
+            notice.parameterFamily) {
+      throw const BackupFormatException('学习通知模型引用不合法。');
+    }
+    if (version != null && notice.createdAt.isBefore(version.createdAt)) {
+      throw const BackupFormatException('学习通知早于其模型版本。');
+    }
+    if (notice.learningRunId case final runId?) {
+      final run = learningRunsById[runId];
+      if (run == null || run.parameterFamily != notice.parameterFamily) {
+        throw const BackupFormatException('学习通知引用不存在或参数族不一致的运行。');
+      }
+      if (notice.type == LearningNoticeType.learningSuspended &&
+          (run.status != LearningRunStatus.completed ||
+              run.result != LearningRunResult.worsened)) {
+        throw const BackupFormatException('学习暂停通知没有引用恶化运行。');
+      }
+    } else if (notice.type == LearningNoticeType.learningSuspended) {
+      throw const BackupFormatException('学习暂停通知缺少运行引用。');
+    }
+    final validStatus = switch (notice.status) {
+      LearningNoticeStatus.unseen =>
+        notice.seenAt == null && notice.dismissedAt == null,
+      LearningNoticeStatus.seen =>
+        notice.seenAt != null && notice.dismissedAt == null,
+      LearningNoticeStatus.dismissed =>
+        notice.seenAt != null &&
+            notice.dismissedAt != null &&
+            !notice.dismissedAt!.isBefore(notice.seenAt!),
+    };
+    if (!validStatus || (notice.seenAt?.isBefore(notice.createdAt) ?? false)) {
+      throw const BackupFormatException('学习通知状态或时间不合法。');
+    }
+  }
+}
+
+void _validateLearningModeConsents(
+  AppSettings settings,
+  Set<String> consentKeys,
+) {
+  bool hasCurrentConsent(
+    LearningParameterFamily family,
+    String disclosureVersion,
+  ) => consentKeys.contains('${family.code}\u0000$disclosureVersion');
+
+  if (settings.baselineLearningMode != LearningMode.off &&
+      !hasCurrentConsent(
+        LearningParameterFamily.baseline,
+        baselineLearningDisclosureV1,
+      )) {
+    throw const BackupFormatException('基准线学习模式缺少当前授权说明回执。');
+  }
+  if (settings.activityImpactLearningMode != LearningMode.off &&
+      !hasCurrentConsent(
+        LearningParameterFamily.activityImpact,
+        activityImpactLearningDisclosureV1,
+      )) {
+    throw const BackupFormatException('活动影响学习模式缺少当前授权说明回执。');
+  }
+}
+
+void _validateScheduledNotices(
+  Iterable<PersonalizationVersion> versions, {
+  required List<LearningNotice> notices,
+}) {
+  for (final version in versions) {
+    final source = version.scheduleSource;
+    if (source == null ||
+        source == PersonalizationScheduleSource.legacyManualPending) {
+      continue;
+    }
+    final expectedReason = switch (source) {
+      PersonalizationScheduleSource.automatic => 'automaticCandidateScheduled',
+      PersonalizationScheduleSource.reviewAccepted => 'reviewCandidateAccepted',
+      PersonalizationScheduleSource.manual => 'manualBaselineScheduled',
+      PersonalizationScheduleSource.revert => 'revertScheduled',
+      PersonalizationScheduleSource.legacyManualPending => throw StateError(
+        'unreachable legacy schedule',
+      ),
+    };
+    final matches = notices
+        .where(
+          (notice) =>
+              notice.type == LearningNoticeType.changeScheduled &&
+              notice.personalizationVersionId == version.id &&
+              notice.parameterFamily ==
+                  version.changedParameterFamily.parameterFamily &&
+              notice.learningRunId == version.sourceLearningRunId &&
+              notice.reasonCode == expectedReason,
+        )
+        .toList(growable: false);
+    if (matches.length != 1) {
+      throw const BackupFormatException('非 Legacy 安排缺少唯一的持久通知。');
+    }
+    final notice = matches.single;
+    final terminalTime = version.activatedAt ?? version.endedAt;
+    if (notice.createdAt.isBefore(version.createdAt) ||
+        (terminalTime != null && notice.createdAt.isAfter(terminalTime))) {
+      throw const BackupFormatException('安排通知时间不在版本生命周期内。');
+    }
+    if (source == PersonalizationScheduleSource.automatic) {
+      final day = version.effectiveLifeDay!;
+      final boundary = DateTime(day.year, day.month, day.day, 4).toUtc();
+      if (boundary.difference(notice.createdAt.toUtc()) <
+          const Duration(hours: 24)) {
+        throw const BackupFormatException('自动安排没有满足最短通知时间。');
+      }
+    }
+  }
+}
+
+void _validateLearningRunSources(
+  List<LearningRun> runs, {
+  required Map<String, PersonalizationVersion> versionsById,
+  required String activeRuleVersion,
+}) {
+  for (final run in runs) {
+    final sourceId = run.sourcePersonalizationVersionId;
+    if (sourceId == null) continue;
+    final source = versionsById[sourceId];
+    if (source == null ||
+        source.activatedAt == null ||
+        run.triggeredAt.isBefore(source.activatedAt!)) {
+      throw const BackupFormatException('生产学习运行引用了无效的来源模型。');
+    }
+    final current = _canonicalJsonObject(run.currentValuesJson, '生产学习当前参数');
+    if (_int(current, 'baseEnergy', '生产学习当前参数') != source.baseEnergy) {
+      throw const BackupFormatException('生产学习当前参数与来源模型不一致。');
+    }
+    final snapshot = _canonicalJsonObject(run.evidenceSnapshotJson, '生产学习证据快照');
+    final hashInput = _map(snapshot, 'hashInput', '生产学习证据快照');
+    final referenceType = _enumByCode(
+      ObservationReferenceType.values,
+      _string(hashInput, 'referenceType', '生产学习 hashInput'),
+      (value) => value.code,
+      '生产学习参考类型',
+    );
+    final expectedRegime = const ModelRegimeKeyBuilder().build(
+      referenceType: referenceType,
+      baseEnergy: source.baseEnergy,
+      ruleVersion: activeRuleVersion,
+      comparisonBandVersion: mvpBComparisonBandV1,
+      effectiveModelFingerprint: source.effectiveModelFingerprint,
+      modelRegimeEpoch: source.modelRegimeEpoch,
+    );
+    if (run.sourceModelIdentity != expectedRegime) {
+      throw const BackupFormatException('生产学习运行来源窗口已变化。');
+    }
+    for (final raw in _list(
+      hashInput,
+      'selectedEligibleEvidence',
+      '生产学习 hashInput',
+    )) {
+      final evidence = _asMap(raw, '生产学习可用证据');
+      final observedVersion = _string(
+        evidence,
+        'personalizationVersionAtObservation',
+        '生产学习可用证据',
+      );
+      final legacyInitialObservation =
+          source.creationSource == PersonalizationCreationSource.initial &&
+          source.effectiveModelFingerprint ==
+              fixedMvpAEffectiveModelFingerprint &&
+          source.modelRegimeEpoch == fixedMvpAInitialModelRegimeEpoch &&
+          observedVersion == fixedMvpAPersonalizationVersion;
+      if ((observedVersion != source.id && !legacyInitialObservation) ||
+          _int(evidence, 'baseEnergyAtObservation', '生产学习可用证据') !=
+              source.baseEnergy ||
+          _string(
+                evidence,
+                'effectiveModelFingerprintAtObservation',
+                '生产学习可用证据',
+              ) !=
+              source.effectiveModelFingerprint ||
+          _string(evidence, 'modelRegimeEpochAtObservation', '生产学习可用证据') !=
+              source.modelRegimeEpoch ||
+          _string(evidence, 'ruleVersionAtObservation', '生产学习可用证据') !=
+              activeRuleVersion) {
+        throw const BackupFormatException('生产学习证据不属于来源模型。');
+      }
     }
   }
 }
@@ -912,17 +1616,35 @@ void _validateFeedback(
   }
 }
 
-void _validateLearningRun(LearningRun run) {
+void _validateLearningRun(
+  LearningRun run, {
+  required int schemaVersion,
+  required Set<String> supportedBaselineAlgorithms,
+  required Set<String> supportedBaselineConfigs,
+}) {
   _nonEmpty(run.sourceModelIdentity, '影子学习来源模型');
   _nonEmpty(run.algorithmVersion, '影子学习算法版本');
   _nonEmpty(run.configVersion, '影子学习配置版本');
   _nonEmpty(run.evidenceHashVersion, '影子学习证据哈希版本');
-  if (run.parameterFamily != LearningParameterFamily.baseline ||
-      run.sourcePersonalizationVersionId != null ||
-      run.algorithmVersion != shadowLearningAlgorithmV1 ||
-      run.configVersion != shadowLearningConfigV1 ||
-      run.evidenceHashVersion != canonicalEvidenceHashV1 ||
-      run.candidateValuesJson != null) {
+  final legacyEvidenceOnly = run.algorithmVersion == shadowLearningAlgorithmV1;
+  final supportedProduction =
+      schemaVersion >= 4 &&
+      run.parameterFamily == LearningParameterFamily.baseline &&
+      run.sourcePersonalizationVersionId != null &&
+      supportedBaselineAlgorithms.contains(run.algorithmVersion) &&
+      supportedBaselineConfigs.contains(run.configVersion) &&
+      !_containsForbiddenLearningWatermark(run.algorithmVersion) &&
+      !_containsForbiddenLearningWatermark(run.configVersion) &&
+      !_containsForbiddenLearningWatermark(run.evidenceSnapshotJson) &&
+      !_containsForbiddenLearningWatermark(run.candidateValuesJson ?? '');
+  final supportedLegacy =
+      legacyEvidenceOnly &&
+      run.parameterFamily == LearningParameterFamily.baseline &&
+      run.sourcePersonalizationVersionId == null &&
+      run.configVersion == shadowLearningConfigV1 &&
+      run.candidateValuesJson == null;
+  if ((!supportedLegacy && !supportedProduction) ||
+      run.evidenceHashVersion != canonicalEvidenceHashV1) {
     throw const BackupFormatException('影子学习运行包含当前版本不支持的配置。');
   }
   if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(run.evidenceHash)) {
@@ -967,6 +1689,21 @@ void _validateLearningRun(LearningRun run) {
   _requireExactKeys(currentValues, const {'baseEnergy'}, '影子学习当前参数');
   final baseEnergy = _int(currentValues, 'baseEnergy', '影子学习当前参数');
   _range(baseEnergy, 60, 140, '影子学习当前基准线');
+  if (run.result == LearningRunResult.candidate) {
+    final candidateJson = run.candidateValuesJson;
+    if (candidateJson == null) {
+      throw const BackupFormatException('候选学习运行缺少候选参数。');
+    }
+    final candidate = _canonicalJsonObject(candidateJson, '学习候选参数');
+    _requireExactKeys(candidate, const {'baseEnergy'}, '学习候选参数');
+    final candidateBase = _int(candidate, 'baseEnergy', '学习候选参数');
+    _range(candidateBase, 60, 140, '学习候选基准线');
+    if (candidateBase == baseEnergy) {
+      throw const BackupFormatException('学习候选没有产生参数变化。');
+    }
+  } else if (run.candidateValuesJson != null) {
+    throw const BackupFormatException('非候选学习运行不能包含候选参数。');
+  }
   final readiness = _validateLearningDescriptive(
     descriptive,
     evidence: validatedEvidence,
@@ -978,7 +1715,12 @@ void _validateLearningRun(LearningRun run) {
     throw const BackupFormatException('影子学习原因码必须是非空文本。');
   }
   final reasonStrings = reasonCodes.cast<String>();
-  _validateLearningRunReasons(run, reasonStrings, readiness);
+  _validateLearningRunReasons(
+    run,
+    reasonStrings,
+    readiness,
+    legacyEvidenceOnly: legacyEvidenceOnly,
+  );
 
   final expectedId = deterministicLearningRunId(
     parameterFamily: run.parameterFamily,
@@ -990,6 +1732,12 @@ void _validateLearningRun(LearningRun run) {
   if (run.id != expectedId) {
     throw const BackupFormatException('影子学习运行 ID 不是确定性 ID。');
   }
+}
+
+bool _containsForbiddenLearningWatermark(String value) {
+  final normalized = value.toLowerCase();
+  return normalized.contains('preproduction_only_do_not_activate_or_ship') ||
+      normalized.contains('do-not-ship');
 }
 
 _ValidatedLearningEvidence _validateLearningHashInput(
@@ -1160,6 +1908,18 @@ _ValidatedLearningEvidence _validateLearningHashInput(
       effectiveModelFingerprint: effectiveFingerprint,
       modelRegimeEpoch: regimeEpoch,
     );
+    final observedPersonalization = _string(
+      evidence,
+      'personalizationVersionAtObservation',
+      '影子学习可用证据',
+    );
+    final expectedPersonalization =
+        run.sourcePersonalizationVersionId ?? fixedMvpAPersonalizationVersion;
+    final legacyInitialObservation =
+        run.sourcePersonalizationVersionId != null &&
+        observedPersonalization == fixedMvpAPersonalizationVersion &&
+        effectiveFingerprint == fixedMvpAEffectiveModelFingerprint &&
+        regimeEpoch == fixedMvpAInitialModelRegimeEpoch;
     if (_string(evidence, 'modelRegimeKey', '影子学习可用证据') !=
             run.sourceModelIdentity ||
         rebuiltRegime != run.sourceModelIdentity ||
@@ -1168,8 +1928,8 @@ _ValidatedLearningEvidence _validateLearningHashInput(
             mvpBObservationContractV1 ||
         _string(evidence, 'comparisonBandVersion', '影子学习可用证据') !=
             mvpBComparisonBandV1 ||
-        _string(evidence, 'personalizationVersionAtObservation', '影子学习可用证据') !=
-            fixedMvpAPersonalizationVersion ||
+        (observedPersonalization != expectedPersonalization &&
+            !legacyInitialObservation) ||
         coverageState != ObservationCoverageState.confirmed ||
         _bool(evidence, 'hasMorningCheckIn', '影子学习可用证据') != true ||
         _bool(evidence, 'settled', '影子学习可用证据') != true ||
@@ -1386,8 +2146,40 @@ ShadowReadiness _validateLearningDescriptive(
 void _validateLearningRunReasons(
   LearningRun run,
   List<String> reasons,
-  ShadowReadiness readiness,
-) {
+  ShadowReadiness readiness, {
+  required bool legacyEvidenceOnly,
+}) {
+  if (!legacyEvidenceOnly) {
+    final statusShapeIsValid = switch (run.status) {
+      LearningRunStatus.pending || LearningRunStatus.running => reasons.isEmpty,
+      LearningRunStatus.retryableFailure => _sameStringList(reasons, const [
+        'retryableLearningFailure',
+      ]),
+      LearningRunStatus.terminalFailure =>
+        reasons.length == 1 && reasons.single.trim().isNotEmpty,
+      LearningRunStatus.completed => switch (run.result!) {
+        LearningRunResult.insufficientEvidence =>
+          _sameStringList(reasons, <String>[
+                if (!readiness.hasMinimumCount)
+                  'minimumEligibleObservationPairsNotMet',
+                if (!readiness.hasMinimumSpan) 'minimumObservationSpanNotMet',
+                if (!readiness.hasCompleteWindows) 'shadowWindowsIncomplete',
+              ]) &&
+              !readiness.ready,
+        LearningRunResult.configurationBlocked => reasons.isNotEmpty,
+        LearningRunResult.unstable ||
+        LearningRunResult.noChange ||
+        LearningRunResult.candidate ||
+        LearningRunResult.improved ||
+        LearningRunResult.worsened => readiness.ready && reasons.isNotEmpty,
+        LearningRunResult.readyForAudit => false,
+      },
+    };
+    if (!statusShapeIsValid || reasons.toSet().length != reasons.length) {
+      throw const BackupFormatException('生产学习原因码与运行状态不一致。');
+    }
+    return;
+  }
   final expected = switch (run.status) {
     LearningRunStatus.pending || LearningRunStatus.running => const <String>[],
     LearningRunStatus.retryableFailure => const ['retryableLearningFailure'],
@@ -1402,6 +2194,13 @@ void _validateLearningRunReasons(
         if (!readiness.hasMinimumSpan) 'minimumObservationSpanNotMet',
         if (!readiness.hasCompleteWindows) 'shadowWindowsIncomplete',
       ],
+      LearningRunResult.unstable ||
+      LearningRunResult.noChange ||
+      LearningRunResult.candidate ||
+      LearningRunResult.improved ||
+      LearningRunResult.worsened => throw const BackupFormatException(
+        '当前版本不支持该生产学习结果。',
+      ),
     },
   };
   final terminalReasonIsValid =
@@ -1413,6 +2212,11 @@ void _validateLearningRunReasons(
     LearningRunResult.readyForAudit => readiness.ready,
     LearningRunResult.insufficientEvidence => !readiness.ready,
     LearningRunResult.configurationBlocked || null => true,
+    LearningRunResult.unstable ||
+    LearningRunResult.noChange ||
+    LearningRunResult.candidate ||
+    LearningRunResult.improved ||
+    LearningRunResult.worsened => false,
   };
   if ((!terminalReasonIsValid &&
           (expected == null || !_sameStringList(reasons, expected))) ||
@@ -1577,7 +2381,7 @@ ActivityImpactSign _impactSign(int theoreticalDelta) {
 }
 
 void _validateReplays({
-  required AppSettings settings,
+  required int activeBaseEnergy,
   required Map<LifeDay, MorningCheckIn> morningsByDay,
   required Map<LifeDay, List<StoredEstimatedActivity>> activitiesByDay,
   required Map<LifeDay, DailySummary> summariesByDay,
@@ -1595,7 +2399,7 @@ void _validateReplays({
     final shortTerm = calculator.calculateShortTermAdjustment(
       previousSummary?.finalEstimatedEnergy,
     );
-    final base = summary?.baseEstimatedEnergy ?? settings.baseEstimatedEnergy;
+    final base = summary?.baseEstimatedEnergy ?? activeBaseEnergy;
     final morningAdjustment = morning?.morningAdjustment ?? 0;
     final initial = base + morningAdjustment + shortTerm;
     if (summary != null &&
@@ -1824,6 +2628,20 @@ void _range(int value, int min, int max, String description) {
 void _paired(Object? left, Object? right, String description) {
   if ((left == null) != (right == null)) {
     throw BackupFormatException('$description字段必须同时存在或同时为空。');
+  }
+}
+
+void _pairedSuspension(
+  bool suspended,
+  DateTime? suspendedAt,
+  String? reason,
+  String description,
+) {
+  final valid = suspended
+      ? suspendedAt != null && reason != null && reason.trim().isNotEmpty
+      : suspendedAt == null && reason == null;
+  if (!valid) {
+    throw BackupFormatException('$description 字段必须完整配对。');
   }
 }
 

@@ -2,6 +2,7 @@ import 'package:power_manager/application/activity_feedback_use_cases.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/business_write_coordinator.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
+import 'package:power_manager/application/model_activation_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
@@ -29,8 +30,8 @@ void main() {
   late _Harness harness;
 
   setUp(() {
-    database = createTestDatabase();
     clock = MutableClock(DateTime(2026, 7, 26, 3, 50));
+    database = createTestDatabase(clock: clock);
     harness = _Harness(database, clock);
   });
 
@@ -146,17 +147,41 @@ void main() {
         ),
       );
       final original = await harness.settings.get();
+      await harness.modelActivationService.scheduleManualBaseline(
+        baseEnergy: 112,
+        currentLifeDay: LifeDay(2026, 7, 25),
+        effectiveLifeDay: LifeDay(2026, 7, 26),
+        at: clock.now().toUtc(),
+        ruleVersion: original.activeRuleVersion,
+      );
+      final scheduledSettings = await harness.settings.get();
       await harness.settings.save(
         AppSettings(
-          baseEstimatedEnergy: original.baseEstimatedEnergy,
-          pendingBaseEstimatedEnergy: 112,
-          baseEnergyEffectiveLifeDay: LifeDay(2026, 7, 26),
-          activeRuleVersion: original.activeRuleVersion,
+          activeRuleVersion: scheduledSettings.activeRuleVersion,
           pendingRuleVersion: nextRule,
           pendingRuleEffectiveLifeDay: LifeDay(2026, 7, 26),
-          onboardingCompleted: original.onboardingCompleted,
-          createdAt: original.createdAt,
-          updatedAt: original.updatedAt,
+          onboardingCompleted: scheduledSettings.onboardingCompleted,
+          baselineLearningMode: scheduledSettings.baselineLearningMode,
+          activityImpactLearningMode:
+              scheduledSettings.activityImpactLearningMode,
+          baselineLearningSuspended:
+              scheduledSettings.baselineLearningSuspended,
+          baselineLearningSuspendedAt:
+              scheduledSettings.baselineLearningSuspendedAt,
+          baselineLearningSuspensionReason:
+              scheduledSettings.baselineLearningSuspensionReason,
+          activityImpactLearningSuspended:
+              scheduledSettings.activityImpactLearningSuspended,
+          activityImpactLearningSuspendedAt:
+              scheduledSettings.activityImpactLearningSuspendedAt,
+          activityImpactLearningSuspensionReason:
+              scheduledSettings.activityImpactLearningSuspensionReason,
+          baselineLearningCooldownUntil:
+              scheduledSettings.baselineLearningCooldownUntil,
+          activityImpactLearningCooldownUntil:
+              scheduledSettings.activityImpactLearningCooldownUntil,
+          createdAt: scheduledSettings.createdAt,
+          updatedAt: scheduledSettings.updatedAt,
         ),
       );
 
@@ -174,9 +199,9 @@ void main() {
       expect(due.appliedPendingRuleVersion, isTrue);
       expect(repeated.appliedPendingBaseEnergy, isFalse);
       expect(repeated.appliedPendingRuleVersion, isFalse);
-      expect(saved.baseEstimatedEnergy, 112);
+      expect((await harness.versions.getActive()).baseEnergy, 112);
       expect(saved.activeRuleVersion, nextRule);
-      expect(saved.pendingBaseEstimatedEnergy, isNull);
+      expect(await harness.versions.findPending(), isNull);
       expect(saved.pendingRuleVersion, isNull);
     },
   );
@@ -609,7 +634,7 @@ void main() {
       expect(observation.comparisonBandVersion, mvpBComparisonBandV1);
       expect(
         observation.personalizationVersionAtObservation,
-        fixedMvpAPersonalizationVersion,
+        (await harness.versions.getActive()).id,
       );
       expect(
         observation.effectiveModelFingerprintAtObservation,
@@ -1092,6 +1117,12 @@ final class _Harness {
          database.energyObservationsDao,
        ),
        feedback = DriftActivityFeedbackRepository(database.activityFeedbackDao),
+       learningRuns = DriftLearningRunsRepository(database.learningRunsDao),
+       versions = DriftPersonalizationVersionsRepository(
+         database.personalizationVersionsDao,
+       ),
+       consents = DriftLearningConsentsRepository(database.learningConsentsDao),
+       notices = DriftLearningNoticesRepository(database.learningNoticesDao),
        receipts = DriftPromptReceiptsRepository(database.promptReceiptsDao),
        writeCoordinator = SerialBusinessWriteCoordinator(),
        summaries =
@@ -1106,12 +1137,25 @@ final class _Harness {
   final DriftActivityRecordsRepository activities;
   final DriftEnergyObservationsRepository observations;
   final DriftActivityFeedbackRepository feedback;
+  final DriftLearningRunsRepository learningRuns;
+  final DriftPersonalizationVersionsRepository versions;
+  final DriftLearningConsentsRepository consents;
+  final DriftLearningNoticesRepository notices;
   final DriftPromptReceiptsRepository receipts;
   final DailySummariesRepository summaries;
   final BusinessWriteCoordinator writeCoordinator;
 
   ActivityFeedbackMaintenance get feedbackMaintenance =>
       ActivityFeedbackMaintenance(feedback);
+
+  ModelActivationService get modelActivationService => ModelActivationService(
+    transactionRunner: DriftTransactionRunner(database),
+    settings: settings,
+    versions: versions,
+    learningRuns: learningRuns,
+    consents: consents,
+    notices: notices,
+  );
 
   _Harness withSummaries(DailySummariesRepository replacement) {
     return _Harness(database, clock, replacement);
@@ -1128,6 +1172,8 @@ final class _Harness {
       lifeDayCalculator: LifeDayCalculator(),
       transactionRunner: DriftTransactionRunner(database),
       settings: settings,
+      personalizationVersions: versions,
+      modelActivationService: modelActivationService,
       settlementService: SettlementService(
         morningCheckIns: mornings,
         activities: activities,
@@ -1150,6 +1196,8 @@ final class _Harness {
       lifeDayCalculator: LifeDayCalculator(),
       transactionRunner: DriftTransactionRunner(database),
       settings: settings,
+      personalizationVersions: versions,
+      modelActivationService: modelActivationService,
       settlementService: SettlementService(
         morningCheckIns: mornings,
         activities: activities,
@@ -1185,6 +1233,8 @@ final class _Harness {
       lifeDayCalculator: LifeDayCalculator(),
       transactionRunner: DriftTransactionRunner(database),
       settings: settings,
+      personalizationVersions: versions,
+      modelActivationService: modelActivationService,
       settlementService: SettlementService(
         morningCheckIns: mornings,
         activities: activities,
@@ -1219,6 +1269,8 @@ final class _Harness {
       lifeDayCalculator: LifeDayCalculator(),
       transactionRunner: DriftTransactionRunner(database),
       settings: settings,
+      personalizationVersions: versions,
+      modelActivationService: modelActivationService,
       settlementService: SettlementService(
         morningCheckIns: mornings,
         activities: activities,
@@ -1235,6 +1287,7 @@ final class _Harness {
       mornings: mornings,
       activities: activities,
       observations: selectedObservations,
+      personalizationVersions: versions,
       summaries: summaries,
       receipts: receipts,
       projectionService: projection,

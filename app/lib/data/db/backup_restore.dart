@@ -8,6 +8,7 @@ extension BackupRestoreDatabase on AppDatabase {
     RestoreFailureHook? failureHook,
   }) {
     return transaction(() async {
+      await customStatement('PRAGMA defer_foreign_keys = ON');
       await _dropProtectionTriggers();
       try {
         await _clearBusinessTables();
@@ -28,7 +29,8 @@ extension BackupRestoreDatabase on AppDatabase {
   }
 
   Future<void> _clearBusinessTables() async {
-    await delete(learningRunsTable).go();
+    await delete(learningNoticesTable).go();
+    await delete(learningConsentsTable).go();
     await delete(promptReceiptsTable).go();
     await delete(energyObservationsTable).go();
     await delete(morningCheckInsTable).go();
@@ -36,6 +38,8 @@ extension BackupRestoreDatabase on AppDatabase {
     await delete(activityRecordsTable).go();
     await delete(dailySummariesTable).go();
     await delete(appSettingsTable).go();
+    await delete(personalizationVersionsTable).go();
+    await delete(learningRunsTable).go();
     await delete(ruleConfigVersionsTable).go();
   }
 
@@ -56,15 +60,40 @@ extension BackupRestoreDatabase on AppDatabase {
     await into(appSettingsTable).insert(
       AppSettingsTableCompanion.insert(
         id: const Value(1),
-        baseEstimatedEnergy: Value(settings.baseEstimatedEnergy),
-        pendingBaseEstimatedEnergy: Value(settings.pendingBaseEstimatedEnergy),
-        baseEnergyEffectiveLifeDay: Value(settings.baseEnergyEffectiveLifeDay),
         activeRuleVersion: settings.activeRuleVersion,
         pendingRuleVersion: Value(settings.pendingRuleVersion),
         pendingRuleEffectiveLifeDay: Value(
           settings.pendingRuleEffectiveLifeDay,
         ),
         onboardingCompleted: Value(settings.onboardingCompleted),
+        baselineLearningMode: Value(settings.baselineLearningMode),
+        activityImpactLearningMode: Value(
+          settings.activityImpactLearningMode,
+        ),
+        baselineLearningSuspended: Value(
+          settings.baselineLearningSuspended,
+        ),
+        baselineLearningSuspendedAt: Value(
+          settings.baselineLearningSuspendedAt?.toUtc(),
+        ),
+        baselineLearningSuspensionReason: Value(
+          settings.baselineLearningSuspensionReason,
+        ),
+        activityImpactLearningSuspended: Value(
+          settings.activityImpactLearningSuspended,
+        ),
+        activityImpactLearningSuspendedAt: Value(
+          settings.activityImpactLearningSuspendedAt?.toUtc(),
+        ),
+        activityImpactLearningSuspensionReason: Value(
+          settings.activityImpactLearningSuspensionReason,
+        ),
+        baselineLearningCooldownUntil: Value(
+          settings.baselineLearningCooldownUntil?.toUtc(),
+        ),
+        activityImpactLearningCooldownUntil: Value(
+          settings.activityImpactLearningCooldownUntil?.toUtc(),
+        ),
         createdAt: settings.createdAt.toUtc(),
         updatedAt: settings.updatedAt.toUtc(),
       ),
@@ -166,6 +195,54 @@ extension BackupRestoreDatabase on AppDatabase {
         ),
       );
     }
+    for (final run in backup.learningRuns) {
+      await into(learningRunsTable).insert(
+        LearningRunsTableCompanion.insert(
+          id: run.id,
+          parameterFamily: run.parameterFamily,
+          sourceModelIdentity: run.sourceModelIdentity,
+          sourcePersonalizationVersionId: Value(
+            run.sourcePersonalizationVersionId,
+          ),
+          status: run.status,
+          result: Value(run.result),
+          evidenceSnapshotJson: run.evidenceSnapshotJson,
+          evidenceHash: run.evidenceHash,
+          evidenceHashVersion: run.evidenceHashVersion,
+          algorithmVersion: run.algorithmVersion,
+          configVersion: run.configVersion,
+          currentValuesJson: run.currentValuesJson,
+          candidateValuesJson: Value(run.candidateValuesJson),
+          reasonCodesJson: run.reasonCodesJson,
+          triggeredAt: run.triggeredAt.toUtc(),
+          completedAt: Value(run.completedAt?.toUtc()),
+        ),
+      );
+    }
+    for (final version in backup.personalizationVersions) {
+      await into(personalizationVersionsTable).insert(
+        PersonalizationVersionsTableCompanion.insert(
+          id: version.id,
+          parentVersionId: Value(version.parentVersionId),
+          effectiveModelFingerprint: version.effectiveModelFingerprint,
+          modelRegimeEpoch: version.modelRegimeEpoch,
+          creationSource: version.creationSource,
+          scheduleSource: Value(version.scheduleSource),
+          sourceLearningRunId: Value(version.sourceLearningRunId),
+          algorithmVersion: version.algorithmVersion,
+          configVersion: version.configVersion,
+          changedParameterFamily: version.changedParameterFamily,
+          baseEnergy: version.baseEnergy,
+          baselineAnchorEnergy: version.baselineAnchorEnergy,
+          status: version.status,
+          effectiveLifeDay: Value(version.effectiveLifeDay),
+          createdAt: version.createdAt.toUtc(),
+          activatedAt: Value(version.activatedAt?.toUtc()),
+          endedAt: Value(version.endedAt?.toUtc()),
+          transitionReason: version.transitionReason,
+        ),
+      );
+    }
     for (final summary in backup.dailySummaries) {
       await into(dailySummariesTable).insert(
         DailySummariesTableCompanion.insert(
@@ -188,6 +265,8 @@ extension BackupRestoreDatabase on AppDatabase {
           }),
           isStandardEffectiveDay: summary.isStandardEffectiveDay,
           isWeakEffectiveDay: summary.isWeakEffectiveDay,
+          modelSnapshotSource: summary.modelSnapshotSource,
+          personalizationVersionId: Value(summary.personalizationVersionId),
           settledAt: summary.settledAt.toUtc(),
         ),
       );
@@ -203,27 +282,31 @@ extension BackupRestoreDatabase on AppDatabase {
         ),
       );
     }
-    for (final run in backup.learningRuns) {
-      await into(learningRunsTable).insert(
-        LearningRunsTableCompanion.insert(
-          id: run.id,
-          parameterFamily: run.parameterFamily,
-          sourceModelIdentity: run.sourceModelIdentity,
-          sourcePersonalizationVersionId: Value(
-            run.sourcePersonalizationVersionId,
+    for (final consent in backup.learningConsents) {
+      await into(learningConsentsTable).insert(
+        LearningConsentsTableCompanion.insert(
+          parameterFamily: consent.parameterFamily,
+          disclosureVersion: consent.disclosureVersion,
+          acceptedAt: consent.acceptedAt.toUtc(),
+        ),
+      );
+    }
+    for (final notice in backup.learningNotices) {
+      await into(learningNoticesTable).insert(
+        LearningNoticesTableCompanion.insert(
+          id: notice.id,
+          parameterFamily: notice.parameterFamily,
+          type: notice.type,
+          personalizationVersionId: Value(
+            notice.personalizationVersionId,
           ),
-          status: run.status,
-          result: Value(run.result),
-          evidenceSnapshotJson: run.evidenceSnapshotJson,
-          evidenceHash: run.evidenceHash,
-          evidenceHashVersion: run.evidenceHashVersion,
-          algorithmVersion: run.algorithmVersion,
-          configVersion: run.configVersion,
-          currentValuesJson: run.currentValuesJson,
-          candidateValuesJson: Value(run.candidateValuesJson),
-          reasonCodesJson: run.reasonCodesJson,
-          triggeredAt: run.triggeredAt.toUtc(),
-          completedAt: Value(run.completedAt?.toUtc()),
+          learningRunId: Value(notice.learningRunId),
+          dedupKey: notice.dedupKey,
+          status: notice.status,
+          reasonCode: notice.reasonCode,
+          createdAt: notice.createdAt.toUtc(),
+          seenAt: Value(notice.seenAt?.toUtc()),
+          dismissedAt: Value(notice.dismissedAt?.toUtc()),
         ),
       );
     }
@@ -249,6 +332,9 @@ extension BackupRestoreDatabase on AppDatabase {
       'energy_observations': backup.energyObservations.length,
       'activity_feedback': backup.activityFeedback.length,
       'learning_runs': backup.learningRuns.length,
+      'personalization_versions': backup.personalizationVersions.length,
+      'learning_consents': backup.learningConsents.length,
+      'learning_notices': backup.learningNotices.length,
       'daily_summaries': backup.dailySummaries.length,
       'prompt_receipts': backup.promptReceipts.length,
     };
@@ -261,6 +347,14 @@ extension BackupRestoreDatabase on AppDatabase {
         throw StateError('Restored backup row count mismatch');
       }
     }
+    final active = await customSelect('''
+      SELECT COUNT(*) AS row_count
+      FROM personalization_versions
+      WHERE status = 'active'
+    ''').getSingle();
+    if (active.read<int>('row_count') != 1) {
+      throw StateError('Restored backup must contain exactly one active model');
+    }
   }
 }
 
@@ -270,4 +364,10 @@ const _protectionTriggerNames = [
   'daily_summaries_reject_delete',
   'referenced_rule_versions_reject_update',
   'learning_runs_reject_final_update',
+  'personalization_versions_reject_delete',
+  'personalization_versions_reject_identity_update',
+  'personalization_versions_reject_terminal_update',
+  'learning_consents_reject_update',
+  'learning_consents_reject_delete',
+  'learning_notices_reject_identity_update',
 ];

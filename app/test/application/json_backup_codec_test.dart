@@ -19,9 +19,9 @@ void main() {
       bytes: Uint8List.fromList(utf8.encode(jsonEncode(backup.toJson()))),
     );
 
-    expect(inspection.backup.appSettings.baseEstimatedEnergy, 120);
+    expect(inspection.backup.legacyBaseSettings!.baseEstimatedEnergy, 120);
     expect(inspection.counts.ruleVersions, 1);
-    expect(inspection.counts.total, 2);
+    expect(inspection.counts.total, 3);
     expect(inspection.earliestLifeDay, isNull);
     expect(
       () => inspection.backup.ruleVersions.add(
@@ -49,6 +49,7 @@ void main() {
       exportedAt: legacy.exportedAt,
       appVersion: legacy.appVersion,
       appSettings: legacy.appSettings,
+      legacyBaseSettings: legacy.legacyBaseSettings,
       ruleVersions: legacy.ruleVersions,
       morningCheckIns: legacy.morningCheckIns,
       activityRecords: legacy.activityRecords,

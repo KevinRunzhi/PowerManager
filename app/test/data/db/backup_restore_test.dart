@@ -1,5 +1,9 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
+import 'package:power_manager/application/json_backup_codec.dart';
 import 'package:power_manager/data/db/app_database.dart';
+import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
@@ -33,10 +37,14 @@ void main() {
           ),
         );
 
-    await database.replaceWithBackup(backupFixture(baseEnergy: 120));
+    await database.replaceWithBackup(
+      _normalized(backupFixture(baseEnergy: 120)),
+    );
 
-    final settings = await database.appSettingsDao.getSettings();
-    expect(settings.baseEstimatedEnergy, 120);
+    expect(
+      (await database.personalizationVersionsDao.getActive()).baseEnergy,
+      120,
+    );
     expect(await database.morningCheckInsDao.listAll(), isEmpty);
     expect(await database.ruleConfigVersionsDao.listVersions(), hasLength(1));
     expect(
@@ -46,12 +54,12 @@ void main() {
   });
 
   test('schema v2 restore preserves active and invalidated feedback', () async {
-    final backup = backupFixtureV2(baseEnergy: 120);
+    final backup = _normalized(backupFixtureV2(baseEnergy: 120));
 
     await database.replaceWithBackup(backup);
 
     expect(
-      (await database.appSettingsDao.getSettings()).baseEstimatedEnergy,
+      (await database.personalizationVersionsDao.getActive()).baseEnergy,
       120,
     );
     expect(await database.activityRecordsDao.listAllForExport(), hasLength(2));
@@ -76,13 +84,14 @@ void main() {
   test(
     'schema v3 restore preserves and protects shadow learning runs',
     () async {
-      final backup = backupFixtureV3(baseEnergy: 120);
+      final source = backupFixtureV3(baseEnergy: 120);
+      final backup = _normalized(source);
 
       await database.replaceWithBackup(backup);
 
       final runs = await database.learningRunsDao.listAll();
       expect(runs, hasLength(1));
-      expect(runs.single.evidenceHash, backup.learningRuns.single.evidenceHash);
+      expect(runs.single.evidenceHash, source.learningRuns.single.evidenceHash);
       await expectLater(
         database.learningRunsDao.updateById(
           runs.single.id,
@@ -115,13 +124,14 @@ void main() {
               categorySummaryJson: _emptyCategories(),
               isStandardEffectiveDay: false,
               isWeakEffectiveDay: false,
+              modelSnapshotSource: DailySummaryModelSnapshotSource.legacyInline,
               settledAt: backupFixtureNow,
             ),
           );
 
       await expectLater(
         database.replaceWithBackup(
-          backupFixture(baseEnergy: 120),
+          _normalized(backupFixture(baseEnergy: 120)),
           failureHook: (checkpoint) async {
             if (checkpoint == 'after-clear') throw StateError('injected');
           },
@@ -130,7 +140,7 @@ void main() {
       );
 
       expect(
-        (await database.appSettingsDao.getSettings()).baseEstimatedEnergy,
+        (await database.personalizationVersionsDao.getActive()).baseEnergy,
         100,
       );
       expect(
@@ -147,7 +157,7 @@ void main() {
   test('failure after partial insert leaves no new rows', () async {
     await expectLater(
       database.replaceWithBackup(
-        backupFixture(baseEnergy: 120),
+        _normalized(backupFixture(baseEnergy: 120)),
         failureHook: (checkpoint) async {
           if (checkpoint == 'after-settings') throw StateError('injected');
         },
@@ -156,7 +166,7 @@ void main() {
     );
 
     expect(
-      (await database.appSettingsDao.getSettings()).baseEstimatedEnergy,
+      (await database.personalizationVersionsDao.getActive()).baseEnergy,
       100,
     );
     expect(await database.ruleConfigVersionsDao.listVersions(), hasLength(1));
@@ -167,7 +177,7 @@ void main() {
     () async {
       await expectLater(
         database.replaceWithBackup(
-          backupFixtureV2(baseEnergy: 120),
+          _normalized(backupFixtureV2(baseEnergy: 120)),
           failureHook: (checkpoint) async {
             if (checkpoint == 'after-feedback') throw StateError('injected');
           },
@@ -176,7 +186,7 @@ void main() {
       );
 
       expect(
-        (await database.appSettingsDao.getSettings()).baseEstimatedEnergy,
+        (await database.personalizationVersionsDao.getActive()).baseEnergy,
         100,
       );
       expect(await database.activityFeedbackDao.listAll(), isEmpty);
@@ -192,7 +202,7 @@ void main() {
     () async {
       await expectLater(
         database.replaceWithBackup(
-          backupFixtureV3(baseEnergy: 120),
+          _normalized(backupFixtureV3(baseEnergy: 120)),
           failureHook: (checkpoint) async {
             if (checkpoint == 'after-learning-runs') {
               throw StateError('injected');
@@ -204,11 +214,20 @@ void main() {
 
       expect(await database.learningRunsDao.listAll(), isEmpty);
       expect(
-        (await database.appSettingsDao.getSettings()).baseEstimatedEnergy,
+        (await database.personalizationVersionsDao.getActive()).baseEnergy,
         100,
       );
     },
   );
+}
+
+PowerManagerExportDto _normalized(PowerManagerExportDto backup) {
+  return const JsonBackupCodec()
+      .inspect(
+        fileName: 'backup.json',
+        bytes: Uint8List.fromList(utf8.encode(jsonEncode(backup.toJson()))),
+      )
+      .backup;
 }
 
 String _emptyCategories() {

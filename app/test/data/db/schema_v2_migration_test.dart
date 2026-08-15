@@ -18,24 +18,30 @@ void main() {
   });
 
   test(
-    'empty real schema v1 migrates through to the exact schema v3',
+    'empty schema v1 is rejected and rolled back because settings are missing',
     () async {
-      final connection = await verifier.startAt(1);
+      final schema = await verifier.schemaAt(1);
+      addTearDown(schema.rawDatabase.close);
       final database = AppDatabase.forExecutor(
-        connection,
+        schema.newConnection(),
         clock: const _FixedClock(),
       );
-      addTearDown(database.close);
-
-      await verifier.migrateAndValidate(
-        database,
-        3,
-        options: const ValidationOptions(validateDropped: true),
+      await expectLater(
+        database.customSelect('SELECT 1').get(),
+        throwsA(isA<StateError>()),
       );
-
-      expect(await _userVersion(database), 3);
-      expect(await _count(database, 'activity_feedback'), 0);
-      expect(await _count(database, 'learning_runs'), 0);
+      await database.close();
+      expect(
+        schema.rawDatabase.select('PRAGMA user_version').single['user_version'],
+        1,
+      );
+      expect(
+        schema.rawDatabase.select(
+          "SELECT name FROM sqlite_master WHERE type = 'table' "
+          "AND name = 'activity_feedback'",
+        ),
+        isEmpty,
+      );
     },
   );
 
@@ -59,12 +65,30 @@ void main() {
       addTearDown(database.close);
       await verifier.migrateAndValidate(
         database,
-        3,
+        4,
         options: const ValidationOptions(validateDropped: true),
       );
 
       final after = await _snapshotV1BusinessRows(database);
       expect(after, before);
+      final models = await database
+          .customSelect(
+            'SELECT base_energy, status, effective_life_day '
+            'FROM personalization_versions ORDER BY status',
+          )
+          .get();
+      expect(models, hasLength(2));
+      expect(
+        models
+            .singleWhere((row) => row.read<String>('status') == 'active')
+            .read<int>('base_energy'),
+        112,
+      );
+      final pending = models.singleWhere(
+        (row) => row.read<String>('status') == 'scheduled',
+      );
+      expect(pending.read<int>('base_energy'), 108);
+      expect(pending.read<String>('effective_life_day'), '2026-08-10');
       expect(await _count(database, 'activity_feedback'), 0);
       expect(await _count(database, 'learning_runs'), 0);
       final legacyColumns = await database.customSelect('''
@@ -106,26 +130,65 @@ void main() {
     },
   );
 
-  test('empty real schema v2 migrates to the exact schema v3', () async {
-    final connection = await verifier.startAt(2);
+  test('unresolved pending rule rejects v1 migration atomically', () async {
+    final schema = await verifier.schemaAt(1);
+    addTearDown(schema.rawDatabase.close);
+    final oldDatabase = GeneratedHelper().databaseForVersion(
+      schema.newConnection(),
+      1,
+    );
+    await _insertFullV1Fixture(oldDatabase, includePendingRule: true);
+    await oldDatabase.close();
+
     final database = AppDatabase.forExecutor(
-      connection,
+      schema.newConnection(),
       clock: const _FixedClock(),
     );
-    addTearDown(database.close);
-
-    await verifier.migrateAndValidate(
-      database,
-      3,
-      options: const ValidationOptions(validateDropped: true),
+    await expectLater(
+      database.customSelect('SELECT 1').get(),
+      throwsA(isA<StateError>()),
     );
+    await database.close();
 
-    expect(await _userVersion(database), 3);
-    expect(await _count(database, 'learning_runs'), 0);
+    expect(
+      schema.rawDatabase.select('PRAGMA user_version').single['user_version'],
+      1,
+    );
+    expect(
+      schema.rawDatabase
+          .select('SELECT pending_rule_version FROM app_settings')
+          .single['pending_rule_version'],
+      energyRulesV2MvpAVersion,
+    );
+  });
+
+  test('empty schema v2 is rejected and rolled back', () async {
+    final schema = await verifier.schemaAt(2);
+    addTearDown(schema.rawDatabase.close);
+    final database = AppDatabase.forExecutor(
+      schema.newConnection(),
+      clock: const _FixedClock(),
+    );
+    await expectLater(
+      database.customSelect('SELECT 1').get(),
+      throwsA(isA<StateError>()),
+    );
+    await database.close();
+    expect(
+      schema.rawDatabase.select('PRAGMA user_version').single['user_version'],
+      2,
+    );
+    expect(
+      schema.rawDatabase.select(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'personalization_versions'",
+      ),
+      isEmpty,
+    );
   });
 
   test(
-    'full v2 fixture and invalidated feedback survive v3 byte-for-byte',
+    'full v2 fixture and invalidated feedback survive v4 byte-for-byte',
     () async {
       final schema = await verifier.schemaAt(2);
       addTearDown(schema.rawDatabase.close);
@@ -144,7 +207,7 @@ void main() {
       addTearDown(database.close);
       await verifier.migrateAndValidate(
         database,
-        3,
+        4,
         options: const ValidationOptions(validateDropped: true),
       );
 
@@ -212,10 +275,10 @@ void main() {
       expect(await _snapshotV2BusinessRows(retry), before);
       await verifier.migrateAndValidate(
         retry,
-        3,
+        4,
         options: const ValidationOptions(validateDropped: true),
       );
-      expect(await _userVersion(retry), 3);
+      expect(await _userVersion(retry), 4);
     });
   }
 
@@ -298,10 +361,10 @@ void main() {
         addTearDown(retry.close);
         await verifier.migrateAndValidate(
           retry,
-          3,
+          4,
           options: const ValidationOptions(validateDropped: true),
         );
-        expect(await _userVersion(retry), 3);
+        expect(await _userVersion(retry), 4);
         expect(await _count(retry, 'learning_runs'), 0);
       },
     );
@@ -321,7 +384,7 @@ void main() {
       schema.newConnection(),
       clock: const _FixedClock(),
     );
-    await verifier.migrateAndValidate(first, 3);
+    await verifier.migrateAndValidate(first, 4);
     await first.close();
 
     var migrationHookCalls = 0;
@@ -331,7 +394,7 @@ void main() {
       migrationFailureHook: (_) async => migrationHookCalls++,
     );
     addTearDown(reopened.close);
-    expect(await _userVersion(reopened), 3);
+    expect(await _userVersion(reopened), 4);
     expect(await _count(reopened, 'energy_observations'), 1);
     expect(migrationHookCalls, 0);
   });
@@ -367,22 +430,31 @@ Future<void> _insertMinimumV1Fixture(GeneratedDatabase database) async {
   );
 }
 
-Future<void> _insertFullV1Fixture(GeneratedDatabase database) async {
+Future<void> _insertFullV1Fixture(
+  GeneratedDatabase database, {
+  bool includePendingRule = false,
+}) async {
   await _insertMinimumV1Fixture(database);
   final timestamp = backupFixtureNow.millisecondsSinceEpoch ~/ 1000;
   final later = timestamp + 60;
-  await database.customStatement(
-    '''
+  await database.customStatement('''
     UPDATE app_settings SET
       base_energy = 112,
       pending_base_energy = 108,
-      base_energy_effective_life_day = '2026-08-10',
-      pending_rule_version = ?,
-      pending_rule_effective_life_day = '2026-08-11'
+      base_energy_effective_life_day = '2026-08-10'
     WHERE id = 1
-  ''',
-    [energyRulesV2MvpAVersion],
-  );
+  ''');
+  if (includePendingRule) {
+    await database.customStatement(
+      '''
+      UPDATE app_settings SET
+        pending_rule_version = ?,
+        pending_rule_effective_life_day = '2026-08-11'
+      WHERE id = 1
+    ''',
+      [energyRulesV2MvpAVersion],
+    );
+  }
   await database.customStatement(
     '''
     INSERT INTO morning_check_ins (
@@ -474,7 +546,7 @@ Future<void> _insertFullV2Fixture(GeneratedDatabase database) async {
     ) VALUES (1, ?, NULL, NULL, ?, NULL, NULL, ?, ?, ?)
   ''',
     [
-      settings.baseEstimatedEnergy,
+      backup.legacyBaseSettings!.baseEstimatedEnergy,
       settings.activeRuleVersion,
       settings.onboardingCompleted ? 1 : 0,
       seconds(settings.createdAt),
@@ -597,14 +669,31 @@ const _v1ObservationColumns = '''
   estimate_at_observation, observed_at
 ''';
 
+const _legacySettingsColumns = '''
+  id, active_rule_version, pending_rule_version,
+  pending_rule_effective_life_day, onboarding_completed,
+  created_at, updated_at
+''';
+
+const _legacyDailySummaryColumns = '''
+  life_day, base_energy, rule_version, morning_adjustment,
+  short_term_adjustment, initial_estimated_energy,
+  final_estimated_energy, total_consumption, total_recovery,
+  category_summary_json, is_standard_effective_day,
+  is_weak_effective_day, settled_at
+''';
+
 Future<Map<String, List<Map<String, Object?>>>> _snapshotV1BusinessRows(
   GeneratedDatabase database,
 ) async {
   final snapshot = <String, List<Map<String, Object?>>>{};
   for (final entry in _v1TableOrder.entries) {
-    final columns = entry.key == 'energy_observations'
-        ? _v1ObservationColumns
-        : '*';
+    final columns = switch (entry.key) {
+      'energy_observations' => _v1ObservationColumns,
+      'app_settings' => _legacySettingsColumns,
+      'daily_summaries' => _legacyDailySummaryColumns,
+      _ => '*',
+    };
     final rows = await database
         .customSelect(
           'SELECT $columns FROM ${entry.key} ORDER BY ${entry.value}',
@@ -622,8 +711,15 @@ Future<Map<String, List<Map<String, Object?>>>> _snapshotV2BusinessRows(
 ) async {
   final snapshot = <String, List<Map<String, Object?>>>{};
   for (final entry in _v2TableOrder.entries) {
+    final columns = switch (entry.key) {
+      'app_settings' => _legacySettingsColumns,
+      'daily_summaries' => _legacyDailySummaryColumns,
+      _ => '*',
+    };
     final rows = await database
-        .customSelect('SELECT * FROM ${entry.key} ORDER BY ${entry.value}')
+        .customSelect(
+          'SELECT $columns FROM ${entry.key} ORDER BY ${entry.value}',
+        )
         .get();
     snapshot[entry.key] = [
       for (final row in rows) Map<String, Object?>.from(row.data),

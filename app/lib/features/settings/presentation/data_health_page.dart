@@ -518,6 +518,11 @@ String _latestRunText(AutomaticLearningProgress progress) {
       LearningRunResult.insufficientEvidence => '证据尚不足',
       LearningRunResult.readyForAudit => '已达到审计门',
       LearningRunResult.configurationBlocked => '配置门已关闭',
+      LearningRunResult.unstable => '方向不稳定',
+      LearningRunResult.noChange => '无需变化',
+      LearningRunResult.candidate => '候选待处理',
+      LearningRunResult.improved => '监测改善',
+      LearningRunResult.worsened => '监测恶化',
       null => '结果不可用',
     },
   };

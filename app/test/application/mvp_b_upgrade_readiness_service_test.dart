@@ -35,7 +35,7 @@ void main() {
         harness.proofStore.proof!.backupContentDigest,
         harness.proofStore.proof!.currentContentDigest,
       );
-      expect(harness.proofStore.proof!.backupSchemaVersion, 3);
+      expect(harness.proofStore.proof!.backupSchemaVersion, 4);
       expect((await harness.service.check()).isReady, isTrue);
     },
   );
@@ -182,7 +182,7 @@ void main() {
 }
 
 String _json({int baseEnergy = 100}) =>
-    jsonEncode(backupFixtureV3(baseEnergy: baseEnergy).toJson());
+    jsonEncode(backupFixtureV4(baseEnergy: baseEnergy).toJson());
 
 final class _Harness {
   _Harness({String? savedBackupContents, String? currentContents})

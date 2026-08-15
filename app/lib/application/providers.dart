@@ -15,6 +15,7 @@ import 'package:power_manager/application/energy_rule_config_loader.dart';
 import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/json_export_service.dart';
 import 'package:power_manager/application/local_backup_service.dart';
+import 'package:power_manager/application/model_activation_service.dart';
 import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/application/json_backup_codec.dart';
 import 'package:power_manager/application/json_backup_restore_service.dart';
@@ -100,6 +101,45 @@ final learningRunsRepositoryProvider = Provider<LearningRunsRepository>((ref) {
   );
 });
 
+final personalizationVersionsRepositoryProvider =
+    Provider<PersonalizationVersionsRepository>((ref) {
+      return DriftPersonalizationVersionsRepository(
+        ref.watch(appDatabaseProvider).personalizationVersionsDao,
+      );
+    });
+
+final learningConsentsRepositoryProvider = Provider<LearningConsentsRepository>(
+  (ref) {
+    return DriftLearningConsentsRepository(
+      ref.watch(appDatabaseProvider).learningConsentsDao,
+    );
+  },
+);
+
+final learningNoticesRepositoryProvider = Provider<LearningNoticesRepository>((
+  ref,
+) {
+  return DriftLearningNoticesRepository(
+    ref.watch(appDatabaseProvider).learningNoticesDao,
+  );
+});
+
+final learningProductionGateProvider = Provider<LearningProductionGate>((ref) {
+  return const LearningProductionGate.closed();
+});
+
+final modelActivationServiceProvider = Provider<ModelActivationService>((ref) {
+  return ModelActivationService(
+    transactionRunner: DriftTransactionRunner(ref.watch(appDatabaseProvider)),
+    settings: ref.watch(settingsRepositoryProvider),
+    versions: ref.watch(personalizationVersionsRepositoryProvider),
+    learningRuns: ref.watch(learningRunsRepositoryProvider),
+    consents: ref.watch(learningConsentsRepositoryProvider),
+    notices: ref.watch(learningNoticesRepositoryProvider),
+    productionGate: ref.watch(learningProductionGateProvider),
+  );
+});
+
 final businessWriteCoordinatorProvider = Provider<BusinessWriteCoordinator>((
   ref,
 ) {
@@ -147,6 +187,10 @@ final operationPreparerProvider = Provider<OperationPreparer>((ref) {
     lifeDayCalculator: LifeDayCalculator(),
     transactionRunner: DriftTransactionRunner(database),
     settings: settings,
+    personalizationVersions: ref.watch(
+      personalizationVersionsRepositoryProvider,
+    ),
+    modelActivationService: ref.watch(modelActivationServiceProvider),
     settlementService: SettlementService(
       morningCheckIns: mornings,
       activities: activities,
@@ -293,6 +337,9 @@ final wellbeingUseCasesProvider = Provider<WellbeingMutator>((ref) {
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
+    personalizationVersions: ref.watch(
+      personalizationVersionsRepositoryProvider,
+    ),
     receipts: ref.watch(receiptsRepositoryProvider),
     projectionService: ref.watch(projectionServiceProvider),
     feedbackMaintenance: ref.watch(activityFeedbackMaintenanceProvider),
@@ -394,11 +441,24 @@ final appSettingsProvider = FutureProvider<AppSettings>((ref) {
   return ref.watch(settingsRepositoryProvider).get();
 });
 
+final activePersonalizationVersionProvider =
+    FutureProvider<PersonalizationVersion>((ref) {
+      ref.watch(currentPreparationRefreshProvider);
+      return ref.watch(personalizationVersionsRepositoryProvider).getActive();
+    });
+
+final pendingPersonalizationVersionProvider =
+    FutureProvider<PersonalizationVersion?>((ref) {
+      ref.watch(currentPreparationRefreshProvider);
+      return ref.watch(personalizationVersionsRepositoryProvider).findPending();
+    });
+
 final settingsServiceProvider = Provider<SettingsMutator>((ref) {
   return SettingsService(
     transactionRunner: DriftTransactionRunner(ref.watch(appDatabaseProvider)),
     preparer: ref.watch(operationPreparerProvider),
     settings: ref.watch(settingsRepositoryProvider),
+    modelActivationService: ref.watch(modelActivationServiceProvider),
   );
 });
 
@@ -411,6 +471,11 @@ final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
     observations: ref.watch(observationsRepositoryProvider),
     feedback: ref.watch(activityFeedbackRepositoryProvider),
     learningRuns: ref.watch(learningRunsRepositoryProvider),
+    personalizationVersions: ref.watch(
+      personalizationVersionsRepositoryProvider,
+    ),
+    learningConsents: ref.watch(learningConsentsRepositoryProvider),
+    learningNotices: ref.watch(learningNoticesRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
     transactionRunner: DriftTransactionRunner(ref.watch(appDatabaseProvider)),
@@ -511,6 +576,9 @@ final dataHealthServiceProvider = Provider<DataHealthService>((ref) {
     observations: ref.watch(observationsRepositoryProvider),
     feedback: ref.watch(activityFeedbackRepositoryProvider),
     learningRuns: ref.watch(learningRunsRepositoryProvider),
+    personalizationVersions: ref.watch(
+      personalizationVersionsRepositoryProvider,
+    ),
     summaries: ref.watch(summariesRepositoryProvider),
     localBackupStore: ref.watch(localBackupStoreProvider),
     upgradeReadiness: ref.watch(mvpBUpgradeReadinessServiceProvider),
@@ -539,8 +607,18 @@ final jsonBackupRestoreServiceProvider = Provider<JsonBackupRestoreService>((
     observations: ref.watch(observationsRepositoryProvider),
     feedback: ref.watch(activityFeedbackRepositoryProvider),
     learningRuns: ref.watch(learningRunsRepositoryProvider),
+    personalizationVersions: ref.watch(
+      personalizationVersionsRepositoryProvider,
+    ),
+    learningConsents: ref.watch(learningConsentsRepositoryProvider),
+    learningNotices: ref.watch(learningNoticesRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
+    postRestorePreparation: () async {
+      await ref
+          .read(operationPreparerProvider)
+          .prepare(PreparationTrigger.safeRestore);
+    },
   );
 });
 

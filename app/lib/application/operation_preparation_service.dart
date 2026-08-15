@@ -1,4 +1,5 @@
 import 'package:power_manager/application/current_day_projection_service.dart';
+import 'package:power_manager/application/model_activation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
@@ -48,6 +49,8 @@ final class OperationPreparationService implements OperationPreparer {
     required this.lifeDayCalculator,
     required this.transactionRunner,
     required this.settings,
+    required this.personalizationVersions,
+    required this.modelActivationService,
     required this.settlementService,
     required this.projectionService,
   });
@@ -56,6 +59,8 @@ final class OperationPreparationService implements OperationPreparer {
   final LifeDayCalculator lifeDayCalculator;
   final TransactionRunner transactionRunner;
   final AppSettingsRepository settings;
+  final PersonalizationVersionsRepository personalizationVersions;
+  final ModelActivationService modelActivationService;
   final SettlementService settlementService;
   final CurrentDayProjectionService projectionService;
 
@@ -68,54 +73,67 @@ final class OperationPreparationService implements OperationPreparer {
 
     return transactionRunner.run(() async {
       var currentSettings = await settings.get();
+      var activeModel = await personalizationVersions.getActive();
       final settled = await settlementService.settleBefore(
         currentLifeDay: currentLifeDay,
-        baseEstimatedEnergy: currentSettings.baseEstimatedEnergy,
+        personalizationVersion: activeModel,
         ruleVersion: currentSettings.activeRuleVersion,
         settledAt: nowUtc,
       );
 
-      final applyBase = _isDue(
-        currentSettings.pendingBaseEstimatedEnergy,
-        currentSettings.baseEnergyEffectiveLifeDay,
-        currentLifeDay,
-      );
       final applyRule = _isDue(
         currentSettings.pendingRuleVersion,
         currentSettings.pendingRuleEffectiveLifeDay,
         currentLifeDay,
       );
-      if (applyBase || applyRule) {
+      if (applyRule) {
         currentSettings = AppSettings(
-          baseEstimatedEnergy: applyBase
-              ? currentSettings.pendingBaseEstimatedEnergy!
-              : currentSettings.baseEstimatedEnergy,
-          pendingBaseEstimatedEnergy: applyBase
-              ? null
-              : currentSettings.pendingBaseEstimatedEnergy,
-          baseEnergyEffectiveLifeDay: applyBase
-              ? null
-              : currentSettings.baseEnergyEffectiveLifeDay,
-          activeRuleVersion: applyRule
-              ? currentSettings.pendingRuleVersion!
-              : currentSettings.activeRuleVersion,
-          pendingRuleVersion: applyRule
-              ? null
-              : currentSettings.pendingRuleVersion,
-          pendingRuleEffectiveLifeDay: applyRule
-              ? null
-              : currentSettings.pendingRuleEffectiveLifeDay,
+          activeRuleVersion: currentSettings.pendingRuleVersion!,
+          pendingRuleVersion: null,
+          pendingRuleEffectiveLifeDay: null,
           onboardingCompleted: currentSettings.onboardingCompleted,
+          baselineLearningMode: currentSettings.baselineLearningMode,
+          activityImpactLearningMode:
+              currentSettings.activityImpactLearningMode,
+          baselineLearningSuspended: currentSettings.baselineLearningSuspended,
+          baselineLearningSuspendedAt:
+              currentSettings.baselineLearningSuspendedAt,
+          baselineLearningSuspensionReason:
+              currentSettings.baselineLearningSuspensionReason,
+          activityImpactLearningSuspended:
+              currentSettings.activityImpactLearningSuspended,
+          activityImpactLearningSuspendedAt:
+              currentSettings.activityImpactLearningSuspendedAt,
+          activityImpactLearningSuspensionReason:
+              currentSettings.activityImpactLearningSuspensionReason,
+          baselineLearningCooldownUntil:
+              currentSettings.baselineLearningCooldownUntil,
+          activityImpactLearningCooldownUntil:
+              currentSettings.activityImpactLearningCooldownUntil,
           createdAt: currentSettings.createdAt,
           updatedAt: nowUtc,
         );
         await settings.save(currentSettings);
       }
 
+      final activation = await modelActivationService.activateDue(
+        currentLifeDay: currentLifeDay,
+        at: nowUtc,
+        afterRestore: trigger == PreparationTrigger.safeRestore,
+      );
+      if (activation.activated) {
+        activeModel = activation.version!;
+      } else {
+        activeModel = await personalizationVersions.getActive();
+      }
+
       final current = await projectionService.project(
         lifeDay: currentLifeDay,
-        baseEstimatedEnergy: currentSettings.baseEstimatedEnergy,
+        baseEstimatedEnergy: activeModel.baseEnergy,
         ruleVersion: currentSettings.activeRuleVersion,
+        personalizationVersionId: activeModel.id,
+        effectiveModelFingerprint: activeModel.effectiveModelFingerprint,
+        modelRegimeEpoch: activeModel.modelRegimeEpoch,
       );
       return OperationPreparationResult(
         trigger: trigger,
@@ -123,7 +141,7 @@ final class OperationPreparationService implements OperationPreparer {
         nowUtc: nowUtc,
         current: current,
         settledSummaries: List.unmodifiable(settled),
-        appliedPendingBaseEnergy: applyBase,
+        appliedPendingBaseEnergy: activation.activated,
         appliedPendingRuleVersion: applyRule,
       );
     });

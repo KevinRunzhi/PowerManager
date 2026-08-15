@@ -139,8 +139,9 @@ final class LearningEligibilityService {
     final integrityFailure =
         actual == null ||
         observation.comparisonBandVersion != mvpBComparisonBandV1 ||
-        observation.personalizationVersionAtObservation !=
-            fixedMvpAPersonalizationVersion ||
+        !_validPersonalizationVersion(
+          observation.personalizationVersionAtObservation!,
+        ) ||
         observation.coverageState == ObservationCoverageState.legacyUnknown ||
         observation.activeActivityCountAtObservation! < 0 ||
         observation.baseEnergyAtObservation! < 60 ||
@@ -169,4 +170,12 @@ final class LearningEligibilityService {
   }
 
   bool _notEmpty(String? value) => value != null && value.trim().isNotEmpty;
+
+  bool _validPersonalizationVersion(String value) {
+    if (value == fixedMvpAPersonalizationVersion) return true;
+    final prefix = '$deterministicPersonalizationVersionIdV1:';
+    if (!value.startsWith(prefix)) return false;
+    final digest = value.substring(prefix.length);
+    return digest.length == 64 && RegExp(r'^[0-9a-f]+$').hasMatch(digest);
+  }
 }

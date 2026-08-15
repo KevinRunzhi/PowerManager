@@ -1,9 +1,11 @@
 import 'package:power_manager/application/current_day_projection_service.dart';
+import 'package:power_manager/application/model_activation_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settings_service.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/personalization_identity.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 import 'package:test/test.dart';
@@ -11,22 +13,30 @@ import 'package:test/test.dart';
 void main() {
   test('60 and 140 are accepted for the next life day', () async {
     final repository = _MemorySettings(_settings());
-    final service = _service(repository);
+    final versions = _MemoryVersions(_initialVersion());
+    final service = _service(repository, versions);
 
-    final lower = await service.scheduleBaseEstimate(60);
-    expect(lower.baseEstimatedEnergy, 100);
-    expect(lower.pendingBaseEstimatedEnergy, 60);
-    expect(lower.baseEnergyEffectiveLifeDay, LifeDay(2026, 7, 27));
+    await service.scheduleBaseEstimate(60);
+    final lower = await versions.findPending();
+    expect((await versions.getActive()).baseEnergy, 100);
+    expect(lower!.baseEnergy, 60);
+    expect(lower.effectiveLifeDay, LifeDay(2026, 7, 27));
 
-    final upper = await service.scheduleBaseEstimate(140);
-    expect(upper.baseEstimatedEnergy, 100);
-    expect(upper.pendingBaseEstimatedEnergy, 140);
-    expect(upper.baseEnergyEffectiveLifeDay, LifeDay(2026, 7, 27));
+    await service.scheduleBaseEstimate(140);
+    final upper = await versions.findPending();
+    expect((await versions.getActive()).baseEnergy, 100);
+    expect(upper!.baseEnergy, 140);
+    expect(upper.effectiveLifeDay, LifeDay(2026, 7, 27));
+    expect(
+      (await versions.find(lower.id))!.status,
+      PersonalizationVersionStatus.invalidated,
+    );
   });
 
   test('59 and 141 are rejected before persistence', () {
     final repository = _MemorySettings(_settings());
-    final service = _service(repository);
+    final versions = _MemoryVersions(_initialVersion());
+    final service = _service(repository, versions);
 
     expect(() => service.scheduleBaseEstimate(59), throwsRangeError);
     expect(() => service.scheduleBaseEstimate(141), throwsRangeError);
@@ -35,7 +45,8 @@ void main() {
 
   test('onboarding completion is idempotent', () async {
     final repository = _MemorySettings(_settings());
-    final service = _service(repository);
+    final versions = _MemoryVersions(_initialVersion());
+    final service = _service(repository, versions);
 
     expect((await service.completeOnboarding()).onboardingCompleted, isTrue);
     expect((await service.completeOnboarding()).onboardingCompleted, isTrue);
@@ -43,11 +54,20 @@ void main() {
   });
 }
 
-SettingsService _service(_MemorySettings repository) {
+SettingsService _service(_MemorySettings repository, _MemoryVersions versions) {
+  const transactionRunner = _ImmediateTransactionRunner();
   return SettingsService(
-    transactionRunner: const _ImmediateTransactionRunner(),
+    transactionRunner: transactionRunner,
     preparer: const _FixedPreparer(),
     settings: repository,
+    modelActivationService: ModelActivationService(
+      transactionRunner: transactionRunner,
+      settings: repository,
+      versions: versions,
+      learningRuns: _MemoryLearningRuns(),
+      consents: _MemoryConsents(),
+      notices: _MemoryNotices(),
+    ),
   );
 }
 
@@ -111,9 +131,6 @@ final class _MemorySettings implements AppSettingsRepository {
 
 AppSettings _settings() {
   return AppSettings(
-    baseEstimatedEnergy: 100,
-    pendingBaseEstimatedEnergy: null,
-    baseEnergyEffectiveLifeDay: null,
     activeRuleVersion: 'energy-rules-v2-mvp-a',
     pendingRuleVersion: null,
     pendingRuleEffectiveLifeDay: null,
@@ -121,4 +138,127 @@ AppSettings _settings() {
     createdAt: DateTime.utc(2026, 7, 26),
     updatedAt: DateTime.utc(2026, 7, 26),
   );
+}
+
+PersonalizationVersion _initialVersion() => initialPersonalizationVersion(
+  baseEnergy: 100,
+  createdAt: DateTime.utc(2026, 7, 26),
+);
+
+final class _MemoryVersions implements PersonalizationVersionsRepository {
+  _MemoryVersions(PersonalizationVersion initial) : values = [initial];
+
+  final List<PersonalizationVersion> values;
+
+  @override
+  Future<void> insert(PersonalizationVersion version) async {
+    if (values.any((item) => item.id == version.id)) {
+      throw StateError('duplicate version');
+    }
+    values.add(version);
+  }
+
+  @override
+  Future<void> update(PersonalizationVersion version) async {
+    final index = values.indexWhere((item) => item.id == version.id);
+    if (index < 0) throw StateError('missing version');
+    values[index] = version;
+  }
+
+  @override
+  Future<bool> updateIfStatus(
+    PersonalizationVersion version,
+    PersonalizationVersionStatus expectedStatus,
+  ) async {
+    final index = values.indexWhere((item) => item.id == version.id);
+    if (index < 0 || values[index].status != expectedStatus) return false;
+    values[index] = version;
+    return true;
+  }
+
+  @override
+  Future<PersonalizationVersion?> find(String id) async =>
+      values.where((item) => item.id == id).firstOrNull;
+
+  @override
+  Future<PersonalizationVersion> getActive() async => values.singleWhere(
+    (item) => item.status == PersonalizationVersionStatus.active,
+  );
+
+  @override
+  Future<PersonalizationVersion?> findPending() async =>
+      values.where((item) => item.status.isPending).firstOrNull;
+
+  @override
+  Future<List<PersonalizationVersion>> list() async => List.of(values);
+}
+
+final class _MemoryLearningRuns implements LearningRunsRepository {
+  const _MemoryLearningRuns();
+
+  @override
+  Future<void> insert(LearningRun run) async {}
+
+  @override
+  Future<void> update(LearningRun run) async {}
+
+  @override
+  Future<LearningRun?> find(String id) async => null;
+
+  @override
+  Future<LearningRun?> findByIdempotency({
+    required LearningParameterFamily parameterFamily,
+    required String sourceModelIdentity,
+    required String algorithmVersion,
+    required String configVersion,
+    required String evidenceHash,
+  }) async => null;
+
+  @override
+  Future<List<LearningRun>> list() async => const [];
+}
+
+final class _MemoryConsents implements LearningConsentsRepository {
+  _MemoryConsents();
+
+  final List<LearningConsent> values = [];
+
+  @override
+  Future<void> insert(LearningConsent consent) async => values.add(consent);
+
+  @override
+  Future<bool> exists({
+    required LearningParameterFamily parameterFamily,
+    required String disclosureVersion,
+  }) async => values.any(
+    (item) =>
+        item.parameterFamily == parameterFamily &&
+        item.disclosureVersion == disclosureVersion,
+  );
+
+  @override
+  Future<List<LearningConsent>> list() async => List.of(values);
+}
+
+final class _MemoryNotices implements LearningNoticesRepository {
+  _MemoryNotices();
+
+  final List<LearningNotice> values = [];
+
+  @override
+  Future<void> insert(LearningNotice notice) async => values.add(notice);
+
+  @override
+  Future<void> update(LearningNotice notice) async {
+    final index = values.indexWhere((item) => item.id == notice.id);
+    if (index < 0) throw StateError('missing notice');
+    values[index] = notice;
+  }
+
+  @override
+  Future<LearningNotice?> find(String id) async =>
+      values.where((item) => item.id == id).firstOrNull;
+
+  @override
+  Future<List<LearningNotice>> list() async => List.of(values);
 }

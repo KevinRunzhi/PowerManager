@@ -10,6 +10,7 @@ import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/features/settings/presentation/onboarding_dialog.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -21,13 +22,29 @@ class SettingsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(appSettingsProvider);
+    final activeModel = ref.watch(activePersonalizationVersionProvider);
+    final pendingModel = ref.watch(pendingPersonalizationVersionProvider);
     return Scaffold(
       key: pageKey,
       appBar: AppBar(title: const Text('设置')),
       body: SafeArea(
         child: settings.when(
           skipLoadingOnReload: true,
-          data: (value) => _SettingsContent(settings: value),
+          data: (value) => activeModel.when(
+            skipLoadingOnReload: true,
+            data: (active) => pendingModel.when(
+              skipLoadingOnReload: true,
+              data: (pending) => _SettingsContent(
+                settings: value,
+                activeModel: active,
+                pendingModel: pending,
+              ),
+              error: (_, _) => _settingsReadError(ref),
+              loading: () => const Center(child: CircularProgressIndicator()),
+            ),
+            error: (_, _) => _settingsReadError(ref),
+            loading: () => const Center(child: CircularProgressIndicator()),
+          ),
           error: (_, _) => Center(
             child: OutlinedButton(
               onPressed: () => ref.invalidate(appSettingsProvider),
@@ -39,12 +56,31 @@ class SettingsPage extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _settingsReadError(WidgetRef ref) {
+    return Center(
+      child: OutlinedButton(
+        onPressed: () {
+          ref.invalidate(appSettingsProvider);
+          ref.invalidate(activePersonalizationVersionProvider);
+          ref.invalidate(pendingPersonalizationVersionProvider);
+        },
+        child: const Text('读取失败，重试'),
+      ),
+    );
+  }
 }
 
 class _SettingsContent extends ConsumerStatefulWidget {
-  const _SettingsContent({required this.settings});
+  const _SettingsContent({
+    required this.settings,
+    required this.activeModel,
+    required this.pendingModel,
+  });
 
   final AppSettings settings;
+  final PersonalizationVersion activeModel;
+  final PersonalizationVersion? pendingModel;
 
   @override
   ConsumerState<_SettingsContent> createState() => _SettingsContentState();
@@ -65,7 +101,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     super.initState();
     _controller = TextEditingController(
       text:
-          '${widget.settings.pendingBaseEstimatedEnergy ?? widget.settings.baseEstimatedEnergy}',
+          '${widget.pendingModel?.baseEnergy ?? widget.activeModel.baseEnergy}',
     );
   }
 
@@ -80,6 +116,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     final settings = widget.settings;
     final localBackup = ref.watch(localBackupMetadataProvider).value;
     final upgradeReadiness = ref.watch(mvpBUpgradeReadinessProvider);
+    final learningGate = ref.watch(learningProductionGateProvider);
     final dataBusy =
         _saving ||
         _savingLocalBackup ||
@@ -89,12 +126,19 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.page),
       children: [
+        if (learningGate.isPreproductionValidationOverride) ...[
+          const _LearningPreproductionWatermark(),
+          const SizedBox(height: AppSpacing.x3),
+        ],
         Text('个人基准线', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: AppSpacing.x3),
-        Text('当前：${settings.baseEstimatedEnergy}'),
-        if (settings.pendingBaseEstimatedEnergy case final pending?)
+        Text('当前：${widget.activeModel.baseEnergy}'),
+        if (widget.pendingModel case final pending?
+            when pending.changedParameterFamily ==
+                    PersonalizationChangedParameterFamily.baseline &&
+                pending.status == PersonalizationVersionStatus.scheduled)
           Text(
-            '待生效：$pending · ${settings.baseEnergyEffectiveLifeDay}',
+            '待生效：${pending.baseEnergy} · ${pending.effectiveLifeDay}',
             key: const Key('pending-base-label'),
           ),
         const SizedBox(height: AppSpacing.x3),
@@ -112,6 +156,32 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
           key: const Key('save-base-estimate-button'),
           onPressed: dataBusy ? null : _saveBase,
           child: Text(_saving ? '保存中…' : '下一生活日起生效'),
+        ),
+        const SizedBox(height: AppSpacing.x6),
+        Text('自动学习', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: AppSpacing.x2),
+        const Text('两个参数族分别授权；关闭学习不会删除历史观测。所有学习数据只保存在本机。'),
+        const SizedBox(height: AppSpacing.x3),
+        _LearningModeCard(
+          key: const Key('baseline-learning-mode-card'),
+          title: '个人基准线',
+          description: '学习你的长期估计起点。',
+          parameterFamily: LearningParameterFamily.baseline,
+          mode: settings.baselineLearningMode,
+          enabled: learningGate.baselineProductionLearningEnabled,
+          busy: dataBusy,
+          onSelect: _selectLearningMode,
+        ),
+        const SizedBox(height: AppSpacing.x3),
+        _LearningModeCard(
+          key: const Key('activity-impact-learning-mode-card'),
+          title: '活动影响',
+          description: '学习不同活动对估计值的个人影响。',
+          parameterFamily: LearningParameterFamily.activityImpact,
+          mode: settings.activityImpactLearningMode,
+          enabled: learningGate.activityImpactProductionLearningEnabled,
+          busy: dataBusy,
+          onSelect: _selectLearningMode,
         ),
         const SizedBox(height: AppSpacing.x6),
         Text('规则版本', style: Theme.of(context).textTheme.titleLarge),
@@ -210,6 +280,8 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     try {
       await ref.read(settingsServiceProvider).scheduleBaseEstimate(value);
       ref.invalidate(appSettingsProvider);
+      ref.invalidate(activePersonalizationVersionProvider);
+      ref.invalidate(pendingPersonalizationVersionProvider);
       ref.invalidate(currentPreparationProvider);
       ref.invalidate(mvpBUpgradeReadinessProvider);
       if (mounted) {
@@ -225,6 +297,50 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
       if (mounted) {
         setState(() => _saving = false);
       }
+    }
+  }
+
+  Future<void> _selectLearningMode(
+    LearningParameterFamily family,
+    LearningMode mode,
+  ) async {
+    final gate = ref.read(learningProductionGateProvider);
+    if (mode != LearningMode.off && !gate.allows(family)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('真实使用验证完成后开放；当前正式配置保持关闭。')));
+      return;
+    }
+    var accepted = false;
+    if (mode != LearningMode.off) {
+      accepted =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) => const _LearningDisclosureDialog(),
+          ) ??
+          false;
+      if (!accepted) return;
+    }
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(settingsServiceProvider)
+          .setLearningMode(
+            parameterFamily: family,
+            mode: mode,
+            acceptCurrentDisclosure: accepted,
+          );
+      ref.invalidate(appSettingsProvider);
+      ref.invalidate(pendingPersonalizationVersionProvider);
+      ref.invalidate(dataHealthReportProvider);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('学习模式未改变，请重试。')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -354,16 +470,18 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
       );
       if (confirmed != true || !mounted) return;
       setState(() => _writingRestore = true);
-      await service.restore(inspection);
+      final restoreResult = await service.restore(inspection);
       _invalidateAfterRestore();
-      ref
-          .read(currentPreparationRefreshProvider.notifier)
-          .refresh(PreparationTrigger.safeRestore);
-      var postRestoreCheckPassed = true;
-      try {
-        await ref.read(currentPreparationProvider.future);
-      } on Object {
-        postRestoreCheckPassed = false;
+      var postRestoreCheckPassed = restoreResult.postRestoreChecksPassed;
+      if (postRestoreCheckPassed) {
+        ref
+            .read(currentPreparationRefreshProvider.notifier)
+            .refresh(PreparationTrigger.safeRestore);
+        try {
+          await ref.read(currentPreparationProvider.future);
+        } on Object {
+          postRestoreCheckPassed = false;
+        }
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -371,10 +489,11 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
           content: Text(
             postRestoreCheckPassed
                 ? '恢复成功，安全检查已完成，并已保存恢复前副本。'
-                : '恢复成功并已保存安全副本；自动检查将在下次启动时重试。',
+                : '数据已恢复并保存安全副本，但完整检查未通过；自动学习未启动，请重启后重试。',
           ),
         ),
       );
+      if (!postRestoreCheckPassed) return;
       Navigator.of(
         context,
       ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
@@ -402,6 +521,8 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
 
   void _invalidateAfterRestore() {
     ref.invalidate(appSettingsProvider);
+    ref.invalidate(activePersonalizationVersionProvider);
+    ref.invalidate(pendingPersonalizationVersionProvider);
     ref.invalidate(morningCompletionStatusProvider);
     ref.invalidate(currentMorningCheckInProvider);
     ref.invalidate(currentDailyObservationProvider);
@@ -450,6 +571,172 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
         ).showSnackBar(const SnackBar(content: Text('分享失败，请重试。')));
       }
     }
+  }
+}
+
+typedef _LearningModeSelection =
+    Future<void> Function(LearningParameterFamily family, LearningMode mode);
+
+class _LearningPreproductionWatermark extends StatelessWidget {
+  const _LearningPreproductionWatermark();
+
+  @override
+  Widget build(BuildContext context) {
+    const label = '工程预生产验证 · 不会进入正式版本';
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      key: const Key('learning-preproduction-watermark'),
+      container: true,
+      label: '预生产：$label',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.errorContainer,
+          border: Border.all(color: colors.error, width: 2),
+          borderRadius: BorderRadius.circular(AppSpacing.x2),
+        ),
+        child: const Padding(
+          padding: EdgeInsets.all(AppSpacing.x3),
+          child: Row(
+            children: [
+              Icon(Icons.engineering_outlined),
+              SizedBox(width: AppSpacing.x2),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LearningModeCard extends StatelessWidget {
+  const _LearningModeCard({
+    super.key,
+    required this.title,
+    required this.description,
+    required this.parameterFamily,
+    required this.mode,
+    required this.enabled,
+    required this.busy,
+    required this.onSelect,
+  });
+
+  final String title;
+  final String description;
+  final LearningParameterFamily parameterFamily;
+  final LearningMode mode;
+  final bool enabled;
+  final bool busy;
+  final _LearningModeSelection onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.unit),
+            Text(description),
+            const SizedBox(height: AppSpacing.x2),
+            for (final item in LearningMode.values)
+              _LearningModeRow(
+                key: Key('learning-mode-${parameterFamily.code}-${item.code}'),
+                mode: item,
+                selected: mode == item,
+                available: item == LearningMode.off || enabled,
+                busy: busy,
+                onTap: () => onSelect(parameterFamily, item),
+              ),
+            if (!enabled)
+              const Padding(
+                padding: EdgeInsets.only(top: AppSpacing.unit),
+                child: Text('先审核与自动应用将在真实使用验证完成后开放。'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LearningModeRow extends StatelessWidget {
+  const _LearningModeRow({
+    super.key,
+    required this.mode,
+    required this.selected,
+    required this.available,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final LearningMode mode;
+  final bool selected;
+  final bool available;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (mode) {
+      LearningMode.off => '关闭',
+      LearningMode.review => '先审核再应用',
+      LearningMode.automatic => '自动安排并提前通知',
+    };
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 48),
+      child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(
+          selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        ),
+        title: Text(label),
+        trailing: available ? null : const Text('未开放'),
+        enabled: available && !busy,
+        onTap: available && !busy ? onTap : null,
+      ),
+    );
+  }
+}
+
+class _LearningDisclosureDialog extends StatelessWidget {
+  const _LearningDisclosureDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      key: const Key('learning-disclosure-dialog'),
+      title: const Text('开启本机自动学习前'),
+      content: const SingleChildScrollView(
+        child: Text(
+          '• 使用晨间确认、活动和实际状态，仅保存在本机。\n'
+          '• 证据不足时不会改变参数。\n'
+          '• “先审核”需要你确认；“自动”会安排未来生活日，并至少提前 24 小时通知。\n'
+          '• 基准线单次最多变化 2，相对锚点累计不超过 ±8，并始终限制在 60～140；生效前可取消。\n'
+          '• 撤回只影响未来，关闭学习不会删除历史观测。\n'
+          '• 这些估计不是医学或能力结论。',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const Key('accept-learning-disclosure-button'),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('我了解，继续选择'),
+        ),
+      ],
+    );
   }
 }
 
