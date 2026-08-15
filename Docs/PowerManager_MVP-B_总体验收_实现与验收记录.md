@@ -49,6 +49,12 @@ B3-0、B3-1、B3-2。当前代码基线为 B3-2，最近安全修订提交为 `0
 | `flutter test --coverage` | 通过，525 tests passed；覆盖率文件已生成（含活动协调器闸门、零证据与幂等回归） |
 | `git diff --check` | 通过 |
 
+2026-08-16 CST 追加复核：`flutter analyze` 通过；`flutter test --coverage` 仍为 525 项全通过；
+`dart format --output=none --set-exit-if-changed lib test` 检查 159 个文件且 0 改动；
+`dart run build_runner build --delete-conflicting-outputs` 完成 44 个生成输出且无工作树差异；
+最终 `git diff --check` 通过。build_runner 提示当前版本忽略已移除的
+`--delete-conflicting-outputs` 选项，未产生错误或生成文件漂移。
+
 已有测试直接覆盖的总验收场景包括：v1→v2→v3→v4→v5 迁移和回滚、v1/v2/v3/v4/v5 备份往返、
 foreign key/integrity/index/trigger、current/yesterday 隔离、结算与当前日排除、sample 展示/跳过/
 响应/失效、baseline 与 activity review/automatic 生命周期、通知/取消/未来激活/撤回、恢复后不重复
