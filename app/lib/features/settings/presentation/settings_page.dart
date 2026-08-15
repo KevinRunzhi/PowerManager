@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
 import 'package:power_manager/application/json_backup_codec.dart';
+import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/features/settings/presentation/onboarding_dialog.dart';
@@ -24,6 +25,7 @@ class SettingsPage extends ConsumerWidget {
       appBar: AppBar(title: const Text('设置')),
       body: SafeArea(
         child: settings.when(
+          skipLoadingOnReload: true,
           data: (value) => _SettingsContent(settings: value),
           error: (_, _) => Center(
             child: OutlinedButton(
@@ -51,6 +53,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
   late final TextEditingController _controller;
   bool _saving = false;
   bool _savingLocalBackup = false;
+  bool _preparingMvpBUpgrade = false;
   bool _exporting = false;
   bool _restoring = false;
   bool _writingRestore = false;
@@ -75,7 +78,13 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
   Widget build(BuildContext context) {
     final settings = widget.settings;
     final localBackup = ref.watch(localBackupMetadataProvider).value;
-    final dataBusy = _saving || _savingLocalBackup || _exporting || _restoring;
+    final upgradeReadiness = ref.watch(mvpBUpgradeReadinessProvider);
+    final dataBusy =
+        _saving ||
+        _savingLocalBackup ||
+        _preparingMvpBUpgrade ||
+        _exporting ||
+        _restoring;
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.page),
       children: [
@@ -111,6 +120,13 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
         const SizedBox(height: AppSpacing.x6),
         Text('数据', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: AppSpacing.x2),
+        _MvpBUpgradeReadinessCard(
+          readiness: upgradeReadiness,
+          preparing: _preparingMvpBUpgrade,
+          dataBusy: dataBusy,
+          onPrepare: _prepareMvpBUpgrade,
+        ),
+        const SizedBox(height: AppSpacing.x3),
         FilledButton.tonalIcon(
           key: const Key('save-local-backup-button'),
           onPressed: dataBusy ? null : _saveLocalBackup,
@@ -194,6 +210,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
       await ref.read(settingsServiceProvider).scheduleBaseEstimate(value);
       ref.invalidate(appSettingsProvider);
       ref.invalidate(currentPreparationProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -258,6 +275,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     try {
       await ref.read(localBackupServiceProvider).saveLatest();
       ref.invalidate(localBackupMetadataProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
       ref.invalidate(dataHealthReportProvider);
       if (mounted) {
         ScaffoldMessenger.of(
@@ -266,13 +284,43 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('本机备份保存失败，旧备份未改变。')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('本机备份保存失败；已有备份未被主动删除，请重新验证。')),
+        );
       }
     } finally {
       if (mounted) {
         setState(() => _savingLocalBackup = false);
+      }
+    }
+  }
+
+  Future<void> _prepareMvpBUpgrade() async {
+    setState(() => _preparingMvpBUpgrade = true);
+    try {
+      final report = await ref
+          .read(mvpBUpgradeReadinessServiceProvider)
+          .prepare();
+      ref.invalidate(localBackupMetadataProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
+      ref.invalidate(dataHealthReportProvider);
+      if (mounted) {
+        final message = report.isReady
+            ? 'MVP-B 升级备份已验证，当前数据已准备。'
+            : '升级准备未完成：${_readinessMessage(report.status)}';
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('升级准备失败，当前数据没有改变。')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _preparingMvpBUpgrade = false);
       }
     }
   }
@@ -346,6 +394,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     ref.invalidate(historyReviewProvider);
     ref.invalidate(backupSafetyPathProvider);
     ref.invalidate(localBackupMetadataProvider);
+    ref.invalidate(mvpBUpgradeReadinessProvider);
     ref.invalidate(dataHealthReportProvider);
   }
 
@@ -386,6 +435,124 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
       }
     }
   }
+}
+
+class _MvpBUpgradeReadinessCard extends StatelessWidget {
+  const _MvpBUpgradeReadinessCard({
+    required this.readiness,
+    required this.preparing,
+    required this.dataBusy,
+    required this.onPrepare,
+  });
+
+  final AsyncValue<MvpBUpgradeReadinessReport> readiness;
+  final bool preparing;
+  final bool dataBusy;
+  final VoidCallback onPrepare;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const Key('mvp-b-upgrade-readiness-card'),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  readiness.value?.isReady == true
+                      ? Icons.verified_outlined
+                      : Icons.backup_outlined,
+                ),
+                const SizedBox(width: AppSpacing.x2),
+                Expanded(
+                  child: Text(
+                    'MVP-B 升级准备',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.x2),
+            readiness.when(
+              loading: () => const Text('正在核对当前数据与本机备份…'),
+              error: (_, _) => const Text('暂时无法检查，请重新验证。'),
+              data: (report) => _MvpBReadinessDetails(report: report),
+            ),
+            const SizedBox(height: AppSpacing.x3),
+            FilledButton.icon(
+              key: const Key('prepare-mvp-b-upgrade-button'),
+              onPressed: dataBusy ? null : onPrepare,
+              icon: const Icon(Icons.fact_check_outlined),
+              label: Text(
+                preparing
+                    ? '正在准备…'
+                    : readiness.value?.isReady == true
+                    ? '重新验证升级准备'
+                    : '保存并验证升级备份',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MvpBReadinessDetails extends StatelessWidget {
+  const _MvpBReadinessDetails({required this.report});
+
+  final MvpBUpgradeReadinessReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!report.isReady) {
+      return Text(
+        '未准备：${_readinessMessage(report.status)}',
+        key: const Key('mvp-b-upgrade-not-ready-label'),
+      );
+    }
+    final backup = report.localBackup!;
+    return Column(
+      key: const Key('mvp-b-upgrade-ready-details'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('已准备：备份完整且与当前数据一致。'),
+        const SizedBox(height: AppSpacing.unit),
+        Text(
+          '验证时间：${_formatLocalTime(report.verifiedAt!)}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        Text(
+          '备份时间：${_formatLocalTime(backup.modifiedAt)}'
+          ' · ${_formatFileSize(backup.byteLength)}'
+          ' · schema v${report.backupSchemaVersion}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+}
+
+String _readinessMessage(MvpBUpgradeReadinessStatus status) {
+  return switch (status) {
+    MvpBUpgradeReadinessStatus.notChecked => '需要保存并验证当前数据备份。',
+    MvpBUpgradeReadinessStatus.ready => '备份完整且与当前数据一致。',
+    MvpBUpgradeReadinessStatus.latestBackupMissing => '尚未找到最近本机备份。',
+    MvpBUpgradeReadinessStatus.latestBackupChanged => '最近备份已变化，需要重新验证。',
+    MvpBUpgradeReadinessStatus.currentDataChanged => '当前数据已变化，需要重新生成备份。',
+    MvpBUpgradeReadinessStatus.contentMismatch => '备份与当前数据不一致。',
+    MvpBUpgradeReadinessStatus.invalidBackup => '最近备份未通过完整性检查。',
+    MvpBUpgradeReadinessStatus.invalidProof => '旧的验证记录不可用，需要重新验证。',
+    MvpBUpgradeReadinessStatus.currentDataInvalid => '当前数据未通过完整性检查。',
+    MvpBUpgradeReadinessStatus.currentExportFailed => '暂时无法读取当前数据，请重试。',
+    MvpBUpgradeReadinessStatus.backupWriteFailed => '备份写入失败，旧备份仍保留。',
+    MvpBUpgradeReadinessStatus.backupReadFailed => '备份无法回读，请检查存储后重试。',
+    MvpBUpgradeReadinessStatus.preparationFailed => '备份保存或验证失败，请重试。',
+    MvpBUpgradeReadinessStatus.checkFailed => '暂时无法完成检查，请重试。',
+  };
 }
 
 String _formatLocalTime(DateTime value) {

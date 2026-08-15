@@ -2,12 +2,16 @@
 
 ## 0. 状态
 
-- 版本：1.2
+- 版本：1.3
 - 日期：2026-08-15
-- 状态：已确认的开工映射，代码落点均未实现
+- 状态：B0-1 已实现并通过自动化与 Pixel_7 模拟器验收，B0-2 及以后待实现
 
 | 能力 | 产品来源 | 参数 / 算法来源 | 技术落点 | 主要验证 | 当前状态 |
 |---|---|---|---|---|---|
+| schema v1 升级准备证明 | B0-1 Spec 2、4、5 | 无学习参数 | `MvpBUpgradeReadinessService`、readiness store、设置页与 Data Health | 备份回读、当前摘要一致、持久化、变化失效、重启复核 | B0-1 已实现；自动化与模拟器通过 |
+| 规范业务内容摘要 | B0-1 Spec 4 | SHA-256 canonical business v1 | `BackupContentDigester` | 忽略传输元数据、集合顺序稳定、业务变化必变 | B0-1 已实现 |
+| 固定备份文件可恢复替换 | B0-1 Spec 6、7 | 无业务参数 | `RecoverableAtomicTextFile`、latest / before-last / readiness stores | 替换失败保留旧文件、中断恢复、读写双向串行 | B0-1 已实现 |
+| 设置页异步恢复生命周期 | B0-1 Spec 7、8 | 无业务参数 | `SettingsPage` reload 保留 content state | 文件选择返回触发 provider reload 时不销毁恢复流程 | B0-1 已修复并有回归测试 |
 | 同日估计—实际配对 | PRD 4.1 | 配置 1、算法 2 | `energy_observations` v2、SaveDailyObservationV2 | 原子快照、先选后揭示、跨日拒绝 | 未实现 |
 | 昨日结束状态配对 | PRD 4.1 | 算法 2.1 | DailySummary + referenceType | 提交时间与参考日分离、只读 | 未实现 |
 | 五档方向比较 | PRD 1、2 | 配置 1、算法 4 | ObservationComparisonService | 所有严格边界、无点数映射 | 未实现 |
@@ -40,7 +44,10 @@
 - 自动学习现在贯穿 PRD、配置、算法、Schema、服务、测试和阶段门禁，不再停留在候选建议。
 - 基准线和活动影响均属于 MVP-B 核心；真实证据不足允许“不变化”，但学习器和安全闭环不能
   因此省略。
-- 当前没有任何 MVP-B 能力被标记为“已实现”；现有代码仍是 MVP-A Stage 19。
+- B0-1 已实现升级准备、规范摘要、可恢复固定文件替换和设置页生命周期修复；数据库仍为 schema
+  v1，尚不存在观测合同、反馈表或任何学习写路径。
 - 生产阈值没有隐藏默认值，必须通过真实影子数据门禁后发布新的配置版本。
 - MVP-A 历史规则和 schema v1 数据不会被自动解释成新证据。
 - 自动应用不等于静默应用：版本记录、通知、取消、撤回、冷却和恶化暂停都是 P0。
+- 中间阶段只以自动化与 Pixel_7 模拟器放行；最终 APK、物理手机迁移和真实产品结论集中到
+  MVP-B 总体验收，真实证据不足时生产门保持关闭。

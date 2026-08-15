@@ -2,15 +2,16 @@
 
 ## 0. 文档状态
 
-- 版本：1.2
+- 版本：1.3
 - 日期：2026-08-15
 - 状态：已确认，作为 MVP-B 分阶段实施基线
 - 当前代码基线：MVP-A Stage 19，提交 `cb5d0a4`
 - 当前产品规则：`energy-rules-v2-mvp-a`
 
 本组文档定义 MVP-B 的产品方向、数据合同、自动学习边界、工程门禁和开发顺序。项目作者
-已明确确认自动学习目标并授权按独立阶段 Spec 开发；每一阶段仍必须通过测试与设备门后才能
-进入下一阶段。当前不启用生产自动学习。
+已明确确认自动学习目标并授权按独立阶段 Spec 开发；每一阶段仍必须通过测试与 Pixel_7 模拟器
+门后才能进入下一阶段。最终 APK 和物理手机安装统一延期到全部 MVP-B 工程阶段完成后。当前
+不启用生产自动学习。
 
 ## 1. 权威来源
 
@@ -32,21 +33,33 @@
 | 阶段 | 独立 Spec | 当前门 |
 |---|---|---|
 | B0-0 | `PowerManager_MVP-B_阶段B0-0_文档与开工门禁_Spec_v1.md` | 已确认 |
-| B0-1 | `PowerManager_MVP-B_阶段B0-1_迁移准备版_Spec_v1.md` | 可实施 |
-| B0-2 | `PowerManager_MVP-B_阶段B0-2_SchemaV2与备份兼容_Spec_v1.md` | 等待 B0-1 |
+| B0-1 | `PowerManager_MVP-B_阶段B0-1_迁移准备版_Spec_v1.md` | 自动化与模拟器已通过 |
+| B0-2 | `PowerManager_MVP-B_阶段B0-2_SchemaV2与备份兼容_Spec_v1.md` | 可实施 |
 | B0-3 | `PowerManager_MVP-B_阶段B0-3_正确观测与活动反馈合同_Spec_v1.md` | 等待 B0-2 |
 | B1-0 | `PowerManager_MVP-B_阶段B1-0_自动影子学习器_Spec_v1.md` | 等待 B0-3 |
-| B1-1 | `PowerManager_MVP-B_阶段B1-1_真实影子观察与生产决策_Spec_v1.md` | 等待 B1-0 与真实数据 |
+| B1-1 | `PowerManager_MVP-B_阶段B1-1_真实影子观察与生产决策_Spec_v1.md` | 工程轨等待 B1-0；产品轨最终安装后 |
 | B2-0 | `PowerManager_MVP-B_阶段B2-0_SchemaV4与模型生命周期_Spec_v1.md` | 等待 B1-1 |
 | B2-1 | `PowerManager_MVP-B_阶段B2-1_基准线自动学习与安全激活_Spec_v1.md` | 等待 B2-0 |
-| B2-2 | `PowerManager_MVP-B_阶段B2-2_基准线调整后监测_Spec_v1.md` | 等待真实激活 |
-| B3-0 | `PowerManager_MVP-B_阶段B3-0_活动影响生产参数门_Spec_v1.md` | 等待真实反馈 |
+| B2-2 | `PowerManager_MVP-B_阶段B2-2_基准线调整后监测_Spec_v1.md` | 工程轨等待 B2-1；产品轨最终安装后 |
+| B3-0 | `PowerManager_MVP-B_阶段B3-0_活动影响生产参数门_Spec_v1.md` | 工程轨等待 B2；产品轨最终安装后 |
 | B3-1 | `PowerManager_MVP-B_阶段B3-1_SchemaV5与活动影响学习器_Spec_v1.md` | 等待 B3-0 |
-| B3-2 | `PowerManager_MVP-B_阶段B3-2_活动影响安全激活与监测_Spec_v1.md` | 等待 B3-1 |
+| B3-2 | `PowerManager_MVP-B_阶段B3-2_活动影响安全激活与监测_Spec_v1.md` | 工程轨等待 B3-1；真机复验延期 |
 | 总验收 | `PowerManager_MVP-B_总体验收_Spec_v1.md` | 等待全部阶段 |
 
 总分阶段计划只定义顺序和跨阶段门；每一阶段的目标、过程、测试矩阵、停止条件与验收证据以
 对应独立 Spec 为准。
+
+B0-1 的实际实现、缺陷修复、自动化和模拟器证据记录在
+`PowerManager_MVP-B_阶段B0-1_迁移准备版_实现与验收记录.md`。
+
+## 1.2 当前设备验收决策
+
+- 中间阶段：自动化测试 + Pixel_7 模拟器；不操作物理手机，不交付最终 APK；
+- 真实实验：在手机安装前不补造数据。需要真实自然数据的 B1-1、B2-2、B3-0、B3-2 先完成
+  工程协议、模拟器生命周期和失败保护，产品状态暂记 `inconclusive`；
+- 生产门：真实证据未形成时保持关闭，预生产参数只能存在于有显式水印的隔离配置；
+- 最终阶段：完成模拟器总矩阵后才构建最终 APK，先备份手机 schema v1 数据，再覆盖安装并执行
+  v1 → v5、历史、恢复和重启验收。
 
 ## 2. MVP-A 与 MVP-B 的关系
 

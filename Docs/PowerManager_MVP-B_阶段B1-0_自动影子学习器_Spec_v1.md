@@ -171,7 +171,7 @@ B1 的依赖图必须无法解析 ModelActivationService 或写 base 设置。�
 
 - 进度、排除、就绪、失败和空状态；
 - 200% 字号与小屏；
-- format、analyze、全量 test、coverage、debug APK；
+- format、analyze、全量 test、coverage、模拟器可运行构建；
 - git diff --check。
 
 ## 9. 模拟器验收

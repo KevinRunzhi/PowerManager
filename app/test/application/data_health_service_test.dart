@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:power_manager/application/data_health_service.dart';
 import 'package:power_manager/application/json_backup_codec.dart';
 import 'package:power_manager/application/json_export_service.dart';
+import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
@@ -50,7 +51,11 @@ void main() {
     expect(report.relativeCorrections, 1);
     expect(report.activityRecords, 2);
     expect(report.deletedActivityRecords, 1);
-    expect(report.daysUntilMvpBDiscussion, 13);
+    expect(report.daysUntilLegacyDiscussionCount, 13);
+    expect(
+      report.mvpBUpgradeReadiness.status,
+      MvpBUpgradeReadinessStatus.notChecked,
+    );
   });
 
   test('zero effective days has a safe zero coverage', () async {
@@ -62,7 +67,7 @@ void main() {
     expect(report.effectiveDays, 0);
     expect(report.effectiveDaysWithActualState, 0);
     expect(report.coveragePercent, 0);
-    expect(report.daysUntilMvpBDiscussion, 14);
+    expect(report.daysUntilLegacyDiscussionCount, 14);
   });
 
   test('integrity failure returns a safe aggregate result', () async {
@@ -90,10 +95,11 @@ void main() {
       dailyActualStates: 14,
       relativeCorrections: 0,
       localBackup: null,
+      mvpBUpgradeReadiness: _notCheckedReadiness,
     );
 
-    expect(report.daysUntilMvpBDiscussion, 0);
-    expect(report.reachedMvpBDiscussionCount, isTrue);
+    expect(report.daysUntilLegacyDiscussionCount, 0);
+    expect(report.reachedLegacyDiscussionCount, isTrue);
   });
 }
 
@@ -114,8 +120,14 @@ DataHealthService _service({
     observations: _Observations(observations),
     summaries: _Summaries(summaries),
     localBackupStore: _BackupStore(),
+    upgradeReadiness: const _ReadinessChecker(),
   );
 }
+
+final _notCheckedReadiness = MvpBUpgradeReadinessReport(
+  status: MvpBUpgradeReadinessStatus.notChecked,
+  checkedAt: backupFixtureNow,
+);
 
 DailySummary _summary(
   LifeDay day, {
@@ -197,6 +209,13 @@ final class _Clock implements Clock {
   const _Clock();
   @override
   DateTime now() => backupFixtureNow;
+}
+
+final class _ReadinessChecker implements MvpBUpgradeReadinessChecker {
+  const _ReadinessChecker();
+
+  @override
+  Future<MvpBUpgradeReadinessReport> check() async => _notCheckedReadiness;
 }
 
 final class _BackupStore implements LocalBackupStore {

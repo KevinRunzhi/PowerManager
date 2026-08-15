@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
+import 'package:power_manager/application/backup_content_digest.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/data_health_service.dart';
 import 'package:power_manager/application/energy_reminder_service.dart';
@@ -10,6 +11,7 @@ import 'package:power_manager/application/energy_rule_config_loader.dart';
 import 'package:power_manager/application/history_review_service.dart';
 import 'package:power_manager/application/json_export_service.dart';
 import 'package:power_manager/application/local_backup_service.dart';
+import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/application/json_backup_codec.dart';
 import 'package:power_manager/application/json_backup_restore_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
@@ -22,6 +24,7 @@ import 'package:power_manager/data/db/app_database_connection.dart';
 import 'package:power_manager/data/db/drift_transaction_runner.dart';
 import 'package:power_manager/data/backup/local_backup_safety_store.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
+import 'package:power_manager/data/backup/mvp_b_upgrade_readiness_store.dart';
 import 'package:power_manager/data/export/temporary_export_file_store.dart';
 import 'package:power_manager/data/repositories/drift_repositories.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
@@ -338,6 +341,32 @@ final localBackupMetadataProvider = FutureProvider<LocalBackupMetadata?>((ref) {
   return ref.watch(localBackupStoreProvider).metadata();
 });
 
+final mvpBUpgradeReadinessStoreProvider = Provider<MvpBUpgradeReadinessStore>((
+  ref,
+) {
+  return FileMvpBUpgradeReadinessStore();
+});
+
+final mvpBUpgradeReadinessServiceProvider =
+    Provider<MvpBUpgradeReadinessPreparer>((ref) {
+      return MvpBUpgradeReadinessService(
+        preparer: ref.watch(operationPreparerProvider),
+        localBackupSaver: ref.watch(localBackupServiceProvider),
+        localBackupStore: ref.watch(localBackupStoreProvider),
+        readinessStore: ref.watch(mvpBUpgradeReadinessStoreProvider),
+        exportService: ref.watch(jsonExportServiceProvider),
+        codec: const JsonBackupCodec(),
+        digester: const BackupContentDigester(),
+        clock: ref.watch(clockProvider),
+      );
+    });
+
+final mvpBUpgradeReadinessProvider =
+    FutureProvider.autoDispose<MvpBUpgradeReadinessReport>((ref) {
+      ref.watch(currentPreparationRefreshProvider);
+      return ref.watch(mvpBUpgradeReadinessServiceProvider).check();
+    });
+
 final dataHealthServiceProvider = Provider<DataHealthService>((ref) {
   return DataHealthService(
     exportService: ref.watch(jsonExportServiceProvider),
@@ -348,10 +377,14 @@ final dataHealthServiceProvider = Provider<DataHealthService>((ref) {
     observations: ref.watch(observationsRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     localBackupStore: ref.watch(localBackupStoreProvider),
+    upgradeReadiness: ref.watch(mvpBUpgradeReadinessServiceProvider),
   );
 });
 
-final dataHealthReportProvider = FutureProvider<DataHealthReport>((ref) {
+final dataHealthReportProvider = FutureProvider.autoDispose<DataHealthReport>((
+  ref,
+) {
+  ref.watch(currentPreparationRefreshProvider);
   return ref.watch(dataHealthServiceProvider).check();
 });
 

@@ -2,9 +2,9 @@
 
 ## 0. 文档状态
 
-- 版本：1.0
+- 版本：1.1
 - 日期：2026-08-15
-- 状态：阻塞于 B1-1 生产参数决策
+- 状态：阻塞于 B1-1 工程决策包；生产参数仍由最终真实实验决定
 - 数据库版本：schema v3 升级到 schema v4
 - 本阶段生产激活：保持关闭
 - 下一阶段：B2-1 基准线自动学习与安全激活
@@ -133,8 +133,8 @@ pendingRuleVersion 与 pendingRuleEffectiveLifeDay 必须在 v3 预检时都为�
 - 撤回只对未来生效；
 - 关闭学习不会删除观测。
 
-本阶段正式构建只允许 off；可用版本化预生产配置验证 review / automatic UI 和状态机。预生产
-标识必须醒目且不得打包到正式 APK。
+本阶段默认配置只允许 off；可用版本化预生产配置验证 review / automatic UI 和状态机。预生产
+标识必须醒目且不得进入最终交付构建。
 
 ## 9. 自动化测试
 
@@ -173,8 +173,8 @@ pendingRuleVersion 与 pendingRuleEffectiveLifeDay 必须在 v3 预检时都为�
 
 ### 9.4 回归
 
-投影、结算、设置和历史全部从 active 模型读取；format、analyze、全量 test、coverage、debug APK
-和 git diff --check 通过。
+投影、结算、设置和历史全部从 active 模型读取；format、analyze、全量 test、coverage、模拟器
+可运行构建和 git diff --check 通过。
 
 ## 10. 停止条件
 
@@ -191,6 +191,6 @@ pendingRuleVersion 与 pendingRuleEffectiveLifeDay 必须在 v3 预检时都为�
 
 - schema v4 migration、backup、state machine 全绿；
 - 模拟器覆盖升级与模式矩阵记录；
-- 真机 v3 到 v4 无损升级记录；
+- 真机 v3 到 v4 复验登记到 MVP-B 总体验收；
 - 正式构建生产门关闭且激活路径不可达；
 - B2-1 可以在明确预生产配置下接入基准线 learner。

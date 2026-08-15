@@ -2,7 +2,7 @@
 
 ## 0. 文档状态
 
-- 版本：1.0
+- 版本：1.1
 - 日期：2026-08-15
 - 状态：待 B0-2 通过后实现
 - 数据库版本：保持 schema v2
@@ -156,9 +156,13 @@ observation、孤儿 feedback 或 active feedback 指向已变化活动。
 
 ### 7.4 回归
 
-执行 format、analyze、全量 test、coverage、debug APK 和 git diff --check。
+执行 format、analyze、全量 test、coverage、模拟器可运行构建和 git diff --check；真机流程延期到
+MVP-B 总体验收。
 
-## 8. 真实使用验收
+## 8. 模拟器工程验收与最终真实使用
+
+阶段内用冻结时钟和明确 fixture 在模拟器跨至少两个模拟生活日完成以下流程，证明合同和用户
+路径正确。MVP-B 最终安装后再按自然生活日复验；后者不是进入 B1-0 的工程阻塞项。
 
 至少连续两个生活日自然完成：
 
@@ -168,8 +172,8 @@ observation、孤儿 feedback 或 active feedback 指向已变化活动。
 - 一条活动主动反馈；
 - 一条反馈后编辑或删除的失效验证。
 
-验收时检查后台恢复、App 重启和跨 04:00 后快照不漂移。不得修改系统数据库或用 ADB 补造
-真实产品证据。测试 fixture 只用于工程验证。
+验收时检查后台恢复、App 重启和跨 04:00 后快照不漂移。不得把模拟器 fixture 写成真实产品
+证据；最终手机复验不得修改系统数据库或用 ADB 补造记录。
 
 ## 9. 停止条件
 
@@ -187,7 +191,8 @@ observation、孤儿 feedback 或 active feedback 指向已变化活动。
 - schema 保持 v2；
 - 新合同与反馈自动化测试全绿；
 - 模拟器主流程记录；
-- 连续真实使用记录和负担备注；
+- 模拟器跨生活日工程记录；
+- 连续真实使用与负担复验登记到 MVP-B 总体验收，当前产品状态为 inconclusive；
 - Data Health 口径与 LearningEligibilityService 一致；
 - 没有 learning_runs 或模型激活路径；
 - B1-0 可以只读取结算后的不可变证据开始实现。

@@ -2,17 +2,21 @@
 
 ## 0. 文档状态
 
-- 版本：1.0
+- 版本：1.1
 - 日期：2026-08-15
-- 状态：阻塞于 B2-0 与 B1-1 生产配置
+- 状态：阻塞于 B2-0 与 B1-1 工程配置；生产门保持关闭
 - 数据库版本：保持 schema v4
 - 下一阶段：B2-2 调整后真实监测
 
 ## 1. 阶段目标
 
-把 B1-1 已发布的基准线规则接入完整生产生命周期，使 review 和 automatic 都能从新结算证据
+把 B1-1 已冻结的基准线规则合同接入完整生命周期，使 review 和 automatic 都能从新结算证据
 生成候选；automatic 在全部安全门通过后自动安排到未来生活日，用户可在生效前取消、生效后
 通过未来版本撤回。
+
+阶段工程验收使用带水印的预生产配置和隔离数据库；最终交付配置的 production / autoApply 门
+保持 false，直到真机自然证据通过。这里的“完整生产生命周期”指生产代码路径与安全语义已经
+实现，不代表当前真实用户数据已授权执行变化。
 
 ## 2. 开关与授权
 
@@ -165,10 +169,10 @@ OperationPreparationService 在新生活日开始时：
 
 - 模式说明、候选详情、通知、取消、历史和撤回；
 - 200% 字号、小屏、TalkBack 标签；
-- format、analyze、全量 test、coverage、debug APK；
+- format、analyze、全量 test、coverage、模拟器可运行构建；
 - git diff --check。
 
-## 8. 预生产与真机验收
+## 8. 预生产模拟器与最终真机复验
 
 先在隔离测试数据库使用版本化预生产配置完成：
 
@@ -179,8 +183,9 @@ OperationPreparationService 在新生活日开始时：
 5. 取消与撤回；
 6. 数据不足、无需变化和不稳定。
 
-随后在真机真实数据库只执行已由 B1-1 授权的路径。真实数据不足时应显示继续学习，不用 fixture
-污染用户数据库。每次自动变化前必须另有外部可恢复备份。
+本阶段不操作真机。MVP-B 总体验收安装完成后，真机真实数据库只执行已由真实证据授权的路径；
+真实数据不足时应显示继续学习，不用 fixture 污染用户数据库。每次自动变化前必须另有外部
+可恢复备份。
 
 ## 9. 停止条件
 
@@ -199,6 +204,6 @@ OperationPreparationService 在新生活日开始时：
 
 - 纯 learner、coordinator、state machine 和 Widget 全绿；
 - 预生产全模式矩阵记录；
-- 真机安全生命周期记录；
-- 正式配置的 baselineAutoApplyEnabled 只有在上述证据齐全后才可发布为 true；
+- 真机安全生命周期复验登记到 MVP-B 总体验收；
+- 正式配置的 baselineAutoApplyEnabled 在最终真机门与真实证据齐全前保持 false；
 - B2-2 观察窗口已经开始并记录 active model、epoch 和起始 lifeDay。

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:power_manager/application/json_backup_codec.dart';
 import 'package:power_manager/application/json_export_service.dart';
+import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
@@ -24,6 +25,7 @@ final class DataHealthReport {
     required this.dailyActualStates,
     required this.relativeCorrections,
     required this.localBackup,
+    required this.mvpBUpgradeReadiness,
   });
 
   final DateTime checkedAt;
@@ -38,14 +40,15 @@ final class DataHealthReport {
   final int dailyActualStates;
   final int relativeCorrections;
   final LocalBackupMetadata? localBackup;
+  final MvpBUpgradeReadinessReport mvpBUpgradeReadiness;
 
   int get effectiveDays => standardEffectiveDays + weakEffectiveDays;
   int get coveragePercent => effectiveDays == 0
       ? 0
       : (effectiveDaysWithActualState * 100 / effectiveDays).round();
-  int get daysUntilMvpBDiscussion =>
+  int get daysUntilLegacyDiscussionCount =>
       math.max(0, 14 - effectiveDaysWithActualState);
-  bool get reachedMvpBDiscussionCount => effectiveDaysWithActualState >= 14;
+  bool get reachedLegacyDiscussionCount => effectiveDaysWithActualState >= 14;
 }
 
 final class DataHealthService {
@@ -58,6 +61,7 @@ final class DataHealthService {
     required this.observations,
     required this.summaries,
     required this.localBackupStore,
+    required this.upgradeReadiness,
   });
 
   final JsonExporter exportService;
@@ -68,6 +72,7 @@ final class DataHealthService {
   final EnergyObservationsRepository observations;
   final DailySummariesRepository summaries;
   final LocalBackupStore localBackupStore;
+  final MvpBUpgradeReadinessChecker upgradeReadiness;
 
   Future<DataHealthReport> check() async {
     final checkedAt = clock.now();
@@ -77,12 +82,14 @@ final class DataHealthService {
       observations.list(),
       summaries.list(),
       localBackupStore.metadata(),
+      upgradeReadiness.check(),
     ]);
     final morningItems = values[0] as List<MorningCheckIn>;
     final activityItems = values[1] as List<StoredEstimatedActivity>;
     final observationItems = values[2] as List<EnergyObservation>;
     final summaryItems = values[3] as List<DailySummary>;
     final localBackup = values[4] as LocalBackupMetadata?;
+    final upgradeReadinessReport = values[5] as MvpBUpgradeReadinessReport;
     var integrityPassed = false;
     try {
       final exported = await exportService.create(exportedAt: checkedAt);
@@ -132,6 +139,7 @@ final class DataHealthService {
           )
           .length,
       localBackup: localBackup,
+      mvpBUpgradeReadiness: upgradeReadinessReport,
     );
   }
 }

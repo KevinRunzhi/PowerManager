@@ -16,6 +16,7 @@ import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/application/settings_service.dart';
 import 'package:power_manager/application/local_backup_service.dart';
+import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/core/time/clock.dart';
@@ -676,6 +677,66 @@ void main() {
     expect(find.byKey(const Key('restore-json-button')), findsOneWidget);
   });
 
+  testWidgets('settings content survives a preparation dependency reload', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_testApp(reloadSettingsWithPreparation: true));
+    await tester.pumpAndSettle();
+    final homeContext = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(homeContext).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+
+    final field = find.byKey(const Key('base-estimate-field'));
+    await tester.enterText(field, '123');
+    final settingsContext = tester.element(find.byKey(SettingsPage.pageKey));
+    final container = ProviderScope.containerOf(settingsContext, listen: false);
+
+    container
+        .read(currentPreparationRefreshProvider.notifier)
+        .refresh(PreparationTrigger.resumed);
+    await tester.pump();
+
+    expect(find.byKey(SettingsPage.pageKey), findsOneWidget);
+    expect(tester.widget<TextField>(field).controller!.text, '123');
+
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(field).controller!.text, '123');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('MVP-B upgrade readiness prepares and reveals verified state', (
+    tester,
+  ) async {
+    final readiness = _FakeMvpBUpgradeReadiness();
+    await tester.pumpWidget(_testApp(mvpBUpgradeReadiness: readiness));
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const Key('prepare-mvp-b-upgrade-button'));
+    await tester.scrollUntilVisible(
+      button,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(
+      find.byKey(const Key('mvp-b-upgrade-not-ready-label')),
+      findsOneWidget,
+    );
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(readiness.prepareCalls, 1);
+    expect(
+      find.byKey(const Key('mvp-b-upgrade-ready-details')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('schema v1'), findsOneWidget);
+  });
+
   testWidgets('data health shows aggregate coverage without private details', (
     tester,
   ) async {
@@ -689,7 +750,11 @@ void main() {
     expect(find.text('完整性检查通过'), findsOneWidget);
     expect(find.text('0 / 6'), findsOneWidget);
     expect(find.text('0%'), findsOneWidget);
-    expect(find.textContaining('还需 14 个'), findsOneWidget);
+    expect(find.textContaining('旧版自用讨论计数还差 14'), findsOneWidget);
+    expect(
+      find.byKey(const Key('mvp-b-upgrade-readiness-health-card')),
+      findsOneWidget,
+    );
     expect(find.textContaining('activity-'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -985,10 +1050,13 @@ Widget _testApp({
   bool canSupplementYesterday = false,
   LocalBackupSaver? localBackupSaver,
   LocalBackupMetadata? localBackupMetadata,
+  MvpBUpgradeReadinessPreparer? mvpBUpgradeReadiness,
   DataHealthReport? dataHealthReport,
   bool dataHealthFails = false,
+  bool reloadSettingsWithPreparation = false,
   bool disableAnimations = true,
 }) {
+  final readinessService = mvpBUpgradeReadiness ?? _FakeMvpBUpgradeReadiness();
   return ProviderScope(
     overrides: [
       if (clock != null) clockProvider.overrideWithValue(clock),
@@ -1021,9 +1089,13 @@ Widget _testApp({
               ),
             ),
       ),
-      appSettingsProvider.overrideWith(
-        (ref) async => appSettings ?? _appSettings(onboardingCompleted: true),
-      ),
+      appSettingsProvider.overrideWith((ref) async {
+        if (reloadSettingsWithPreparation) {
+          ref.watch(currentPreparationRefreshProvider);
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        return appSettings ?? _appSettings(onboardingCompleted: true);
+      }),
       settingsServiceProvider.overrideWithValue(
         settingsMutator ?? _FakeSettingsMutator(),
       ),
@@ -1034,6 +1106,7 @@ Widget _testApp({
       localBackupMetadataProvider.overrideWith(
         (ref) async => localBackupMetadata,
       ),
+      mvpBUpgradeReadinessServiceProvider.overrideWithValue(readinessService),
       dataHealthReportProvider.overrideWith((ref) async {
         if (dataHealthFails) {
           throw StateError('private-record-id must not be shown');
@@ -1070,6 +1143,45 @@ final class _FakeLocalBackupSaver implements LocalBackupSaver {
   );
 }
 
+final class _FakeMvpBUpgradeReadiness implements MvpBUpgradeReadinessPreparer {
+  _FakeMvpBUpgradeReadiness({
+    MvpBUpgradeReadinessReport? initial,
+    MvpBUpgradeReadinessReport? afterPrepare,
+  }) : current = initial ?? _notReadyReadiness(),
+       _afterPrepare = afterPrepare ?? _readyReadiness();
+
+  MvpBUpgradeReadinessReport current;
+  final MvpBUpgradeReadinessReport _afterPrepare;
+  var prepareCalls = 0;
+
+  @override
+  Future<MvpBUpgradeReadinessReport> check() async => current;
+
+  @override
+  Future<MvpBUpgradeReadinessReport> prepare() async {
+    prepareCalls++;
+    current = _afterPrepare;
+    return current;
+  }
+}
+
+MvpBUpgradeReadinessReport _notReadyReadiness() => MvpBUpgradeReadinessReport(
+  status: MvpBUpgradeReadinessStatus.notChecked,
+  checkedAt: DateTime.utc(2026, 8, 9, 12),
+);
+
+MvpBUpgradeReadinessReport _readyReadiness() => MvpBUpgradeReadinessReport(
+  status: MvpBUpgradeReadinessStatus.ready,
+  checkedAt: DateTime.utc(2026, 8, 9, 12),
+  verifiedAt: DateTime.utc(2026, 8, 9, 12),
+  localBackup: LocalBackupMetadata(
+    path: 'backup.json',
+    modifiedAt: DateTime.utc(2026, 8, 9, 12),
+    byteLength: 4096,
+  ),
+  backupSchemaVersion: 1,
+);
+
 DataHealthReport _dataHealthReport() => DataHealthReport(
   checkedAt: DateTime.utc(2026, 8, 9, 12),
   integrityPassed: true,
@@ -1083,6 +1195,7 @@ DataHealthReport _dataHealthReport() => DataHealthReport(
   dailyActualStates: 0,
   relativeCorrections: 1,
   localBackup: null,
+  mvpBUpgradeReadiness: _notReadyReadiness(),
 );
 
 final class _FakeActivityImpactPreviewer implements ActivityImpactPreviewer {

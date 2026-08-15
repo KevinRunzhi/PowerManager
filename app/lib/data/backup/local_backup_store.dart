@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:power_manager/data/backup/recoverable_atomic_text_file.dart';
 
 typedef LocalBackupDirectoryLoader = Future<Directory> Function();
 typedef BeforeLocalBackupReplace =
@@ -39,38 +40,41 @@ final class FileLocalBackupStore implements LocalBackupStore {
   @override
   Future<LocalBackupMetadata> save(String contents) async {
     final directory = await _directoryLoader();
-    await directory.create(recursive: true);
     final target = File('${directory.path}${Platform.pathSeparator}$fileName');
-    final temporary = File('${target.path}.tmp');
-    try {
-      await temporary.writeAsString(contents, flush: true);
-      await beforeReplace?.call(temporary, target);
-      await temporary.rename(target.path);
-      return (await metadata())!;
-    } finally {
-      if (await temporary.exists()) {
-        await temporary.delete();
-      }
-    }
+    return RecoverableAtomicTextFile(
+      target,
+      beforeReplace: beforeReplace,
+    ).writeAndRead(contents, (file) async {
+      final stat = await file.stat();
+      return LocalBackupMetadata(
+        path: file.path,
+        modifiedAt: stat.modified,
+        byteLength: stat.size,
+      );
+    });
   }
 
   @override
   Future<LocalBackupMetadata?> metadata() async {
     final directory = await _directoryLoader();
-    final file = File('${directory.path}${Platform.pathSeparator}$fileName');
-    if (!await file.exists()) return null;
-    final stat = await file.stat();
-    return LocalBackupMetadata(
-      path: file.path,
-      modifiedAt: stat.modified,
-      byteLength: stat.size,
-    );
+    return RecoverableAtomicTextFile(
+      File('${directory.path}${Platform.pathSeparator}$fileName'),
+    ).read((file) async {
+      if (!await file.exists()) return null;
+      final stat = await file.stat();
+      return LocalBackupMetadata(
+        path: file.path,
+        modifiedAt: stat.modified,
+        byteLength: stat.size,
+      );
+    });
   }
 
   @override
   Future<Uint8List> readBytes() async {
     final directory = await _directoryLoader();
-    final file = File('${directory.path}${Platform.pathSeparator}$fileName');
-    return file.readAsBytes();
+    return RecoverableAtomicTextFile(
+      File('${directory.path}${Platform.pathSeparator}$fileName'),
+    ).read((file) => file.readAsBytes());
   }
 }

@@ -2,9 +2,9 @@
 
 ## 0. 文档状态
 
-- 版本：1.0
+- 版本：1.1
 - 日期：2026-08-15
-- 状态：阻塞于 B3-0 完整生产配置
+- 状态：阻塞于 B3-0 工程参数合同；生产参数仍由最终真实实验决定
 - 数据库版本：schema v4 升级到 schema v5
 - 下一阶段：B3-2 活动影响安全激活与监测
 
@@ -12,6 +12,7 @@
 
 实现按子类与影响方向隔离、使用无结果选择偏差抽样反馈、版本化且可重现的活动影响 learner。
 本阶段完成采样、快照、资格、候选和 schema 能力；正式自动应用仍等待 B3-2 生命周期验收。
+阶段内候选只由带水印预生产配置在隔离数据库产生，最终交付配置的生产门保持关闭。
 
 ## 2. Schema v5
 
@@ -175,10 +176,10 @@ candidate 要求总门、activityImpactProductionLearningEnabled 和模式非 of
 
 ### 7.5 回归
 
-format、analyze、全量 test、coverage、debug APK 和 git diff --check；固定规则表、旧活动、summary
-和 baseline 行为必须保持。
+format、analyze、全量 test、coverage、模拟器可运行构建和 git diff --check；固定规则表、旧活动、
+summary 和 baseline 行为必须保持。
 
-## 8. 模拟器与真机验收
+## 8. 模拟器验收与最终真机复验
 
 工程生命周期先用明确 fixture：
 
@@ -189,8 +190,8 @@ format、analyze、全量 test、coverage、debug APK 和 git diff --check；固
 5. 重启和恢复不重复 sample 或 run；
 6. 新 factor 候选不影响当前活动计算。
 
-真机只验证已发布抽样策略的负担和快照，不用 fixture 写入用户数据库。activityImpactAutoApplyEnabled
-保持 false。
+本阶段不操作真机。最终安装后，真机只验证已发布抽样策略的负担和快照，不用 fixture 写入用户
+数据库；activityImpactAutoApplyEnabled 在真实证据形成前保持 false。
 
 ## 9. 停止条件
 
@@ -208,6 +209,6 @@ format、analyze、全量 test、coverage、debug APK 和 git diff --check；固
 
 - schema v5、backup、sampler、calculation 和 learner 全绿；
 - fixture 生命周期记录；
-- 真机抽样负担记录；
+- 真机抽样负担复验登记到 MVP-B 总体验收；
 - 正式 activityImpactAutoApplyEnabled 仍为 false；
 - B3-2 可以复用统一 activation service 完成安全闭环。

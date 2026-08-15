@@ -2,7 +2,7 @@
 
 ## 0. 文档状态
 
-- 版本：1.0
+- 版本：1.1
 - 日期：2026-08-15
 - 状态：阻塞于 B3-1
 - 数据库版本：保持 schema v5
@@ -11,7 +11,8 @@
 ## 1. 阶段目标
 
 让活动影响参数族复用 B2 的 review、automatic、未来生效、持久通知、取消、撤回、冷却和恶化
-暂停能力，并用真实 sampled feedback 验证不会跨方向传播、重复使用旧证据或与 baseline 同时变化。
+暂停能力。工程轨用隔离 sampled feedback fixture 验证不会跨方向传播、重复使用旧证据或与
+baseline 同时变化；真实 sampled feedback 的产品验证延期到最终安装后。
 
 ## 2. 生产门
 
@@ -135,7 +136,7 @@ baseline 与 activityImpact 同时就绪时：
 - 候选、通知、历史、取消、撤回和暂停；
 - 多键候选仍可理解；
 - 200% 字号、小屏和 TalkBack；
-- format、analyze、全量 test、coverage、debug APK；
+- format、analyze、全量 test、coverage、模拟器可运行构建；
 - git diff --check。
 
 ## 7. 预生产验收
@@ -151,9 +152,9 @@ baseline 与 activityImpact 同时就绪时：
 7. 恶化暂停；
 8. 数据不足与 noChange。
 
-预生产配置必须有显式水印且不能进入正式 APK。
+预生产配置必须有显式水印且不能进入最终交付构建。
 
-## 8. 真实监测
+## 8. 最终安装后的真实监测（本阶段不执行）
 
 - 只使用受支持 sampledPrompt；
 - 新 factor regime 单独积累；
@@ -180,7 +181,7 @@ baseline 与 activityImpact 同时就绪时：
 
 - 全模式、激活、串行、恢复和监测测试全绿；
 - 预生产生命周期记录；
-- 真机抽样和安全生效记录；
-- 真实产品状态明确；
+- 真机抽样和安全生效复验登记到 MVP-B 总体验收；
+- 当前真实产品状态明确为 inconclusive，后续真机可更新为 validated 或 rejected；
 - 没有未解决 P0 / P1 数据、静默变化、历史漂移或不可恢复升级问题；
 - 可以进入 MVP-B 总体验收。

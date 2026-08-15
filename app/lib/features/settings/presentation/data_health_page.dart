@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
 import 'package:power_manager/application/data_health_service.dart';
+import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -76,6 +77,33 @@ class _HealthContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.x4),
         _HealthCard(
+          key: const Key('mvp-b-upgrade-readiness-health-card'),
+          icon: report.mvpBUpgradeReadiness.isReady
+              ? Icons.verified_user_outlined
+              : Icons.backup_outlined,
+          title: 'MVP-B 升级准备',
+          accent: report.mvpBUpgradeReadiness.isReady
+              ? AppColors.energyHigh
+              : AppColors.energyMediumLow,
+          children: [
+            Text(
+              report.mvpBUpgradeReadiness.isReady
+                  ? '已准备：本机备份完整且与当前 schema v1 数据一致。'
+                  : '未准备：${_readinessStatusText(report.mvpBUpgradeReadiness.status)}',
+              key: const Key('mvp-b-upgrade-readiness-health-label'),
+            ),
+            if (report.mvpBUpgradeReadiness.verifiedAt case final verifiedAt?)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.x2),
+                child: Text(
+                  '最近验证：${_dateTime(verifiedAt)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.x4),
+        _HealthCard(
           key: const Key('validation-progress-card'),
           icon: Icons.track_changes_outlined,
           title: '验证进度',
@@ -94,15 +122,16 @@ class _HealthContent extends StatelessWidget {
             _MetricLine(label: '实际状态覆盖率', value: '${report.coveragePercent}%'),
             const Divider(height: AppSpacing.x6),
             Text(
-              report.reachedMvpBDiscussionCount
-                  ? '样本数量达到讨论门槛，但尚未启用个性化。'
-                  : '距离 MVP-B 讨论门槛还需 '
-                        '${report.daysUntilMvpBDiscussion} 个带实际状态的有效日。',
+              report.reachedLegacyDiscussionCount
+                  ? '旧版自用样本数量达到 14 日；它不等于 MVP-B 可学习证据。'
+                  : '旧版自用讨论计数还差 '
+                        '${report.daysUntilLegacyDiscussionCount} '
+                        '个带实际状态的有效日；它不等于 MVP-B 可学习证据。',
               key: const Key('mvp-b-progress-label'),
             ),
             const SizedBox(height: AppSpacing.x2),
             Text(
-              '还需存在持续、可解释的估计偏差，并由你确认后才能应用任何建议。',
+              'MVP-B 要从 B0-3 开始采集同一参考时刻的新配对；当前不会训练或调整参数。',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
@@ -147,7 +176,7 @@ class _HealthContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.x4),
         Text(
-          '体检结果只用于自用验证，不代表医学判断，也不会自动训练或调整精力规则。',
+          '体检结果只用于自用验证，不代表医学判断。升级准备也不会开启自动学习。',
           style: Theme.of(
             context,
           ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
@@ -286,4 +315,23 @@ String _dateTime(DateTime value) {
 String _fileSize(int bytes) {
   if (bytes < 1024) return '$bytes B';
   return '${(bytes / 1024).toStringAsFixed(1)} KiB';
+}
+
+String _readinessStatusText(MvpBUpgradeReadinessStatus status) {
+  return switch (status) {
+    MvpBUpgradeReadinessStatus.notChecked => '尚未执行升级备份验证。',
+    MvpBUpgradeReadinessStatus.ready => '备份与当前数据一致。',
+    MvpBUpgradeReadinessStatus.latestBackupMissing => '没有最近本机备份。',
+    MvpBUpgradeReadinessStatus.latestBackupChanged => '最近备份已变化。',
+    MvpBUpgradeReadinessStatus.currentDataChanged => '验证后当前数据已变化。',
+    MvpBUpgradeReadinessStatus.contentMismatch => '备份与当前数据不一致。',
+    MvpBUpgradeReadinessStatus.invalidBackup => '最近备份未通过完整性检查。',
+    MvpBUpgradeReadinessStatus.invalidProof => '旧验证记录不可用。',
+    MvpBUpgradeReadinessStatus.currentDataInvalid => '当前数据未通过完整性检查。',
+    MvpBUpgradeReadinessStatus.currentExportFailed => '暂时无法读取当前数据。',
+    MvpBUpgradeReadinessStatus.backupWriteFailed => '备份写入失败。',
+    MvpBUpgradeReadinessStatus.backupReadFailed => '备份无法从磁盘回读。',
+    MvpBUpgradeReadinessStatus.preparationFailed => '升级准备执行失败。',
+    MvpBUpgradeReadinessStatus.checkFailed => '暂时无法完成升级准备检查。',
+  };
 }
