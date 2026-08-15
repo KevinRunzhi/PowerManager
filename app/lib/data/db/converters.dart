@@ -126,6 +126,93 @@ final class EnergyObservationTypeConverter
   String toSql(EnergyObservationType value) => value.code;
 }
 
+final class ObservationReferenceTypeConverter
+    extends TypeConverter<ObservationReferenceType, String> {
+  const ObservationReferenceTypeConverter();
+
+  @override
+  ObservationReferenceType fromSql(String fromDb) => _enumFromCode(
+    ObservationReferenceType.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(ObservationReferenceType value) => value.code;
+}
+
+final class ObservationCoverageStateConverter
+    extends TypeConverter<ObservationCoverageState, String> {
+  const ObservationCoverageStateConverter();
+
+  @override
+  ObservationCoverageState fromSql(String fromDb) => _enumFromCode(
+    ObservationCoverageState.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(ObservationCoverageState value) => value.code;
+}
+
+final class ActivityImpactSignConverter
+    extends TypeConverter<ActivityImpactSign, String> {
+  const ActivityImpactSignConverter();
+
+  @override
+  ActivityImpactSign fromSql(String fromDb) =>
+      _enumFromCode(ActivityImpactSign.values, fromDb, (value) => value.code);
+
+  @override
+  String toSql(ActivityImpactSign value) => value.code;
+}
+
+final class ActivityFeedbackDirectionConverter
+    extends TypeConverter<ActivityFeedbackDirection, String> {
+  const ActivityFeedbackDirectionConverter();
+
+  @override
+  ActivityFeedbackDirection fromSql(String fromDb) => _enumFromCode(
+    ActivityFeedbackDirection.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(ActivityFeedbackDirection value) => value.code;
+}
+
+final class ActivityFeedbackStatusConverter
+    extends TypeConverter<ActivityFeedbackStatus, String> {
+  const ActivityFeedbackStatusConverter();
+
+  @override
+  ActivityFeedbackStatus fromSql(String fromDb) => _enumFromCode(
+    ActivityFeedbackStatus.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(ActivityFeedbackStatus value) => value.code;
+}
+
+final class ActivityFeedbackInvalidationReasonConverter
+    extends TypeConverter<ActivityFeedbackInvalidationReason, String> {
+  const ActivityFeedbackInvalidationReasonConverter();
+
+  @override
+  ActivityFeedbackInvalidationReason fromSql(String fromDb) => _enumFromCode(
+    ActivityFeedbackInvalidationReason.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(ActivityFeedbackInvalidationReason value) => value.code;
+}
+
 final class AbsoluteEnergyStateConverter
     extends TypeConverter<AbsoluteEnergyState, String> {
   const AbsoluteEnergyStateConverter();

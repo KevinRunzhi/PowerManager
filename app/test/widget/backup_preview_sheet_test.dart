@@ -29,6 +29,7 @@ void main() {
                 morningCheckIns: 7,
                 activityRecords: 27,
                 energyObservations: 1,
+                activityFeedback: 2,
                 dailySummaries: 8,
                 promptReceipts: 5,
               ),
@@ -41,6 +42,8 @@ void main() {
 
     expect(find.byKey(const Key('backup-preview-sheet')), findsOneWidget);
     expect(find.text('27 → 0'), findsOneWidget);
+    expect(find.text('2 → 0'), findsOneWidget);
+    expect(find.text('v1'), findsOneWidget);
     expect(find.textContaining('完整替换当前数据'), findsOneWidget);
     final continueButton = find.byKey(const Key('continue-restore-button'));
     await tester.ensureVisible(continueButton);

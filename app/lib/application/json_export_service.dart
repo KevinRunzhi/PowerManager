@@ -26,19 +26,21 @@ final class JsonExportService implements JsonExporter {
     required this.mornings,
     required this.activities,
     required this.observations,
+    required this.feedback,
     required this.summaries,
     required this.receipts,
     required this.appVersionLoader,
     required this.transactionRunner,
   });
 
-  static const schemaVersion = 1;
+  static const schemaVersion = 2;
 
   final AppSettingsRepository settings;
   final RuleConfigVersionsRepository rules;
   final MorningCheckInsRepository mornings;
   final ActivityRecordsRepository activities;
   final EnergyObservationsRepository observations;
+  final ActivityFeedbackRepository feedback;
   final DailySummariesRepository summaries;
   final PromptReceiptsRepository receipts;
   final AppVersionLoader appVersionLoader;
@@ -53,6 +55,7 @@ final class JsonExportService implements JsonExporter {
       final morningCheckIns = await mornings.list();
       final activityRecords = await activities.listAllForExport();
       final energyObservations = await observations.list();
+      final activityFeedback = await feedback.list();
       final dailySummaries = await summaries.list();
       final promptReceipts = await receipts.list();
       return _ExportSnapshot(
@@ -61,6 +64,7 @@ final class JsonExportService implements JsonExporter {
         morningCheckIns: morningCheckIns,
         activityRecords: activityRecords,
         energyObservations: energyObservations,
+        activityFeedback: activityFeedback,
         dailySummaries: dailySummaries,
         promptReceipts: promptReceipts,
       );
@@ -74,6 +78,7 @@ final class JsonExportService implements JsonExporter {
       morningCheckIns: snapshot.morningCheckIns,
       activityRecords: snapshot.activityRecords,
       energyObservations: snapshot.energyObservations,
+      activityFeedback: snapshot.activityFeedback,
       dailySummaries: snapshot.dailySummaries,
       promptReceipts: snapshot.promptReceipts,
     );
@@ -100,6 +105,7 @@ final class _ExportSnapshot {
     required this.morningCheckIns,
     required this.activityRecords,
     required this.energyObservations,
+    required this.activityFeedback,
     required this.dailySummaries,
     required this.promptReceipts,
   });
@@ -109,6 +115,7 @@ final class _ExportSnapshot {
   final List<MorningCheckIn> morningCheckIns;
   final List<StoredEstimatedActivity> activityRecords;
   final List<EnergyObservation> energyObservations;
+  final List<ActivityFeedback> activityFeedback;
   final List<DailySummary> dailySummaries;
   final List<PromptReceipt> promptReceipts;
 }

@@ -8,6 +8,7 @@ import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/db/app_database.dart';
 import 'package:power_manager/data/db/drift_transaction_runner.dart';
 import 'package:power_manager/data/repositories/drift_repositories.dart';
+import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:test/test.dart';
 
 import '../data/db/test_database.dart';
@@ -34,6 +35,9 @@ void main() {
     final observations = DriftEnergyObservationsRepository(
       database.energyObservationsDao,
     );
+    final feedback = DriftActivityFeedbackRepository(
+      database.activityFeedbackDao,
+    );
     final summaries = DriftDailySummariesRepository(database.dailySummariesDao);
     final receipts = DriftPromptReceiptsRepository(database.promptReceiptsDao);
     final export = JsonExportService(
@@ -42,6 +46,7 @@ void main() {
       mornings: mornings,
       activities: activities,
       observations: observations,
+      feedback: feedback,
       summaries: summaries,
       receipts: receipts,
       transactionRunner: DriftTransactionRunner(database),
@@ -57,6 +62,7 @@ void main() {
       mornings: mornings,
       activities: activities,
       observations: observations,
+      feedback: feedback,
       summaries: summaries,
       receipts: receipts,
     );
@@ -85,6 +91,7 @@ void main() {
 
     expect(counts.ruleVersions, 1);
     expect(counts.total, 2);
+    expect(counts.activityFeedback, 0);
   });
 
   test(
@@ -105,8 +112,44 @@ void main() {
         (await database.appSettingsDao.getSettings()).baseEstimatedEnergy,
         120,
       );
+      final exported = await service.exportService.create(
+        exportedAt: backupFixtureNow,
+      );
+      final reparsed = service.inspect(
+        fileName: exported.fileName,
+        bytes: Uint8List.fromList(utf8.encode(exported.contents)),
+      );
+      expect(reparsed.backup.schemaVersion, 2);
+      expect(reparsed.backup.energyObservations, isEmpty);
     },
   );
+
+  test('schema v2 service restore round-trips invalidated feedback', () async {
+    safetyStore.fail = false;
+    final inspection = service.inspect(
+      fileName: 'backup-v2.json',
+      bytes: Uint8List.fromList(
+        utf8.encode(jsonEncode(backupFixtureV2().toJson())),
+      ),
+    );
+
+    await service.restore(inspection);
+
+    final counts = await service.currentCounts();
+    expect(counts.activityFeedback, 2);
+    final exported = await service.exportService.create(
+      exportedAt: backupFixtureNow,
+    );
+    final reparsed = service.inspect(
+      fileName: exported.fileName,
+      bytes: Uint8List.fromList(utf8.encode(exported.contents)),
+    );
+    expect(reparsed.backup.activityFeedback, hasLength(2));
+    expect(
+      reparsed.backup.activityFeedback.last.status,
+      ActivityFeedbackStatus.invalidated,
+    );
+  });
 }
 
 final class _RecordingSafetyStore implements BackupSafetyStore {

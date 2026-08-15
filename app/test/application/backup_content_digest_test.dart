@@ -43,6 +43,16 @@ void main() {
     expect(digester.digest(reverse), digester.digest(forward));
   });
 
+  test('schema v2 activity feedback order is canonical', () {
+    final source = backupFixtureV2();
+    final reversed = _copy(
+      source,
+      activityFeedback: source.activityFeedback.reversed.toList(),
+    );
+
+    expect(digester.digest(reversed), digester.digest(source));
+  });
+
   test('nested object insertion order does not change the digest', () {
     final source = backupFixture();
     final forwardRule = RuleConfigVersion(
@@ -89,6 +99,7 @@ PowerManagerExportDto _copy(
   DateTime? exportedAt,
   String? appVersion,
   List<RuleConfigVersion>? ruleVersions,
+  List<ActivityFeedback>? activityFeedback,
 }) {
   return PowerManagerExportDto(
     schemaVersion: source.schemaVersion,
@@ -99,6 +110,7 @@ PowerManagerExportDto _copy(
     morningCheckIns: source.morningCheckIns,
     activityRecords: source.activityRecords,
     energyObservations: source.energyObservations,
+    activityFeedback: activityFeedback ?? source.activityFeedback,
     dailySummaries: source.dailySummaries,
     promptReceipts: source.promptReceipts,
   );

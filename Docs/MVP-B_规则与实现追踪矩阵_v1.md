@@ -2,9 +2,9 @@
 
 ## 0. 状态
 
-- 版本：1.3
+- 版本：1.4
 - 日期：2026-08-15
-- 状态：B0-1 已实现并通过自动化与 Pixel_7 模拟器验收，B0-2 及以后待实现
+- 状态：B0-2 已实现并通过自动化与 Pixel_7 模拟器验收，B0-3 及以后待实现
 
 | 能力 | 产品来源 | 参数 / 算法来源 | 技术落点 | 主要验证 | 当前状态 |
 |---|---|---|---|---|---|
@@ -20,9 +20,9 @@
 | 结算后才学习 | PRD 2、3.2 | 算法 3.2、8.2、9.1 | settlement + AutomaticLearningCoordinator | 当前日不入模、结算后单次触发 | 未实现 |
 | model regime 隔离 | PRD 2、3.2 | 算法 3.3 | modelRegimeKey + fingerprint + epoch | 迁移不切组、真实激活 / 撤回必切组 | 未实现 |
 | reference type 隔离 | PRD 4.1 | 配置 2、4.1、算法 3.3、6.1 | modelRegimeKey + learner | current / yesterday 不互补、生产来源有优先级 | 未实现 |
-| 活动绑定反馈 | PRD 3.1、4.2 | 算法 8.1、8.2 | activity_feedback、ActivityFeedbackUseCases | 编辑删除失效、快照完整、无参数更新 | 未实现 |
-| schema v1 → v2 | PRD 5.1 | 无业务参数 | Drift onUpgrade、表重建 | 数据无损、失败回滚、约束保留 | 未实现 |
-| 备份 v1 / v2 兼容 | PRD 5.1 | 无业务参数 | JsonBackupCodec、BackupRestore | v1 导入、v2 往返、损坏拒绝 | 未实现 |
+| 活动绑定反馈 | PRD 3.1、4.2 | 算法 8.1、8.2 | activity_feedback、ActivityFeedbackUseCases | 编辑删除失效、快照完整、无参数更新 | B0-2 已建表、约束、仓储与备份合同；B0-3 用例和 UI 待实现 |
+| schema v1 → v2 | PRD 5.1 | 无业务参数 | Drift onUpgrade、表重建 | 数据无损、失败回滚、约束保留 | B0-2 已实现；实际 v1 DDL fixture、失败注入与模拟器覆盖升级通过 |
+| 备份 v1 / v2 兼容 | PRD 5.1 | 无业务参数 | JsonBackupCodec、BackupRestore | v1 导入、v2 往返、损坏拒绝 | B0-2 已实现；严格解析、事务恢复、v1 导入与 v2 往返通过 |
 | B1 自动影子学习 | PRD 3.2 | 配置 2、算法 5、6 | schema v3、BaselineLearner、AutomaticLearningCoordinator | 证据配置不产候选、自动触发、确定性、零激活 | 未实现 |
 | 学习运行审计 | PRD 4.3、5.1 | 算法 5.2、5.4 | learning_runs v3 | evidence hash、输入重现、失败结果 | 阻塞于 B1 |
 | 不可变个人模型 | PRD 2、3.3 | 算法 5.1、5.3 | personalization_versions v4 | 唯一 active、历史冻结、单参数族 | 阻塞于 B1 |

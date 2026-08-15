@@ -117,6 +117,19 @@ final class EnergyObservation {
     required this.relativeState,
     required this.estimateAtObservation,
     required this.observedAt,
+    this.contractVersion,
+    this.referenceType,
+    this.initialEstimateAtObservation,
+    this.estimatedOrdinalAtObservation,
+    this.baseEnergyAtObservation,
+    this.ruleVersionAtObservation,
+    this.comparisonBandVersion,
+    this.personalizationVersionAtObservation,
+    this.effectiveModelFingerprintAtObservation,
+    this.modelRegimeEpochAtObservation,
+    this.activeActivityCountAtObservation,
+    this.coverageState,
+    this.modelRegimeKey,
   });
 
   final String id;
@@ -125,6 +138,53 @@ final class EnergyObservation {
   final AbsoluteEnergyState? absoluteState;
   final RelativeCorrection? relativeState;
   final int? estimateAtObservation;
+  final DateTime observedAt;
+  final String? contractVersion;
+  final ObservationReferenceType? referenceType;
+  final int? initialEstimateAtObservation;
+  final int? estimatedOrdinalAtObservation;
+  final int? baseEnergyAtObservation;
+  final String? ruleVersionAtObservation;
+  final String? comparisonBandVersion;
+  final String? personalizationVersionAtObservation;
+  final String? effectiveModelFingerprintAtObservation;
+  final String? modelRegimeEpochAtObservation;
+  final int? activeActivityCountAtObservation;
+  final ObservationCoverageState? coverageState;
+  final String? modelRegimeKey;
+}
+
+final class ActivityFeedback {
+  const ActivityFeedback({
+    required this.id,
+    required this.activityRecordId,
+    required this.lifeDay,
+    required this.subcategorySnapshot,
+    required this.durationSnapshot,
+    required this.theoreticalDeltaSnapshot,
+    required this.appliedDeltaSnapshot,
+    required this.impactSignSnapshot,
+    required this.ruleVersionSnapshot,
+    required this.activityUpdatedAtSnapshot,
+    required this.direction,
+    required this.status,
+    required this.invalidationReason,
+    required this.observedAt,
+  });
+
+  final String id;
+  final String activityRecordId;
+  final LifeDay lifeDay;
+  final ActivitySubcategory subcategorySnapshot;
+  final DurationSlot durationSnapshot;
+  final int theoreticalDeltaSnapshot;
+  final int appliedDeltaSnapshot;
+  final ActivityImpactSign impactSignSnapshot;
+  final String ruleVersionSnapshot;
+  final DateTime activityUpdatedAtSnapshot;
+  final ActivityFeedbackDirection direction;
+  final ActivityFeedbackStatus status;
+  final ActivityFeedbackInvalidationReason? invalidationReason;
   final DateTime observedAt;
 }
 

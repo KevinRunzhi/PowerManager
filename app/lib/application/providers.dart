@@ -74,6 +74,14 @@ final observationsRepositoryProvider = Provider<EnergyObservationsRepository>((
   );
 });
 
+final activityFeedbackRepositoryProvider = Provider<ActivityFeedbackRepository>(
+  (ref) {
+    return DriftActivityFeedbackRepository(
+      ref.watch(appDatabaseProvider).activityFeedbackDao,
+    );
+  },
+);
+
 final summariesRepositoryProvider = Provider<DailySummariesRepository>((ref) {
   return DriftDailySummariesRepository(
     ref.watch(appDatabaseProvider).dailySummariesDao,
@@ -304,6 +312,7 @@ final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
     mornings: ref.watch(morningsRepositoryProvider),
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),
+    feedback: ref.watch(activityFeedbackRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
     transactionRunner: DriftTransactionRunner(ref.watch(appDatabaseProvider)),
@@ -375,6 +384,7 @@ final dataHealthServiceProvider = Provider<DataHealthService>((ref) {
     mornings: ref.watch(morningsRepositoryProvider),
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),
+    feedback: ref.watch(activityFeedbackRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     localBackupStore: ref.watch(localBackupStoreProvider),
     upgradeReadiness: ref.watch(mvpBUpgradeReadinessServiceProvider),
@@ -401,6 +411,7 @@ final jsonBackupRestoreServiceProvider = Provider<JsonBackupRestoreService>((
     mornings: ref.watch(morningsRepositoryProvider),
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),
+    feedback: ref.watch(activityFeedbackRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
   );

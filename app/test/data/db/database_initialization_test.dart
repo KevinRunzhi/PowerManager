@@ -12,7 +12,7 @@ import 'package:test/test.dart';
 import 'test_database.dart';
 
 void main() {
-  test('schema v1 creates exactly seven business tables', () async {
+  test('schema v2 creates exactly eight business tables', () async {
     final database = createTestDatabase();
     addTearDown(database.close);
 
@@ -41,6 +41,7 @@ void main() {
         .get();
 
     expect(tables.map((row) => row.read<String>('name')), [
+      'activity_feedback',
       'activity_records',
       'app_settings',
       'daily_summaries',
@@ -49,17 +50,21 @@ void main() {
       'prompt_receipts',
       'rule_config_versions',
     ]);
-    expect(version.read<int>('user_version'), 1);
+    expect(version.read<int>('user_version'), 2);
     expect(foreignKeys.read<int>('foreign_keys'), 1);
     expect(integrity.read<String>('integrity_check'), 'ok');
     expect(
       schemaExtras.map((row) => row.read<String>('name')),
       containsAll([
         'activity_records_life_day_order',
+        'activity_feedback_activity_order',
+        'activity_feedback_life_day_status',
+        'activity_feedback_one_active_per_activity',
         'app_settings_reject_delete',
         'daily_summaries_reject_delete',
         'daily_summaries_reject_update',
         'energy_observations_life_day_time',
+        'energy_observations_contract_lookup',
         'energy_observations_one_daily_absolute',
         'referenced_rule_versions_reject_update',
       ]),

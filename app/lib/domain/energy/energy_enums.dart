@@ -214,6 +214,61 @@ enum EnergyObservationType {
   final String code;
 }
 
+const mvpBObservationContractV1 = 'mvp-b-observation-v1';
+
+enum ObservationReferenceType {
+  currentMoment('currentMoment'),
+  previousLifeDayEnd('previousLifeDayEnd');
+
+  const ObservationReferenceType(this.code);
+  final String code;
+}
+
+enum ObservationCoverageState {
+  confirmed('confirmed'),
+  uncertain('uncertain'),
+  legacyUnknown('legacyUnknown');
+
+  const ObservationCoverageState(this.code);
+  final String code;
+}
+
+enum ActivityImpactSign {
+  consumption('consumption'),
+  recovery('recovery'),
+  zero('zero');
+
+  const ActivityImpactSign(this.code);
+  final String code;
+}
+
+enum ActivityFeedbackDirection {
+  strongerImpact('strongerImpact'),
+  aboutRight('aboutRight'),
+  weakerImpact('weakerImpact'),
+  directionMismatch('directionMismatch');
+
+  const ActivityFeedbackDirection(this.code);
+  final String code;
+}
+
+enum ActivityFeedbackStatus {
+  active('active'),
+  invalidated('invalidated');
+
+  const ActivityFeedbackStatus(this.code);
+  final String code;
+}
+
+enum ActivityFeedbackInvalidationReason {
+  activityDeleted('activityDeleted'),
+  activityEdited('activityEdited'),
+  integrityFailure('integrityFailure');
+
+  const ActivityFeedbackInvalidationReason(this.code);
+  final String code;
+}
+
 enum RelativeCorrection {
   lowerThanEstimate('lower'),
   aboutRight('aboutRight'),

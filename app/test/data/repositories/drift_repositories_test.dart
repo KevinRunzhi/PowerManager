@@ -22,6 +22,7 @@ void main() {
   late DriftMorningCheckInsRepository checkInsRepository;
   late DriftActivityRecordsRepository activitiesRepository;
   late DriftEnergyObservationsRepository observationsRepository;
+  late DriftActivityFeedbackRepository feedbackRepository;
   late DriftDailySummariesRepository summariesRepository;
   late DriftPromptReceiptsRepository receiptsRepository;
 
@@ -39,6 +40,9 @@ void main() {
     );
     observationsRepository = DriftEnergyObservationsRepository(
       EnergyObservationsDao(database),
+    );
+    feedbackRepository = DriftActivityFeedbackRepository(
+      ActivityFeedbackDao(database),
     );
     summariesRepository = DriftDailySummariesRepository(
       DailySummariesDao(database),
@@ -270,7 +274,7 @@ void main() {
     },
   );
 
-  test('export DTO contains seven data groups and logical deletes', () async {
+  test('export DTO contains eight data groups and logical deletes', () async {
     final activity = _activity(
       id: 'deleted-export',
       completedAt: DateTime.utc(2026, 7, 26, 10),
@@ -290,6 +294,7 @@ void main() {
       morningCheckIns: await checkInsRepository.list(),
       activityRecords: await activitiesRepository.listAllForExport(),
       energyObservations: await observationsRepository.list(),
+      activityFeedback: await feedbackRepository.list(),
       dailySummaries: await summariesRepository.list(),
       promptReceipts: await receiptsRepository.list(),
     );
@@ -309,6 +314,7 @@ void main() {
         'morningCheckIns',
         'activityRecords',
         'energyObservations',
+        'activityFeedback',
         'dailySummaries',
         'promptReceipts',
       ]),
@@ -339,6 +345,7 @@ void main() {
         mornings: checkInsRepository,
         activities: activitiesRepository,
         observations: observationsRepository,
+        feedback: feedbackRepository,
         summaries: summariesRepository,
         receipts: receiptsRepository,
         transactionRunner: transactionRunner,
@@ -351,10 +358,11 @@ void main() {
       final deleted = records.single as Map<String, Object?>;
 
       expect(result.fileName, 'powermanager-20260726-120000Z.json');
-      expect(json['schemaVersion'], 1);
+      expect(json['schemaVersion'], 2);
       expect(json['appVersion'], '0.1.0+1');
       expect(json['exportedAt'], testNow.toIso8601String());
       expect(json['ruleConfigVersions'], isA<List<Object?>>());
+      expect(json['activityFeedback'], isEmpty);
       expect(deleted['status'], 'deleted');
       expect(deleted, isNot(contains('rowid')));
       expect(deleted, isNot(contains('internalId')));

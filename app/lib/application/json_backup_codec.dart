@@ -24,6 +24,7 @@ final class BackupDataCounts {
     required this.morningCheckIns,
     required this.activityRecords,
     required this.energyObservations,
+    this.activityFeedback = 0,
     required this.dailySummaries,
     required this.promptReceipts,
   });
@@ -32,6 +33,7 @@ final class BackupDataCounts {
   final int morningCheckIns;
   final int activityRecords;
   final int energyObservations;
+  final int activityFeedback;
   final int dailySummaries;
   final int promptReceipts;
 
@@ -40,6 +42,7 @@ final class BackupDataCounts {
       morningCheckIns +
       activityRecords +
       energyObservations +
+      activityFeedback +
       dailySummaries +
       promptReceipts +
       1;
@@ -101,6 +104,7 @@ final class JsonBackupCodec {
         ...backup.morningCheckIns.map((item) => item.lifeDay),
         ...backup.activityRecords.map((item) => item.lifeDay),
         ...backup.energyObservations.map((item) => item.lifeDay),
+        ...backup.activityFeedback.map((item) => item.lifeDay),
         ...backup.dailySummaries.map((item) => item.lifeDay),
       ]..sort();
       return BackupInspection(
@@ -111,6 +115,7 @@ final class JsonBackupCodec {
           morningCheckIns: backup.morningCheckIns.length,
           activityRecords: backup.activityRecords.length,
           energyObservations: backup.energyObservations.length,
+          activityFeedback: backup.activityFeedback.length,
           dailySummaries: backup.dailySummaries.length,
           promptReceipts: backup.promptReceipts.length,
         ),
@@ -127,8 +132,8 @@ final class JsonBackupCodec {
 
 PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
   final schemaVersion = _int(json, 'schemaVersion', '顶层');
-  if (schemaVersion != 1) {
-    throw const BackupFormatException('当前应用只支持 schemaVersion 1 的备份。');
+  if (schemaVersion != 1 && schemaVersion != 2) {
+    throw const BackupFormatException('当前应用只支持 schemaVersion 1 或 2 的备份。');
   }
   final settingsJson = _map(json, 'appSettings', '顶层');
   final rules = _list(
@@ -147,8 +152,18 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
     '顶层',
   ).map((item) => _parseActivity(_asMap(item, '活动记录'))).toList(growable: false);
   final observations = _list(json, 'energyObservations', '顶层')
-      .map((item) => _parseObservation(_asMap(item, '实际状态')))
+      .map(
+        (item) => _parseObservation(
+          _asMap(item, '实际状态'),
+          schemaVersion: schemaVersion,
+        ),
+      )
       .toList(growable: false);
+  final feedback = schemaVersion == 1
+      ? const <ActivityFeedback>[]
+      : _list(json, 'activityFeedback', '顶层')
+            .map((item) => _parseFeedback(_asMap(item, '活动反馈')))
+            .toList(growable: false);
   final summaries = _list(
     json,
     'dailySummaries',
@@ -169,6 +184,7 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
     morningCheckIns: mornings,
     activityRecords: activities,
     energyObservations: observations,
+    activityFeedback: feedback,
     dailySummaries: summaries,
     promptReceipts: receipts,
   );
@@ -275,9 +291,35 @@ StoredEstimatedActivity _parseActivity(Map<String, Object?> json) {
   );
 }
 
-EnergyObservation _parseObservation(Map<String, Object?> json) {
+EnergyObservation _parseObservation(
+  Map<String, Object?> json, {
+  required int schemaVersion,
+}) {
+  if (schemaVersion >= 2) {
+    _requireKeys(json, const {
+      'contractVersion',
+      'referenceType',
+      'initialEstimateAtObservation',
+      'estimatedOrdinalAtObservation',
+      'baseEnergyAtObservation',
+      'ruleVersionAtObservation',
+      'comparisonBandVersion',
+      'personalizationVersionAtObservation',
+      'effectiveModelFingerprintAtObservation',
+      'modelRegimeEpochAtObservation',
+      'activeActivityCountAtObservation',
+      'coverageState',
+      'modelRegimeKey',
+    }, '实际状态');
+  }
   final absoluteCode = _nullableString(json, 'absoluteState', '实际状态');
   final relativeCode = _nullableString(json, 'relativeState', '实际状态');
+  final referenceCode = schemaVersion >= 2
+      ? _nullableString(json, 'referenceType', '实际状态')
+      : null;
+  final coverageCode = schemaVersion >= 2
+      ? _nullableString(json, 'coverageState', '实际状态')
+      : null;
   return EnergyObservation(
     id: _string(json, 'id', '实际状态'),
     lifeDay: _lifeDay(json, 'lifeDay', '实际状态'),
@@ -305,6 +347,122 @@ EnergyObservation _parseObservation(Map<String, Object?> json) {
           ),
     estimateAtObservation: _nullableInt(json, 'estimateAtObservation', '实际状态'),
     observedAt: _date(json, 'observedAt', '实际状态'),
+    contractVersion: schemaVersion >= 2
+        ? _nullableString(json, 'contractVersion', '实际状态')
+        : null,
+    referenceType: referenceCode == null
+        ? null
+        : _enumByCode<ObservationReferenceType>(
+            ObservationReferenceType.values,
+            referenceCode,
+            (value) => value.code,
+            '观测参考类型',
+          ),
+    initialEstimateAtObservation: schemaVersion >= 2
+        ? _nullableInt(json, 'initialEstimateAtObservation', '实际状态')
+        : null,
+    estimatedOrdinalAtObservation: schemaVersion >= 2
+        ? _nullableInt(json, 'estimatedOrdinalAtObservation', '实际状态')
+        : null,
+    baseEnergyAtObservation: schemaVersion >= 2
+        ? _nullableInt(json, 'baseEnergyAtObservation', '实际状态')
+        : null,
+    ruleVersionAtObservation: schemaVersion >= 2
+        ? _nullableString(json, 'ruleVersionAtObservation', '实际状态')
+        : null,
+    comparisonBandVersion: schemaVersion >= 2
+        ? _nullableString(json, 'comparisonBandVersion', '实际状态')
+        : null,
+    personalizationVersionAtObservation: schemaVersion >= 2
+        ? _nullableString(json, 'personalizationVersionAtObservation', '实际状态')
+        : null,
+    effectiveModelFingerprintAtObservation: schemaVersion >= 2
+        ? _nullableString(
+            json,
+            'effectiveModelFingerprintAtObservation',
+            '实际状态',
+          )
+        : null,
+    modelRegimeEpochAtObservation: schemaVersion >= 2
+        ? _nullableString(json, 'modelRegimeEpochAtObservation', '实际状态')
+        : null,
+    activeActivityCountAtObservation: schemaVersion >= 2
+        ? _nullableInt(json, 'activeActivityCountAtObservation', '实际状态')
+        : null,
+    coverageState: coverageCode == null
+        ? null
+        : _enumByCode<ObservationCoverageState>(
+            ObservationCoverageState.values,
+            coverageCode,
+            (value) => value.code,
+            '活动覆盖状态',
+          ),
+    modelRegimeKey: schemaVersion >= 2
+        ? _nullableString(json, 'modelRegimeKey', '实际状态')
+        : null,
+  );
+}
+
+ActivityFeedback _parseFeedback(Map<String, Object?> json) {
+  _requireKeys(json, const {
+    'id',
+    'activityRecordId',
+    'lifeDay',
+    'subcategorySnapshot',
+    'durationMinutesSnapshot',
+    'theoreticalDeltaSnapshot',
+    'appliedDeltaSnapshot',
+    'impactSignSnapshot',
+    'ruleVersionSnapshot',
+    'activityUpdatedAtSnapshot',
+    'direction',
+    'status',
+    'invalidationReason',
+    'observedAt',
+  }, '活动反馈');
+  final invalidationCode = _nullableString(json, 'invalidationReason', '活动反馈');
+  return ActivityFeedback(
+    id: _string(json, 'id', '活动反馈'),
+    activityRecordId: _string(json, 'activityRecordId', '活动反馈'),
+    lifeDay: _lifeDay(json, 'lifeDay', '活动反馈'),
+    subcategorySnapshot: _enumByCode(
+      ActivitySubcategory.values,
+      _string(json, 'subcategorySnapshot', '活动反馈'),
+      (value) => value.code,
+      '活动反馈子类',
+    ),
+    durationSnapshot: _duration(_int(json, 'durationMinutesSnapshot', '活动反馈')),
+    theoreticalDeltaSnapshot: _int(json, 'theoreticalDeltaSnapshot', '活动反馈'),
+    appliedDeltaSnapshot: _int(json, 'appliedDeltaSnapshot', '活动反馈'),
+    impactSignSnapshot: _enumByCode(
+      ActivityImpactSign.values,
+      _string(json, 'impactSignSnapshot', '活动反馈'),
+      (value) => value.code,
+      '活动反馈影响方向',
+    ),
+    ruleVersionSnapshot: _string(json, 'ruleVersionSnapshot', '活动反馈'),
+    activityUpdatedAtSnapshot: _date(json, 'activityUpdatedAtSnapshot', '活动反馈'),
+    direction: _enumByCode(
+      ActivityFeedbackDirection.values,
+      _string(json, 'direction', '活动反馈'),
+      (value) => value.code,
+      '活动反馈方向',
+    ),
+    status: _enumByCode(
+      ActivityFeedbackStatus.values,
+      _string(json, 'status', '活动反馈'),
+      (value) => value.code,
+      '活动反馈状态',
+    ),
+    invalidationReason: invalidationCode == null
+        ? null
+        : _enumByCode<ActivityFeedbackInvalidationReason>(
+            ActivityFeedbackInvalidationReason.values,
+            invalidationCode,
+            (value) => value.code,
+            '活动反馈失效原因',
+          ),
+    observedAt: _date(json, 'observedAt', '活动反馈'),
   );
 }
 
@@ -414,9 +572,11 @@ void _validateBackup(PowerManagerExportDto backup) {
   }
 
   final activityIds = <String>{};
+  final activitiesById = <String, StoredEstimatedActivity>{};
   final activitiesByDay = <LifeDay, List<StoredEstimatedActivity>>{};
   for (final activity in backup.activityRecords) {
     _unique(activityIds, activity.id, '活动 ID');
+    activitiesById[activity.id] = activity;
     if (activity.category != activity.subcategory.category ||
         activity.createdAt.isAfter(activity.updatedAt)) {
       throw const BackupFormatException('活动记录关系或时间顺序不合法。');
@@ -443,21 +603,23 @@ void _validateBackup(PowerManagerExportDto backup) {
   final dailyAbsoluteDays = <LifeDay>{};
   for (final observation in backup.energyObservations) {
     _unique(observationIds, observation.id, '实际状态 ID');
-    final valid = switch (observation.type) {
-      EnergyObservationType.dailyAbsolute =>
-        observation.absoluteState != null && observation.relativeState == null,
-      EnergyObservationType.relativeCorrection =>
-        observation.absoluteState == null &&
-            observation.relativeState != null &&
-            observation.estimateAtObservation != null,
-    };
-    if (!valid) {
-      throw const BackupFormatException('实际状态字段组合不合法。');
-    }
+    _validateObservation(observation, rulesByVersion);
     if (observation.type == EnergyObservationType.dailyAbsolute &&
         !dailyAbsoluteDays.add(observation.lifeDay)) {
       throw const BackupFormatException('同一生活日存在多条每日实际状态。');
     }
+  }
+
+  final feedbackIds = <String>{};
+  final activeFeedbackActivities = <String>{};
+  for (final feedback in backup.activityFeedback) {
+    _unique(feedbackIds, feedback.id, '活动反馈 ID');
+    _validateFeedback(
+      feedback,
+      activitiesById: activitiesById,
+      rulesByVersion: rulesByVersion,
+      activeFeedbackActivities: activeFeedbackActivities,
+    );
   }
 
   final summariesByDay = <LifeDay, DailySummary>{};
@@ -501,6 +663,142 @@ void _validateBackup(PowerManagerExportDto backup) {
       throw const BackupFormatException('提醒回执唯一键重复。');
     }
   }
+}
+
+void _validateObservation(
+  EnergyObservation observation,
+  Map<String, EnergyRuleConfig> rulesByVersion,
+) {
+  final baseShape = switch (observation.type) {
+    EnergyObservationType.dailyAbsolute =>
+      observation.absoluteState != null && observation.relativeState == null,
+    EnergyObservationType.relativeCorrection =>
+      observation.absoluteState == null &&
+          observation.relativeState != null &&
+          observation.estimateAtObservation != null,
+  };
+  if (!baseShape) {
+    throw const BackupFormatException('实际状态字段组合不合法。');
+  }
+
+  if (observation.contractVersion == null) {
+    final legacyShape =
+        observation.referenceType == null &&
+        observation.initialEstimateAtObservation == null &&
+        observation.estimatedOrdinalAtObservation == null &&
+        observation.baseEnergyAtObservation == null &&
+        observation.ruleVersionAtObservation == null &&
+        observation.comparisonBandVersion == null &&
+        observation.personalizationVersionAtObservation == null &&
+        observation.effectiveModelFingerprintAtObservation == null &&
+        observation.modelRegimeEpochAtObservation == null &&
+        observation.activeActivityCountAtObservation == null &&
+        (observation.coverageState == null ||
+            observation.coverageState ==
+                ObservationCoverageState.legacyUnknown) &&
+        observation.modelRegimeKey == null;
+    if (!legacyShape) {
+      throw const BackupFormatException('Legacy 实际状态包含了伪造的新合同快照。');
+    }
+    return;
+  }
+
+  final initial = observation.initialEstimateAtObservation;
+  final ordinal = observation.estimatedOrdinalAtObservation;
+  final base = observation.baseEnergyAtObservation;
+  final activeCount = observation.activeActivityCountAtObservation;
+  final ruleVersion = observation.ruleVersionAtObservation;
+  final completeContract =
+      observation.contractVersion == mvpBObservationContractV1 &&
+      observation.type == EnergyObservationType.dailyAbsolute &&
+      observation.estimateAtObservation != null &&
+      observation.referenceType != null &&
+      initial != null &&
+      initial > 0 &&
+      ordinal != null &&
+      ordinal >= 0 &&
+      ordinal <= 4 &&
+      base != null &&
+      base >= 60 &&
+      base <= 140 &&
+      ruleVersion != null &&
+      rulesByVersion.containsKey(ruleVersion) &&
+      observation.comparisonBandVersion != null &&
+      observation.personalizationVersionAtObservation != null &&
+      observation.effectiveModelFingerprintAtObservation != null &&
+      observation.modelRegimeEpochAtObservation != null &&
+      activeCount != null &&
+      activeCount >= 0 &&
+      (observation.coverageState == ObservationCoverageState.confirmed ||
+          observation.coverageState == ObservationCoverageState.uncertain) &&
+      observation.modelRegimeKey != null;
+  if (!completeContract) {
+    throw const BackupFormatException('MVP-B 实际状态合同字段不完整。');
+  }
+  _nonEmpty(ruleVersion, '观测规则版本');
+  _nonEmpty(observation.comparisonBandVersion!, '比较档位版本');
+  _nonEmpty(observation.personalizationVersionAtObservation!, '观测个性化版本');
+  _nonEmpty(observation.effectiveModelFingerprintAtObservation!, '观测模型指纹');
+  _nonEmpty(observation.modelRegimeEpochAtObservation!, '观测模型窗口');
+  _nonEmpty(observation.modelRegimeKey!, '观测模型分组键');
+}
+
+void _validateFeedback(
+  ActivityFeedback feedback, {
+  required Map<String, StoredEstimatedActivity> activitiesById,
+  required Map<String, EnergyRuleConfig> rulesByVersion,
+  required Set<String> activeFeedbackActivities,
+}) {
+  _nonEmpty(feedback.activityRecordId, '活动反馈关联活动');
+  _nonEmpty(feedback.ruleVersionSnapshot, '活动反馈规则版本');
+  final activity = activitiesById[feedback.activityRecordId];
+  final rule = rulesByVersion[feedback.ruleVersionSnapshot];
+  if (activity == null ||
+      rule == null ||
+      rule.theoreticalDelta(
+            feedback.subcategorySnapshot,
+            feedback.durationSnapshot,
+          ) !=
+          feedback.theoreticalDeltaSnapshot ||
+      _impactSign(feedback.theoreticalDeltaSnapshot) !=
+          feedback.impactSignSnapshot ||
+      feedback.activityUpdatedAtSnapshot.isAfter(feedback.observedAt)) {
+    throw const BackupFormatException('活动反馈快照或引用不合法。');
+  }
+
+  final activeShape =
+      feedback.status == ActivityFeedbackStatus.active &&
+      feedback.invalidationReason == null;
+  final invalidatedShape =
+      feedback.status == ActivityFeedbackStatus.invalidated &&
+      feedback.invalidationReason != null;
+  if (!activeShape && !invalidatedShape) {
+    throw const BackupFormatException('活动反馈失效状态不合法。');
+  }
+
+  if (activeShape) {
+    if (!activeFeedbackActivities.add(feedback.activityRecordId)) {
+      throw const BackupFormatException('同一活动存在多条 active 反馈。');
+    }
+    final currentSnapshotMatches =
+        activity.status == ActivityRecordStatus.active &&
+        activity.lifeDay == feedback.lifeDay &&
+        activity.subcategory == feedback.subcategorySnapshot &&
+        activity.duration == feedback.durationSnapshot &&
+        activity.theoreticalDelta == feedback.theoreticalDeltaSnapshot &&
+        activity.appliedDelta == feedback.appliedDeltaSnapshot &&
+        activity.ruleVersion == feedback.ruleVersionSnapshot &&
+        activity.updatedAt == feedback.activityUpdatedAtSnapshot;
+    if (!currentSnapshotMatches) {
+      throw const BackupFormatException('Active 活动反馈与当前活动快照不一致。');
+    }
+  }
+}
+
+ActivityImpactSign _impactSign(int theoreticalDelta) {
+  if (theoreticalDelta < 0) return ActivityImpactSign.consumption;
+  if (theoreticalDelta > 0) return ActivityImpactSign.recovery;
+  return ActivityImpactSign.zero;
 }
 
 void _validateReplays({
@@ -611,6 +909,14 @@ Map<String, Object?> _map(
   String key,
   String context,
 ) => _asMap(json[key], '$context.$key');
+
+void _requireKeys(Map<String, Object?> json, Set<String> keys, String context) {
+  for (final key in keys) {
+    if (!json.containsKey(key)) {
+      throw BackupFormatException('$context.$key 缺失。');
+    }
+  }
+}
 
 Map<String, Object?> _asMap(Object? value, String context) {
   if (value is! Map<String, Object?>) {

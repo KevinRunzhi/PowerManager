@@ -14,6 +14,7 @@ import 'package:power_manager/domain/repositories/repositories.dart';
 final class DataHealthReport {
   const DataHealthReport({
     required this.checkedAt,
+    required this.schemaVersion,
     required this.integrityPassed,
     required this.settledDays,
     required this.standardEffectiveDays,
@@ -24,11 +25,17 @@ final class DataHealthReport {
     required this.deletedActivityRecords,
     required this.dailyActualStates,
     required this.relativeCorrections,
+    this.legacyObservations = 0,
+    this.contractObservations = 0,
+    this.activityFeedback = 0,
+    this.activeActivityFeedback = 0,
+    this.invalidatedActivityFeedback = 0,
     required this.localBackup,
     required this.mvpBUpgradeReadiness,
   });
 
   final DateTime checkedAt;
+  final int schemaVersion;
   final bool integrityPassed;
   final int settledDays;
   final int standardEffectiveDays;
@@ -39,6 +46,11 @@ final class DataHealthReport {
   final int deletedActivityRecords;
   final int dailyActualStates;
   final int relativeCorrections;
+  final int legacyObservations;
+  final int contractObservations;
+  final int activityFeedback;
+  final int activeActivityFeedback;
+  final int invalidatedActivityFeedback;
   final LocalBackupMetadata? localBackup;
   final MvpBUpgradeReadinessReport mvpBUpgradeReadiness;
 
@@ -59,6 +71,7 @@ final class DataHealthService {
     required this.mornings,
     required this.activities,
     required this.observations,
+    required this.feedback,
     required this.summaries,
     required this.localBackupStore,
     required this.upgradeReadiness,
@@ -70,6 +83,7 @@ final class DataHealthService {
   final MorningCheckInsRepository mornings;
   final ActivityRecordsRepository activities;
   final EnergyObservationsRepository observations;
+  final ActivityFeedbackRepository feedback;
   final DailySummariesRepository summaries;
   final LocalBackupStore localBackupStore;
   final MvpBUpgradeReadinessChecker upgradeReadiness;
@@ -80,6 +94,7 @@ final class DataHealthService {
       mornings.list(),
       activities.listAllForExport(),
       observations.list(),
+      feedback.list(),
       summaries.list(),
       localBackupStore.metadata(),
       upgradeReadiness.check(),
@@ -87,9 +102,10 @@ final class DataHealthService {
     final morningItems = values[0] as List<MorningCheckIn>;
     final activityItems = values[1] as List<StoredEstimatedActivity>;
     final observationItems = values[2] as List<EnergyObservation>;
-    final summaryItems = values[3] as List<DailySummary>;
-    final localBackup = values[4] as LocalBackupMetadata?;
-    final upgradeReadinessReport = values[5] as MvpBUpgradeReadinessReport;
+    final feedbackItems = values[3] as List<ActivityFeedback>;
+    final summaryItems = values[4] as List<DailySummary>;
+    final localBackup = values[5] as LocalBackupMetadata?;
+    final upgradeReadinessReport = values[6] as MvpBUpgradeReadinessReport;
     var integrityPassed = false;
     try {
       final exported = await exportService.create(exportedAt: checkedAt);
@@ -114,6 +130,7 @@ final class DataHealthService {
     };
     return DataHealthReport(
       checkedAt: checkedAt,
+      schemaVersion: JsonExportService.schemaVersion,
       integrityPassed: integrityPassed,
       settledDays: summaryItems.length,
       standardEffectiveDays: summaryItems
@@ -137,6 +154,19 @@ final class DataHealthService {
           .where(
             (item) => item.type == EnergyObservationType.relativeCorrection,
           )
+          .length,
+      legacyObservations: observationItems
+          .where((item) => item.contractVersion == null)
+          .length,
+      contractObservations: observationItems
+          .where((item) => item.contractVersion != null)
+          .length,
+      activityFeedback: feedbackItems.length,
+      activeActivityFeedback: feedbackItems
+          .where((item) => item.status == ActivityFeedbackStatus.active)
+          .length,
+      invalidatedActivityFeedback: feedbackItems
+          .where((item) => item.status == ActivityFeedbackStatus.invalidated)
           .length,
       localBackup: localBackup,
       mvpBUpgradeReadiness: upgradeReadinessReport,

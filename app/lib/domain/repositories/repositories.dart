@@ -39,6 +39,15 @@ abstract interface class EnergyObservationsRepository {
   Future<List<EnergyObservation>> list();
 }
 
+abstract interface class ActivityFeedbackRepository {
+  Future<void> insert(ActivityFeedback feedback);
+  Future<void> update(ActivityFeedback feedback);
+  Future<ActivityFeedback?> find(String id);
+  Future<ActivityFeedback?> findActiveForActivity(String activityRecordId);
+  Future<List<ActivityFeedback>> listForActivity(String activityRecordId);
+  Future<List<ActivityFeedback>> list();
+}
+
 abstract interface class DailySummariesRepository {
   Future<DailySummary> insertOrGet(DailySummary summary);
   Future<DailySummary?> findByLifeDay(LifeDay lifeDay);

@@ -31,6 +31,7 @@ extension BackupRestoreDatabase on AppDatabase {
     await delete(promptReceiptsTable).go();
     await delete(energyObservationsTable).go();
     await delete(morningCheckInsTable).go();
+    await delete(activityFeedbackTable).go();
     await delete(activityRecordsTable).go();
     await delete(dailySummariesTable).go();
     await delete(appSettingsTable).go();
@@ -104,6 +105,28 @@ extension BackupRestoreDatabase on AppDatabase {
     }
     await failureHook?.call('after-activities');
 
+    for (final feedback in backup.activityFeedback) {
+      await into(activityFeedbackTable).insert(
+        ActivityFeedbackTableCompanion.insert(
+          id: feedback.id,
+          activityRecordId: feedback.activityRecordId,
+          lifeDay: feedback.lifeDay,
+          subcategorySnapshot: feedback.subcategorySnapshot,
+          durationSnapshot: feedback.durationSnapshot,
+          theoreticalDeltaSnapshot: feedback.theoreticalDeltaSnapshot,
+          appliedDeltaSnapshot: feedback.appliedDeltaSnapshot,
+          impactSignSnapshot: feedback.impactSignSnapshot,
+          ruleVersionSnapshot: feedback.ruleVersionSnapshot,
+          activityUpdatedAtSnapshot: feedback.activityUpdatedAtSnapshot.toUtc(),
+          direction: feedback.direction,
+          status: feedback.status,
+          invalidationReason: Value(feedback.invalidationReason),
+          observedAt: feedback.observedAt.toUtc(),
+        ),
+      );
+    }
+    await failureHook?.call('after-feedback');
+
     for (final observation in backup.energyObservations) {
       await into(energyObservationsTable).insert(
         EnergyObservationsTableCompanion.insert(
@@ -113,6 +136,31 @@ extension BackupRestoreDatabase on AppDatabase {
           absoluteState: Value(observation.absoluteState),
           relativeState: Value(observation.relativeState),
           estimateAtObservation: Value(observation.estimateAtObservation),
+          contractVersion: Value(observation.contractVersion),
+          referenceType: Value(observation.referenceType),
+          initialEstimateAtObservation: Value(
+            observation.initialEstimateAtObservation,
+          ),
+          estimatedOrdinalAtObservation: Value(
+            observation.estimatedOrdinalAtObservation,
+          ),
+          baseEnergyAtObservation: Value(observation.baseEnergyAtObservation),
+          ruleVersionAtObservation: Value(observation.ruleVersionAtObservation),
+          comparisonBandVersion: Value(observation.comparisonBandVersion),
+          personalizationVersionAtObservation: Value(
+            observation.personalizationVersionAtObservation,
+          ),
+          effectiveModelFingerprintAtObservation: Value(
+            observation.effectiveModelFingerprintAtObservation,
+          ),
+          modelRegimeEpochAtObservation: Value(
+            observation.modelRegimeEpochAtObservation,
+          ),
+          activeActivityCountAtObservation: Value(
+            observation.activeActivityCountAtObservation,
+          ),
+          coverageState: Value(observation.coverageState),
+          modelRegimeKey: Value(observation.modelRegimeKey),
           observedAt: observation.observedAt.toUtc(),
         ),
       );
@@ -163,12 +211,17 @@ extension BackupRestoreDatabase on AppDatabase {
     if (foreignKeyIssues.isNotEmpty) {
       throw StateError('Restored backup violates foreign keys');
     }
+    final integrity = await customSelect('PRAGMA integrity_check').get();
+    if (integrity.length != 1 || integrity.single.data.values.single != 'ok') {
+      throw StateError('Restored backup failed integrity_check');
+    }
     final expected = <String, int>{
       'rule_config_versions': backup.ruleVersions.length,
       'app_settings': 1,
       'morning_check_ins': backup.morningCheckIns.length,
       'activity_records': backup.activityRecords.length,
       'energy_observations': backup.energyObservations.length,
+      'activity_feedback': backup.activityFeedback.length,
       'daily_summaries': backup.dailySummaries.length,
       'prompt_receipts': backup.promptReceipts.length,
     };

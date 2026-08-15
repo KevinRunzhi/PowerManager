@@ -171,6 +171,56 @@ final class EnergyObservationsDao extends DatabaseAccessor<AppDatabase>
   }
 }
 
+@DriftAccessor(tables: [ActivityFeedbackTable])
+final class ActivityFeedbackDao extends DatabaseAccessor<AppDatabase>
+    with _$ActivityFeedbackDaoMixin {
+  ActivityFeedbackDao(super.attachedDatabase);
+
+  Future<void> insertFeedback(ActivityFeedbackTableCompanion feedback) async {
+    await into(activityFeedbackTable).insert(feedback);
+  }
+
+  Future<ActivityFeedbackRow?> findById(String id) {
+    return (select(
+      activityFeedbackTable,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+  }
+
+  Future<ActivityFeedbackRow?> findActiveForActivity(String activityRecordId) {
+    return (select(activityFeedbackTable)..where(
+          (row) =>
+              row.activityRecordId.equals(activityRecordId) &
+              row.status.equalsValue(ActivityFeedbackStatus.active),
+        ))
+        .getSingleOrNull();
+  }
+
+  Future<List<ActivityFeedbackRow>> listForActivity(String activityRecordId) {
+    return (select(activityFeedbackTable)
+          ..where((row) => row.activityRecordId.equals(activityRecordId))
+          ..orderBy([
+            (row) => OrderingTerm.asc(row.observedAt),
+            (row) => OrderingTerm.asc(row.id),
+          ]))
+        .get();
+  }
+
+  Future<List<ActivityFeedbackRow>> listAll() {
+    return (select(activityFeedbackTable)..orderBy([
+          (row) => OrderingTerm.asc(row.lifeDay),
+          (row) => OrderingTerm.asc(row.observedAt),
+          (row) => OrderingTerm.asc(row.id),
+        ]))
+        .get();
+  }
+
+  Future<int> updateById(String id, ActivityFeedbackTableCompanion changes) {
+    return (update(
+      activityFeedbackTable,
+    )..where((row) => row.id.equals(id))).write(changes);
+  }
+}
+
 @DriftAccessor(tables: [DailySummariesTable])
 final class DailySummariesDao extends DatabaseAccessor<AppDatabase>
     with _$DailySummariesDaoMixin {

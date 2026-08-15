@@ -2,9 +2,9 @@
 
 ## 0. 文档状态
 
-- 版本：1.1
+- 版本：1.3
 - 日期：2026-08-15
-- 状态：B0-1 已通过，可实施
+- 状态：已实现并通过自动化与 Pixel_7 模拟器验收
 - 数据库版本：schema v1 升级到 schema v2
 - 备份版本：支持导入 1，当前导出 2
 - 下一阶段：B0-3 正确观测与活动反馈合同
@@ -22,7 +22,8 @@
 - 当前数据体检无 P0 一致性错误；
 - 模拟器 latest 备份已复制到 App 沙箱外并验证摘要；
 - schema v1 fixture 和模拟器升级前聚合基线已经记录；
-- migration 测试可以从真实 v1 DDL 创建数据库，而不是从当前表定义伪造旧库。
+- migration 测试可以从实际启动过的 schema v1 SQLite 导出版本化 DDL（包含运行时索引和
+  触发器）创建数据库，而不是从当前表定义伪造旧库。
 
 ## 3. Schema 变更
 
@@ -34,6 +35,8 @@ legacyUnknown，禁止推算旧估计、模型、覆盖状态或档位。
 通过表重建完成组合 CHECK：
 
 - contractVersion 为空时允许 legacy 结构；
+- legacy 行除 coverageState 可明确为 `legacyUnknown` 外，其余新增字段必须为空；迁移统一写空，
+  不推算历史值；
 - contractVersion 为 mvp-b-observation-v1 时，全部必需快照字段完整；
 - referenceType、coverageState、ordinal 和计数只能取受支持值；
 - initialEstimateAtObservation 必须大于 0；
@@ -47,10 +50,16 @@ legacyUnknown，禁止推算旧估计、模型、覆盖状态或档位。
 新增 B0 版表，字段和约束以技术方案 2.2 节为准：
 
 - activityRecordId 外键 RESTRICT；
-- direction、impactSign、status 使用 CHECK；
+- direction 精确为 `strongerImpact / aboutRight / weakerImpact / directionMismatch`；
+- impactSign 精确为 `consumption / recovery / zero`，并与 theoreticalDeltaSnapshot 符号一致；
+- status 精确为 `active / invalidated`；
+- invalidationReason 精确为 `activityDeleted / activityEdited / integrityFailure`；新增原因必须先改
+  Spec、备份合同和迁移测试；
 - active 反馈的 invalidationReason 为空；
 - invalidated 反馈必须有 reason；
 - 同一活动最多一个 active 反馈；
+- active 反馈必须与当前活动的生活日、子类、时长、理论变化、应用变化、规则版本和 updatedAt
+  快照完全一致；invalidated 反馈允许当前活动已变化，但原快照仍须能由其规则版本稳定解释；
 - observedAt 与活动快照时间使用 UTC；
 - schema v2 所有反馈语义均为 userInitiated，不提前增加伪抽样字段。
 
@@ -66,11 +75,11 @@ legacyUnknown，禁止推算旧估计、模型、覆盖状态或档位。
 单个 Drift onUpgrade 事务执行：
 
 1. 验证 oldVersion 恰为 1；
-2. 关闭仅阻挡表重建的保护触发器；
-3. 创建 v2 临时 observation 表；
-4. 逐列复制 v1 observation，新增字段写 legacy 值；
-5. 核对源表和临时表数量、主键、唯一键；
-6. 替换旧表并重建索引；
+2. 关闭保护触发器并移除待重建 observation 索引；
+3. 将 v1 observation 表重命名为事务内 backup 表，按当前定义创建最终 v2 表；
+4. 从 backup 表逐列复制 v1 observation，新增字段统一写 null legacy 值；
+5. 双向核对源表和目标表数量及主键集合；
+6. 删除事务内 backup 表并重建索引；
 7. 创建 activity_feedback；
 8. 恢复全部保护触发器；
 9. 执行 foreign_key_check、integrity_check 和 schema 自检；
@@ -95,6 +104,8 @@ legacyUnknown，禁止推算旧估计、模型、覆盖状态或档位。
 
 - v1：新增 observation 字段映射为 legacy，activityFeedback 为空；
 - v2：严格验证新合同字段组合、外键、唯一 active feedback 和快照一致性；
+- v2 每条 observation 的全部新增 nullable 键以及每条 feedback 的全部键即使值为 null 也必须
+  存在，防止“字段缺失”被误判为 legacy；
 - 大于 2：在替换数据库前拒绝；
 - 损坏或未知枚举：在任何数据库写入前拒绝；
 - 恢复采用安全快照、事务替换、完整性检查、内存状态重建的既有顺序。

@@ -11,6 +11,7 @@ part 'app_database.g.dart';
 part 'backup_restore.dart';
 part 'converters.dart';
 part 'daos.dart';
+part 'migrations.dart';
 part 'tables.dart';
 
 @DriftDatabase(
@@ -20,6 +21,7 @@ part 'tables.dart';
     MorningCheckInsTable,
     ActivityRecordsTable,
     EnergyObservationsTable,
+    ActivityFeedbackTable,
     DailySummariesTable,
     PromptReceiptsTable,
   ],
@@ -29,6 +31,7 @@ part 'tables.dart';
     MorningCheckInsDao,
     ActivityRecordsDao,
     EnergyObservationsDao,
+    ActivityFeedbackDao,
     DailySummariesDao,
     PromptReceiptsDao,
   ],
@@ -37,14 +40,24 @@ final class AppDatabase extends _$AppDatabase {
   AppDatabase.forExecutor(
     QueryExecutor executor, {
     Clock clock = const SystemClock(),
-  }) : this._(executor, clock: clock);
+    SchemaMigrationFailureHook? migrationFailureHook,
+  }) : this._(
+         executor,
+         clock: clock,
+         migrationFailureHook: migrationFailureHook,
+       );
 
-  AppDatabase._(super.executor, {required this.clock});
+  AppDatabase._(
+    super.executor, {
+    required this.clock,
+    this.migrationFailureHook,
+  });
 
   final Clock clock;
+  final SchemaMigrationFailureHook? migrationFailureHook;
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -52,6 +65,7 @@ final class AppDatabase extends _$AppDatabase {
       await migrator.createAll();
       await _createSchemaExtras();
     },
+    onUpgrade: _upgradeSchema,
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
       await transaction(_seedDefaults);
@@ -60,9 +74,14 @@ final class AppDatabase extends _$AppDatabase {
 
   Future<void> _createSchemaExtras() async {
     await customStatement('''
-      CREATE UNIQUE INDEX energy_observations_one_daily_absolute
+      CREATE UNIQUE INDEX IF NOT EXISTS energy_observations_one_daily_absolute
       ON energy_observations (life_day)
       WHERE type = 'dailyAbsolute'
+    ''');
+    await customStatement('''
+      CREATE UNIQUE INDEX IF NOT EXISTS activity_feedback_one_active_per_activity
+      ON activity_feedback (activity_record_id)
+      WHERE status = 'active'
     ''');
     await _createProtectionTriggers();
   }
@@ -105,6 +124,14 @@ final class AppDatabase extends _$AppDatabase {
         OR EXISTS (
           SELECT 1 FROM daily_summaries
           WHERE rule_version = OLD.version
+        )
+        OR EXISTS (
+          SELECT 1 FROM energy_observations
+          WHERE rule_version_at_observation = OLD.version
+        )
+        OR EXISTS (
+          SELECT 1 FROM activity_feedback
+          WHERE rule_version_snapshot = OLD.version
         )
       BEGIN
         SELECT RAISE(ABORT, 'referenced rule versions are immutable');

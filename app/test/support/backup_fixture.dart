@@ -2,6 +2,7 @@ import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/life_day/life_day.dart';
 
 final backupFixtureNow = DateTime.utc(2026, 8, 9, 4);
 
@@ -43,5 +44,133 @@ PowerManagerExportDto backupFixture({int baseEnergy = 100}) {
     energyObservations: const [],
     dailySummaries: const [],
     promptReceipts: const [],
+  );
+}
+
+PowerManagerExportDto backupFixtureV2({int baseEnergy = 100}) {
+  final legacy = backupFixture(baseEnergy: baseEnergy);
+  final config = EnergyRuleConfig.v2MvpA();
+  final lifeDay = LifeDay(2026, 8, 8);
+  final activeDelta = config.theoreticalDelta(
+    ActivitySubcategory.homework,
+    DurationSlot.minutes30,
+  );
+  final deletedDelta = config.theoreticalDelta(
+    ActivitySubcategory.nap,
+    DurationSlot.minutes30,
+  );
+  final activeUpdatedAt = DateTime.utc(2026, 8, 8, 2);
+  final deletedSnapshotAt = DateTime.utc(2026, 8, 8, 1, 30);
+  final deletedAt = DateTime.utc(2026, 8, 8, 3, 30);
+  final activities = [
+    StoredEstimatedActivity(
+      id: 'activity-active-v2',
+      lifeDay: lifeDay,
+      completedAt: DateTime.utc(2026, 8, 8, 1),
+      createdAt: DateTime.utc(2026, 8, 8, 1),
+      updatedAt: activeUpdatedAt,
+      category: ActivityCategory.study,
+      subcategory: ActivitySubcategory.homework,
+      duration: DurationSlot.minutes30,
+      theoreticalDelta: activeDelta,
+      appliedDelta: activeDelta,
+      ruleVersion: config.ruleVersion,
+      status: ActivityRecordStatus.active,
+      deletedAt: null,
+    ),
+    StoredEstimatedActivity(
+      id: 'activity-deleted-v2',
+      lifeDay: lifeDay,
+      completedAt: DateTime.utc(2026, 8, 8, 1),
+      createdAt: DateTime.utc(2026, 8, 8, 1),
+      updatedAt: deletedAt,
+      category: ActivityCategory.recovery,
+      subcategory: ActivitySubcategory.nap,
+      duration: DurationSlot.minutes30,
+      theoreticalDelta: deletedDelta,
+      appliedDelta: deletedDelta,
+      ruleVersion: config.ruleVersion,
+      status: ActivityRecordStatus.deleted,
+      deletedAt: deletedAt,
+    ),
+  ];
+  return PowerManagerExportDto(
+    schemaVersion: 2,
+    exportedAt: legacy.exportedAt,
+    appVersion: '0.1.2+fixture',
+    appSettings: legacy.appSettings,
+    ruleVersions: legacy.ruleVersions,
+    morningCheckIns: legacy.morningCheckIns,
+    activityRecords: activities,
+    energyObservations: [
+      EnergyObservation(
+        id: 'observation-contract-v2',
+        lifeDay: lifeDay,
+        type: EnergyObservationType.dailyAbsolute,
+        absoluteState: AbsoluteEnergyState.good,
+        relativeState: null,
+        estimateAtObservation: baseEnergy + activeDelta,
+        observedAt: backupFixtureNow,
+        contractVersion: mvpBObservationContractV1,
+        referenceType: ObservationReferenceType.currentMoment,
+        initialEstimateAtObservation: baseEnergy,
+        estimatedOrdinalAtObservation: 4,
+        baseEnergyAtObservation: baseEnergy,
+        ruleVersionAtObservation: config.ruleVersion,
+        comparisonBandVersion: 'estimate-actual-ordinal-v1',
+        personalizationVersionAtObservation: 'fixed-mvp-a',
+        effectiveModelFingerprintAtObservation: 'fixed-mvp-a',
+        modelRegimeEpochAtObservation: 'fixed-mvp-a-initial',
+        activeActivityCountAtObservation: 1,
+        coverageState: ObservationCoverageState.confirmed,
+        modelRegimeKey: 'currentMoment|$baseEnergy|fixed-mvp-a-initial',
+      ),
+      EnergyObservation(
+        id: 'observation-legacy-v2',
+        lifeDay: lifeDay,
+        type: EnergyObservationType.relativeCorrection,
+        absoluteState: null,
+        relativeState: RelativeCorrection.aboutRight,
+        estimateAtObservation: baseEnergy + activeDelta,
+        observedAt: backupFixtureNow,
+        coverageState: ObservationCoverageState.legacyUnknown,
+      ),
+    ],
+    activityFeedback: [
+      ActivityFeedback(
+        id: 'feedback-active-v2',
+        activityRecordId: activities[0].id,
+        lifeDay: lifeDay,
+        subcategorySnapshot: activities[0].subcategory,
+        durationSnapshot: activities[0].duration,
+        theoreticalDeltaSnapshot: activeDelta,
+        appliedDeltaSnapshot: activeDelta,
+        impactSignSnapshot: ActivityImpactSign.consumption,
+        ruleVersionSnapshot: config.ruleVersion,
+        activityUpdatedAtSnapshot: activeUpdatedAt,
+        direction: ActivityFeedbackDirection.aboutRight,
+        status: ActivityFeedbackStatus.active,
+        invalidationReason: null,
+        observedAt: DateTime.utc(2026, 8, 8, 3),
+      ),
+      ActivityFeedback(
+        id: 'feedback-invalidated-v2',
+        activityRecordId: activities[1].id,
+        lifeDay: lifeDay,
+        subcategorySnapshot: activities[1].subcategory,
+        durationSnapshot: activities[1].duration,
+        theoreticalDeltaSnapshot: deletedDelta,
+        appliedDeltaSnapshot: deletedDelta,
+        impactSignSnapshot: ActivityImpactSign.recovery,
+        ruleVersionSnapshot: config.ruleVersion,
+        activityUpdatedAtSnapshot: deletedSnapshotAt,
+        direction: ActivityFeedbackDirection.strongerImpact,
+        status: ActivityFeedbackStatus.invalidated,
+        invalidationReason: ActivityFeedbackInvalidationReason.activityDeleted,
+        observedAt: DateTime.utc(2026, 8, 8, 3),
+      ),
+    ],
+    dailySummaries: legacy.dailySummaries,
+    promptReceipts: legacy.promptReceipts,
   );
 }

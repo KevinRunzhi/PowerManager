@@ -85,6 +85,137 @@ void main() {
   });
 
   test(
+    'schema v2 observation contract is complete or explicitly legacy',
+    () async {
+      final repository = DriftEnergyObservationsRepository(
+        EnergyObservationsDao(database),
+      );
+      await database.appSettingsDao.getSettings();
+      await repository.insert(_contractObservation(id: 'contract-valid'));
+
+      final stored = await repository.find('contract-valid');
+      expect(stored!.contractVersion, mvpBObservationContractV1);
+      expect(stored.referenceType, ObservationReferenceType.currentMoment);
+      expect(stored.coverageState, ObservationCoverageState.confirmed);
+
+      await expectLater(
+        database
+            .into(database.energyObservationsTable)
+            .insert(
+              EnergyObservationsTableCompanion.insert(
+                id: 'contract-incomplete',
+                lifeDay: LifeDay(2026, 7, 27),
+                type: EnergyObservationType.dailyAbsolute,
+                absoluteState: const Value(AbsoluteEnergyState.good),
+                estimateAtObservation: const Value(80),
+                contractVersion: const Value(mvpBObservationContractV1),
+                referenceType: const Value(
+                  ObservationReferenceType.currentMoment,
+                ),
+                observedAt: testNow,
+              ),
+            ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        database.customStatement(
+          '''
+        INSERT INTO energy_observations (
+          id, life_day, type, absolute_state, relative_state,
+          estimate_at_observation, contract_version, coverage_state, observed_at
+        ) VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?)
+      ''',
+          [
+            'legacy-with-confirmed-coverage',
+            '2026-07-28',
+            'dailyAbsolute',
+            'good',
+            80,
+            'confirmed',
+            testNow.millisecondsSinceEpoch ~/ 1000,
+          ],
+        ),
+        throwsA(isA<Exception>()),
+      );
+    },
+  );
+
+  test(
+    'activity feedback enforces snapshots, state shape, FK, and one active',
+    () async {
+      await database.appSettingsDao.getSettings();
+      final activities = DriftActivityRecordsRepository(
+        ActivityRecordsDao(database),
+      );
+      final feedback = DriftActivityFeedbackRepository(
+        ActivityFeedbackDao(database),
+      );
+      final activity = _feedbackActivity();
+      await activities.insert(activity);
+      await feedback.insert(
+        _feedback(id: 'feedback-active', activity: activity),
+      );
+
+      await expectLater(
+        feedback.insert(
+          _feedback(id: 'feedback-duplicate', activity: activity),
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        feedback.insert(
+          _feedback(
+            id: 'feedback-wrong-sign',
+            activity: activity,
+            impactSign: ActivityImpactSign.recovery,
+          ),
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        feedback.insert(
+          _feedback(
+            id: 'feedback-invalid-state',
+            activity: activity,
+            status: ActivityFeedbackStatus.invalidated,
+          ),
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        database.customStatement(
+          "DELETE FROM activity_records WHERE id = 'feedback-activity'",
+        ),
+        throwsA(isA<Exception>()),
+      );
+
+      final original = (await feedback.find('feedback-active'))!;
+      await feedback.update(
+        ActivityFeedback(
+          id: original.id,
+          activityRecordId: original.activityRecordId,
+          lifeDay: original.lifeDay,
+          subcategorySnapshot: original.subcategorySnapshot,
+          durationSnapshot: original.durationSnapshot,
+          theoreticalDeltaSnapshot: original.theoreticalDeltaSnapshot,
+          appliedDeltaSnapshot: original.appliedDeltaSnapshot,
+          impactSignSnapshot: original.impactSignSnapshot,
+          ruleVersionSnapshot: original.ruleVersionSnapshot,
+          activityUpdatedAtSnapshot: original.activityUpdatedAtSnapshot,
+          direction: original.direction,
+          status: ActivityFeedbackStatus.invalidated,
+          invalidationReason: ActivityFeedbackInvalidationReason.activityEdited,
+          observedAt: original.observedAt,
+        ),
+      );
+      await feedback.insert(
+        _feedback(id: 'feedback-replacement', activity: activity),
+      );
+      expect(await feedback.listForActivity(activity.id), hasLength(2));
+    },
+  );
+
+  test(
     'activity duration, status, category pairing, and rule FK are enforced',
     () async {
       final unixSeconds = testNow.millisecondsSinceEpoch ~/ 1000;
@@ -351,6 +482,77 @@ EnergyObservation _relativeObservation({required String id}) {
     absoluteState: null,
     relativeState: RelativeCorrection.aboutRight,
     estimateAtObservation: 72,
+    observedAt: testNow,
+  );
+}
+
+EnergyObservation _contractObservation({required String id}) {
+  return EnergyObservation(
+    id: id,
+    lifeDay: LifeDay(2026, 7, 26),
+    type: EnergyObservationType.dailyAbsolute,
+    absoluteState: AbsoluteEnergyState.good,
+    relativeState: null,
+    estimateAtObservation: 80,
+    observedAt: testNow,
+    contractVersion: mvpBObservationContractV1,
+    referenceType: ObservationReferenceType.currentMoment,
+    initialEstimateAtObservation: 100,
+    estimatedOrdinalAtObservation: 4,
+    baseEnergyAtObservation: 100,
+    ruleVersionAtObservation: energyRulesV2MvpAVersion,
+    comparisonBandVersion: 'estimate-actual-ordinal-v1',
+    personalizationVersionAtObservation: 'fixed-mvp-a',
+    effectiveModelFingerprintAtObservation: 'fixed-mvp-a',
+    modelRegimeEpochAtObservation: 'fixed-mvp-a-initial',
+    activeActivityCountAtObservation: 1,
+    coverageState: ObservationCoverageState.confirmed,
+    modelRegimeKey: 'regime-key',
+  );
+}
+
+StoredEstimatedActivity _feedbackActivity() {
+  final delta = EnergyRuleConfig.v2MvpA().theoreticalDelta(
+    ActivitySubcategory.homework,
+    DurationSlot.minutes30,
+  );
+  return StoredEstimatedActivity(
+    id: 'feedback-activity',
+    lifeDay: LifeDay(2026, 7, 26),
+    completedAt: testNow.subtract(const Duration(hours: 1)),
+    createdAt: testNow.subtract(const Duration(hours: 2)),
+    updatedAt: testNow.subtract(const Duration(minutes: 30)),
+    category: ActivityCategory.study,
+    subcategory: ActivitySubcategory.homework,
+    duration: DurationSlot.minutes30,
+    theoreticalDelta: delta,
+    appliedDelta: delta,
+    ruleVersion: energyRulesV2MvpAVersion,
+    status: ActivityRecordStatus.active,
+    deletedAt: null,
+  );
+}
+
+ActivityFeedback _feedback({
+  required String id,
+  required StoredEstimatedActivity activity,
+  ActivityImpactSign impactSign = ActivityImpactSign.consumption,
+  ActivityFeedbackStatus status = ActivityFeedbackStatus.active,
+}) {
+  return ActivityFeedback(
+    id: id,
+    activityRecordId: activity.id,
+    lifeDay: activity.lifeDay,
+    subcategorySnapshot: activity.subcategory,
+    durationSnapshot: activity.duration,
+    theoreticalDeltaSnapshot: activity.theoreticalDelta,
+    appliedDeltaSnapshot: activity.appliedDelta,
+    impactSignSnapshot: impactSign,
+    ruleVersionSnapshot: activity.ruleVersion,
+    activityUpdatedAtSnapshot: activity.updatedAt,
+    direction: ActivityFeedbackDirection.aboutRight,
+    status: status,
+    invalidationReason: null,
     observedAt: testNow,
   );
 }

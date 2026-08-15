@@ -139,6 +139,10 @@ class ActivityRecordsTable extends Table {
   name: 'energy_observations_life_day_time',
   columns: {#lifeDay, #observedAt, #id},
 )
+@TableIndex(
+  name: 'energy_observations_contract_lookup',
+  columns: {#lifeDay, #type, #contractVersion},
+)
 class EnergyObservationsTable extends Table {
   @override
   String get tableName => 'energy_observations';
@@ -157,6 +161,36 @@ class EnergyObservationsTable extends Table {
       .nullable()();
   IntColumn get estimateAtObservation =>
       integer().named('estimate_at_observation').nullable()();
+  TextColumn get contractVersion =>
+      text().named('contract_version').nullable()();
+  TextColumn get referenceType => text()
+      .named('reference_type')
+      .map(const ObservationReferenceTypeConverter())
+      .nullable()();
+  IntColumn get initialEstimateAtObservation =>
+      integer().named('initial_estimate_at_observation').nullable()();
+  IntColumn get estimatedOrdinalAtObservation =>
+      integer().named('estimated_ordinal_at_observation').nullable()();
+  IntColumn get baseEnergyAtObservation =>
+      integer().named('base_energy_at_observation').nullable()();
+  TextColumn get ruleVersionAtObservation =>
+      text().named('rule_version_at_observation').nullable()();
+  TextColumn get comparisonBandVersion =>
+      text().named('comparison_band_version').nullable()();
+  TextColumn get personalizationVersionAtObservation =>
+      text().named('personalization_version_at_observation').nullable()();
+  TextColumn get effectiveModelFingerprintAtObservation =>
+      text().named('effective_model_fingerprint_at_observation').nullable()();
+  TextColumn get modelRegimeEpochAtObservation =>
+      text().named('model_regime_epoch_at_observation').nullable()();
+  IntColumn get activeActivityCountAtObservation =>
+      integer().named('active_activity_count_at_observation').nullable()();
+  TextColumn get coverageState => text()
+      .named('coverage_state')
+      .map(const ObservationCoverageStateConverter())
+      .nullable()();
+  TextColumn get modelRegimeKey =>
+      text().named('model_regime_key').nullable()();
   DateTimeColumn get observedAt => dateTime().named('observed_at')();
 
   @override
@@ -168,7 +202,85 @@ class EnergyObservationsTable extends Table {
     "CHECK (type IN ('dailyAbsolute', 'relativeCorrection'))",
     "CHECK (absolute_state IS NULL OR absolute_state IN ('exhausted', 'low', 'okay', 'good', 'full'))",
     "CHECK (relative_state IS NULL OR relative_state IN ('lower', 'aboutRight', 'higher'))",
-    "CHECK ((type = 'dailyAbsolute' AND absolute_state IS NOT NULL AND relative_state IS NULL) OR (type = 'relativeCorrection' AND absolute_state IS NULL AND relative_state IS NOT NULL AND estimate_at_observation IS NOT NULL))",
+    "CHECK (contract_version IS NULL OR contract_version = 'mvp-b-observation-v1')",
+    "CHECK (reference_type IS NULL OR reference_type IN ('currentMoment', 'previousLifeDayEnd'))",
+    'CHECK (initial_estimate_at_observation IS NULL OR initial_estimate_at_observation > 0)',
+    'CHECK (estimated_ordinal_at_observation IS NULL OR estimated_ordinal_at_observation BETWEEN 0 AND 4)',
+    'CHECK (base_energy_at_observation IS NULL OR base_energy_at_observation BETWEEN 60 AND 140)',
+    'CHECK (active_activity_count_at_observation IS NULL OR active_activity_count_at_observation >= 0)',
+    "CHECK (coverage_state IS NULL OR coverage_state IN ('confirmed', 'uncertain', 'legacyUnknown'))",
+    "CHECK (rule_version_at_observation IS NULL OR length(trim(rule_version_at_observation)) > 0)",
+    "CHECK (comparison_band_version IS NULL OR length(trim(comparison_band_version)) > 0)",
+    "CHECK (personalization_version_at_observation IS NULL OR length(trim(personalization_version_at_observation)) > 0)",
+    "CHECK (effective_model_fingerprint_at_observation IS NULL OR length(trim(effective_model_fingerprint_at_observation)) > 0)",
+    "CHECK (model_regime_epoch_at_observation IS NULL OR length(trim(model_regime_epoch_at_observation)) > 0)",
+    "CHECK (model_regime_key IS NULL OR length(trim(model_regime_key)) > 0)",
+    "CHECK ((type = 'dailyAbsolute' AND absolute_state IS NOT NULL AND relative_state IS NULL AND (((contract_version IS NULL) AND reference_type IS NULL AND initial_estimate_at_observation IS NULL AND estimated_ordinal_at_observation IS NULL AND base_energy_at_observation IS NULL AND rule_version_at_observation IS NULL AND comparison_band_version IS NULL AND personalization_version_at_observation IS NULL AND effective_model_fingerprint_at_observation IS NULL AND model_regime_epoch_at_observation IS NULL AND active_activity_count_at_observation IS NULL AND (coverage_state IS NULL OR coverage_state = 'legacyUnknown') AND model_regime_key IS NULL) OR (contract_version = 'mvp-b-observation-v1' AND estimate_at_observation IS NOT NULL AND reference_type IS NOT NULL AND initial_estimate_at_observation IS NOT NULL AND estimated_ordinal_at_observation IS NOT NULL AND base_energy_at_observation IS NOT NULL AND rule_version_at_observation IS NOT NULL AND comparison_band_version IS NOT NULL AND personalization_version_at_observation IS NOT NULL AND effective_model_fingerprint_at_observation IS NOT NULL AND model_regime_epoch_at_observation IS NOT NULL AND active_activity_count_at_observation IS NOT NULL AND coverage_state IN ('confirmed', 'uncertain') AND model_regime_key IS NOT NULL))) OR (type = 'relativeCorrection' AND absolute_state IS NULL AND relative_state IS NOT NULL AND estimate_at_observation IS NOT NULL AND contract_version IS NULL AND reference_type IS NULL AND initial_estimate_at_observation IS NULL AND estimated_ordinal_at_observation IS NULL AND base_energy_at_observation IS NULL AND rule_version_at_observation IS NULL AND comparison_band_version IS NULL AND personalization_version_at_observation IS NULL AND effective_model_fingerprint_at_observation IS NULL AND model_regime_epoch_at_observation IS NULL AND active_activity_count_at_observation IS NULL AND (coverage_state IS NULL OR coverage_state = 'legacyUnknown') AND model_regime_key IS NULL))",
+    'FOREIGN KEY (rule_version_at_observation) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  ];
+}
+
+@DataClassName('ActivityFeedbackRow')
+@TableIndex(
+  name: 'activity_feedback_activity_order',
+  columns: {#activityRecordId, #observedAt, #id},
+)
+@TableIndex(
+  name: 'activity_feedback_life_day_status',
+  columns: {#lifeDay, #status, #observedAt, #id},
+)
+class ActivityFeedbackTable extends Table {
+  @override
+  String get tableName => 'activity_feedback';
+
+  TextColumn get id => text()();
+  TextColumn get activityRecordId => text().named('activity_record_id')();
+  TextColumn get lifeDay =>
+      text().named('life_day').map(const LifeDayConverter())();
+  TextColumn get subcategorySnapshot => text()
+      .named('subcategory_snapshot')
+      .map(const ActivitySubcategoryConverter())();
+  IntColumn get durationSnapshot => integer()
+      .named('duration_minutes_snapshot')
+      .map(const DurationSlotConverter())();
+  IntColumn get theoreticalDeltaSnapshot =>
+      integer().named('theoretical_delta_snapshot')();
+  IntColumn get appliedDeltaSnapshot =>
+      integer().named('applied_delta_snapshot')();
+  TextColumn get impactSignSnapshot => text()
+      .named('impact_sign_snapshot')
+      .map(const ActivityImpactSignConverter())();
+  TextColumn get ruleVersionSnapshot => text().named('rule_version_snapshot')();
+  DateTimeColumn get activityUpdatedAtSnapshot =>
+      dateTime().named('activity_updated_at_snapshot')();
+  TextColumn get direction =>
+      text().map(const ActivityFeedbackDirectionConverter())();
+  TextColumn get status =>
+      text().map(const ActivityFeedbackStatusConverter())();
+  TextColumn get invalidationReason => text()
+      .named('invalidation_reason')
+      .map(const ActivityFeedbackInvalidationReasonConverter())
+      .nullable()();
+  DateTimeColumn get observedAt => dateTime().named('observed_at')();
+
+  @override
+  Set<Column> get primaryKey => {id};
+
+  @override
+  List<String> get customConstraints => const [
+    "CHECK (length(trim(id)) > 0)",
+    "CHECK (length(trim(activity_record_id)) > 0)",
+    "CHECK (subcategory_snapshot IN ('classAttendance', 'selfStudyOrThesis', 'homework', 'reviewOrExamPrep', 'organizeOrSummarize', 'otherStudy', 'implementationOrDevelopment', 'experiment', 'projectProgress', 'debuggingOrRevision', 'organizationOrAdministration', 'otherPractice', 'nap', 'lightActivity', 'mentalReset', 'exerciseRecovery', 'lifeMaintenance', 'otherRecovery', 'gaming', 'shortVideo', 'seriesOrMovie', 'chatOrSocial', 'hobbyEntertainment', 'otherLeisure'))",
+    'CHECK (duration_minutes_snapshot IN (15, 30, 45, 60, 90, 120))',
+    "CHECK (impact_sign_snapshot IN ('consumption', 'recovery', 'zero'))",
+    "CHECK ((impact_sign_snapshot = 'consumption' AND theoretical_delta_snapshot < 0) OR (impact_sign_snapshot = 'recovery' AND theoretical_delta_snapshot > 0) OR (impact_sign_snapshot = 'zero' AND theoretical_delta_snapshot = 0))",
+    "CHECK (length(trim(rule_version_snapshot)) > 0)",
+    "CHECK (direction IN ('strongerImpact', 'aboutRight', 'weakerImpact', 'directionMismatch'))",
+    "CHECK (status IN ('active', 'invalidated'))",
+    "CHECK (invalidation_reason IS NULL OR invalidation_reason IN ('activityDeleted', 'activityEdited', 'integrityFailure'))",
+    "CHECK ((status = 'active' AND invalidation_reason IS NULL) OR (status = 'invalidated' AND invalidation_reason IS NOT NULL))",
+    'FOREIGN KEY (activity_record_id) REFERENCES activity_records(id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+    'FOREIGN KEY (rule_version_snapshot) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT',
   ];
 }
 

@@ -65,7 +65,7 @@ class _HealthContent extends StatelessWidget {
           children: [
             Text(
               report.integrityPassed
-                  ? 'schema v1 完整重放通过 · 0 项异常'
+                  ? 'schema v${report.schemaVersion} 完整重放通过 · 0 项异常'
                   : '发现至少 1 项一致性问题，请先导出备份并保留当前数据。',
             ),
             const SizedBox(height: AppSpacing.x2),
@@ -88,7 +88,7 @@ class _HealthContent extends StatelessWidget {
           children: [
             Text(
               report.mvpBUpgradeReadiness.isReady
-                  ? '已准备：本机备份完整且与当前 schema v1 数据一致。'
+                  ? '已准备：本机备份完整且与当前 schema v${report.schemaVersion} 数据一致。'
                   : '未准备：${_readinessStatusText(report.mvpBUpgradeReadiness.status)}',
               key: const Key('mvp-b-upgrade-readiness-health-label'),
             ),
@@ -152,6 +152,19 @@ class _HealthContent extends StatelessWidget {
             ),
             _MetricLine(label: '每日实际状态', value: '${report.dailyActualStates}'),
             _MetricLine(label: '随时校正', value: '${report.relativeCorrections}'),
+            _MetricLine(
+              label: 'Legacy 观测',
+              value: '${report.legacyObservations}',
+            ),
+            _MetricLine(
+              label: '新合同观测',
+              value: '${report.contractObservations}',
+            ),
+            _MetricLine(
+              label: '活动反馈',
+              value:
+                  '${report.activityFeedback}（active ${report.activeActivityFeedback} / 失效 ${report.invalidatedActivityFeedback}）',
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.x4),

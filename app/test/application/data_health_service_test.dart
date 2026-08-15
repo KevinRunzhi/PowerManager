@@ -39,6 +39,7 @@ void main() {
         _activity(day1, 'active'),
         _activity(day1, 'deleted', deleted: true),
       ],
+      feedback: [_feedback(active: true), _feedback(active: false)],
     ).check();
 
     expect(report.integrityPassed, isTrue);
@@ -51,6 +52,12 @@ void main() {
     expect(report.relativeCorrections, 1);
     expect(report.activityRecords, 2);
     expect(report.deletedActivityRecords, 1);
+    expect(report.schemaVersion, 2);
+    expect(report.legacyObservations, 3);
+    expect(report.contractObservations, 0);
+    expect(report.activityFeedback, 2);
+    expect(report.activeActivityFeedback, 1);
+    expect(report.invalidatedActivityFeedback, 1);
     expect(report.daysUntilLegacyDiscussionCount, 13);
     expect(
       report.mvpBUpgradeReadiness.status,
@@ -84,6 +91,7 @@ void main() {
   test('fourteen observations only reaches the discussion count', () {
     final report = DataHealthReport(
       checkedAt: backupFixtureNow,
+      schemaVersion: 2,
       integrityPassed: true,
       settledDays: 14,
       standardEffectiveDays: 14,
@@ -107,6 +115,7 @@ DataHealthService _service({
   required List<DailySummary> summaries,
   required List<EnergyObservation> observations,
   List<StoredEstimatedActivity> activities = const [],
+  List<ActivityFeedback> feedback = const [],
   String? exportContents,
 }) {
   return DataHealthService(
@@ -118,6 +127,7 @@ DataHealthService _service({
     mornings: _Mornings(),
     activities: _Activities(activities),
     observations: _Observations(observations),
+    feedback: _Feedback(feedback),
     summaries: _Summaries(summaries),
     localBackupStore: _BackupStore(),
     upgradeReadiness: const _ReadinessChecker(),
@@ -283,6 +293,50 @@ final class _Observations implements EnergyObservationsRepository {
   @override
   Future<void> update(EnergyObservation observation) =>
       throw UnimplementedError();
+}
+
+final class _Feedback implements ActivityFeedbackRepository {
+  const _Feedback(this.items);
+
+  final List<ActivityFeedback> items;
+
+  @override
+  Future<List<ActivityFeedback>> list() async => items;
+  @override
+  Future<ActivityFeedback?> find(String id) => throw UnimplementedError();
+  @override
+  Future<ActivityFeedback?> findActiveForActivity(String activityRecordId) =>
+      throw UnimplementedError();
+  @override
+  Future<void> insert(ActivityFeedback feedback) => throw UnimplementedError();
+  @override
+  Future<List<ActivityFeedback>> listForActivity(String activityRecordId) =>
+      throw UnimplementedError();
+  @override
+  Future<void> update(ActivityFeedback feedback) => throw UnimplementedError();
+}
+
+ActivityFeedback _feedback({required bool active}) {
+  return ActivityFeedback(
+    id: active ? 'active-feedback' : 'invalidated-feedback',
+    activityRecordId: active ? 'active' : 'deleted',
+    lifeDay: LifeDay(2026, 8, 1),
+    subcategorySnapshot: ActivitySubcategory.homework,
+    durationSnapshot: DurationSlot.minutes30,
+    theoreticalDeltaSnapshot: -8,
+    appliedDeltaSnapshot: -8,
+    impactSignSnapshot: ActivityImpactSign.consumption,
+    ruleVersionSnapshot: 'test',
+    activityUpdatedAtSnapshot: DateTime.utc(2026, 8, 1, 8),
+    direction: ActivityFeedbackDirection.aboutRight,
+    status: active
+        ? ActivityFeedbackStatus.active
+        : ActivityFeedbackStatus.invalidated,
+    invalidationReason: active
+        ? null
+        : ActivityFeedbackInvalidationReason.activityDeleted,
+    observedAt: DateTime.utc(2026, 8, 1, 9),
+  );
 }
 
 final class _Summaries implements DailySummariesRepository {

@@ -156,7 +156,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
           icon: const Icon(Icons.ios_share_rounded),
           label: Text(_exporting ? '正在准备…' : '分享 JSON'),
         ),
-        const Text('导出包含七类 MVP-A 数据、规则版本和逻辑删除记录。'),
+        const Text('导出包含原七类数据、活动反馈、规则版本和逻辑删除记录。'),
         const SizedBox(height: AppSpacing.x3),
         OutlinedButton.icon(
           key: const Key('data-health-button'),
@@ -601,6 +601,7 @@ class BackupPreviewSheet extends StatelessWidget {
             const SizedBox(height: AppSpacing.x3),
             _PreviewLine(label: '文件', value: inspection.fileName),
             _PreviewLine(label: '来源版本', value: backup.appVersion),
+            _PreviewLine(label: '备份 Schema', value: 'v${backup.schemaVersion}'),
             _PreviewLine(
               label: '导出时间',
               value: backup.exportedAt.toLocal().toString(),
@@ -627,6 +628,11 @@ class BackupPreviewSheet extends StatelessWidget {
               label: '实际状态',
               value:
                   '${currentCounts.energyObservations} → ${inspection.counts.energyObservations}',
+            ),
+            _PreviewLine(
+              label: '活动反馈',
+              value:
+                  '${currentCounts.activityFeedback} → ${inspection.counts.activityFeedback}',
             ),
             _PreviewLine(
               label: '日总结',

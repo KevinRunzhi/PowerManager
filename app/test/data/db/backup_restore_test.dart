@@ -44,6 +44,34 @@ void main() {
     );
   });
 
+  test('schema v2 restore preserves active and invalidated feedback', () async {
+    final backup = backupFixtureV2(baseEnergy: 120);
+
+    await database.replaceWithBackup(backup);
+
+    expect(
+      (await database.appSettingsDao.getSettings()).baseEstimatedEnergy,
+      120,
+    );
+    expect(await database.activityRecordsDao.listAllForExport(), hasLength(2));
+    final feedback = await database.activityFeedbackDao.listAll();
+    expect(feedback, hasLength(2));
+    expect(
+      feedback.where((item) => item.status == ActivityFeedbackStatus.active),
+      hasLength(1),
+    );
+    expect(
+      feedback
+          .where((item) => item.status == ActivityFeedbackStatus.invalidated)
+          .single
+          .invalidationReason,
+      ActivityFeedbackInvalidationReason.activityDeleted,
+    );
+    final observations = await database.energyObservationsDao.listAll();
+    expect(observations, hasLength(2));
+    expect(observations.first.contractVersion, mvpBObservationContractV1);
+  });
+
   test(
     'failure after clear rolls back old data and protection triggers',
     () async {
@@ -110,6 +138,31 @@ void main() {
     );
     expect(await database.ruleConfigVersionsDao.listVersions(), hasLength(1));
   });
+
+  test(
+    'failure after feedback rolls back rows and restores triggers',
+    () async {
+      await expectLater(
+        database.replaceWithBackup(
+          backupFixtureV2(baseEnergy: 120),
+          failureHook: (checkpoint) async {
+            if (checkpoint == 'after-feedback') throw StateError('injected');
+          },
+        ),
+        throwsStateError,
+      );
+
+      expect(
+        (await database.appSettingsDao.getSettings()).baseEstimatedEnergy,
+        100,
+      );
+      expect(await database.activityFeedbackDao.listAll(), isEmpty);
+      await expectLater(
+        database.customStatement('DELETE FROM app_settings'),
+        throwsA(anything),
+      );
+    },
+  );
 }
 
 String _emptyCategories() {

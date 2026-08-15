@@ -200,6 +200,31 @@ final class DriftEnergyObservationsRepository
         absoluteState: Value(observation.absoluteState),
         relativeState: Value(observation.relativeState),
         estimateAtObservation: Value(observation.estimateAtObservation),
+        contractVersion: Value(observation.contractVersion),
+        referenceType: Value(observation.referenceType),
+        initialEstimateAtObservation: Value(
+          observation.initialEstimateAtObservation,
+        ),
+        estimatedOrdinalAtObservation: Value(
+          observation.estimatedOrdinalAtObservation,
+        ),
+        baseEnergyAtObservation: Value(observation.baseEnergyAtObservation),
+        ruleVersionAtObservation: Value(observation.ruleVersionAtObservation),
+        comparisonBandVersion: Value(observation.comparisonBandVersion),
+        personalizationVersionAtObservation: Value(
+          observation.personalizationVersionAtObservation,
+        ),
+        effectiveModelFingerprintAtObservation: Value(
+          observation.effectiveModelFingerprintAtObservation,
+        ),
+        modelRegimeEpochAtObservation: Value(
+          observation.modelRegimeEpochAtObservation,
+        ),
+        activeActivityCountAtObservation: Value(
+          observation.activeActivityCountAtObservation,
+        ),
+        coverageState: Value(observation.coverageState),
+        modelRegimeKey: Value(observation.modelRegimeKey),
         observedAt: observation.observedAt.toUtc(),
       ),
     );
@@ -215,6 +240,31 @@ final class DriftEnergyObservationsRepository
         absoluteState: Value(observation.absoluteState),
         relativeState: Value(observation.relativeState),
         estimateAtObservation: Value(observation.estimateAtObservation),
+        contractVersion: Value(observation.contractVersion),
+        referenceType: Value(observation.referenceType),
+        initialEstimateAtObservation: Value(
+          observation.initialEstimateAtObservation,
+        ),
+        estimatedOrdinalAtObservation: Value(
+          observation.estimatedOrdinalAtObservation,
+        ),
+        baseEnergyAtObservation: Value(observation.baseEnergyAtObservation),
+        ruleVersionAtObservation: Value(observation.ruleVersionAtObservation),
+        comparisonBandVersion: Value(observation.comparisonBandVersion),
+        personalizationVersionAtObservation: Value(
+          observation.personalizationVersionAtObservation,
+        ),
+        effectiveModelFingerprintAtObservation: Value(
+          observation.effectiveModelFingerprintAtObservation,
+        ),
+        modelRegimeEpochAtObservation: Value(
+          observation.modelRegimeEpochAtObservation,
+        ),
+        activeActivityCountAtObservation: Value(
+          observation.activeActivityCountAtObservation,
+        ),
+        coverageState: Value(observation.coverageState),
+        modelRegimeKey: Value(observation.modelRegimeKey),
         observedAt: Value(observation.observedAt.toUtc()),
       ),
     );
@@ -235,6 +285,71 @@ final class DriftEnergyObservationsRepository
   @override
   Future<List<EnergyObservation>> list() async {
     return (await dao.listAll()).map(_mapObservation).toList();
+  }
+}
+
+final class DriftActivityFeedbackRepository
+    implements ActivityFeedbackRepository {
+  const DriftActivityFeedbackRepository(this.dao);
+
+  final ActivityFeedbackDao dao;
+
+  @override
+  Future<void> insert(ActivityFeedback feedback) {
+    return dao.insertFeedback(_feedbackCompanion(feedback));
+  }
+
+  @override
+  Future<void> update(ActivityFeedback feedback) async {
+    final changed = await dao.updateById(
+      feedback.id,
+      ActivityFeedbackTableCompanion(
+        activityRecordId: Value(feedback.activityRecordId),
+        lifeDay: Value(feedback.lifeDay),
+        subcategorySnapshot: Value(feedback.subcategorySnapshot),
+        durationSnapshot: Value(feedback.durationSnapshot),
+        theoreticalDeltaSnapshot: Value(feedback.theoreticalDeltaSnapshot),
+        appliedDeltaSnapshot: Value(feedback.appliedDeltaSnapshot),
+        impactSignSnapshot: Value(feedback.impactSignSnapshot),
+        ruleVersionSnapshot: Value(feedback.ruleVersionSnapshot),
+        activityUpdatedAtSnapshot: Value(
+          feedback.activityUpdatedAtSnapshot.toUtc(),
+        ),
+        direction: Value(feedback.direction),
+        status: Value(feedback.status),
+        invalidationReason: Value(feedback.invalidationReason),
+        observedAt: Value(feedback.observedAt.toUtc()),
+      ),
+    );
+    _expectOneChanged(changed, 'activity feedback ${feedback.id}');
+  }
+
+  @override
+  Future<ActivityFeedback?> find(String id) async {
+    final row = await dao.findById(id);
+    return row == null ? null : _mapFeedback(row);
+  }
+
+  @override
+  Future<ActivityFeedback?> findActiveForActivity(
+    String activityRecordId,
+  ) async {
+    final row = await dao.findActiveForActivity(activityRecordId);
+    return row == null ? null : _mapFeedback(row);
+  }
+
+  @override
+  Future<List<ActivityFeedback>> listForActivity(
+    String activityRecordId,
+  ) async {
+    return (await dao.listForActivity(
+      activityRecordId,
+    )).map(_mapFeedback).toList();
+  }
+
+  @override
+  Future<List<ActivityFeedback>> list() async {
+    return (await dao.listAll()).map(_mapFeedback).toList();
   }
 }
 
@@ -412,6 +527,59 @@ EnergyObservation _mapObservation(EnergyObservationRow row) {
     relativeState: row.relativeState,
     estimateAtObservation: row.estimateAtObservation,
     observedAt: row.observedAt.toUtc(),
+    contractVersion: row.contractVersion,
+    referenceType: row.referenceType,
+    initialEstimateAtObservation: row.initialEstimateAtObservation,
+    estimatedOrdinalAtObservation: row.estimatedOrdinalAtObservation,
+    baseEnergyAtObservation: row.baseEnergyAtObservation,
+    ruleVersionAtObservation: row.ruleVersionAtObservation,
+    comparisonBandVersion: row.comparisonBandVersion,
+    personalizationVersionAtObservation:
+        row.personalizationVersionAtObservation,
+    effectiveModelFingerprintAtObservation:
+        row.effectiveModelFingerprintAtObservation,
+    modelRegimeEpochAtObservation: row.modelRegimeEpochAtObservation,
+    activeActivityCountAtObservation: row.activeActivityCountAtObservation,
+    coverageState: row.coverageState,
+    modelRegimeKey: row.modelRegimeKey,
+  );
+}
+
+ActivityFeedback _mapFeedback(ActivityFeedbackRow row) {
+  return ActivityFeedback(
+    id: row.id,
+    activityRecordId: row.activityRecordId,
+    lifeDay: row.lifeDay,
+    subcategorySnapshot: row.subcategorySnapshot,
+    durationSnapshot: row.durationSnapshot,
+    theoreticalDeltaSnapshot: row.theoreticalDeltaSnapshot,
+    appliedDeltaSnapshot: row.appliedDeltaSnapshot,
+    impactSignSnapshot: row.impactSignSnapshot,
+    ruleVersionSnapshot: row.ruleVersionSnapshot,
+    activityUpdatedAtSnapshot: row.activityUpdatedAtSnapshot.toUtc(),
+    direction: row.direction,
+    status: row.status,
+    invalidationReason: row.invalidationReason,
+    observedAt: row.observedAt.toUtc(),
+  );
+}
+
+ActivityFeedbackTableCompanion _feedbackCompanion(ActivityFeedback feedback) {
+  return ActivityFeedbackTableCompanion.insert(
+    id: feedback.id,
+    activityRecordId: feedback.activityRecordId,
+    lifeDay: feedback.lifeDay,
+    subcategorySnapshot: feedback.subcategorySnapshot,
+    durationSnapshot: feedback.durationSnapshot,
+    theoreticalDeltaSnapshot: feedback.theoreticalDeltaSnapshot,
+    appliedDeltaSnapshot: feedback.appliedDeltaSnapshot,
+    impactSignSnapshot: feedback.impactSignSnapshot,
+    ruleVersionSnapshot: feedback.ruleVersionSnapshot,
+    activityUpdatedAtSnapshot: feedback.activityUpdatedAtSnapshot.toUtc(),
+    direction: feedback.direction,
+    status: feedback.status,
+    invalidationReason: Value(feedback.invalidationReason),
+    observedAt: feedback.observedAt.toUtc(),
   );
 }
 

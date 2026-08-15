@@ -734,7 +734,7 @@ void main() {
       find.byKey(const Key('mvp-b-upgrade-ready-details')),
       findsOneWidget,
     );
-    expect(find.textContaining('schema v1'), findsOneWidget);
+    expect(find.textContaining('schema v2'), findsOneWidget);
   });
 
   testWidgets('data health shows aggregate coverage without private details', (
@@ -1179,11 +1179,12 @@ MvpBUpgradeReadinessReport _readyReadiness() => MvpBUpgradeReadinessReport(
     modifiedAt: DateTime.utc(2026, 8, 9, 12),
     byteLength: 4096,
   ),
-  backupSchemaVersion: 1,
+  backupSchemaVersion: 2,
 );
 
 DataHealthReport _dataHealthReport() => DataHealthReport(
   checkedAt: DateTime.utc(2026, 8, 9, 12),
+  schemaVersion: 2,
   integrityPassed: true,
   settledDays: 8,
   standardEffectiveDays: 5,

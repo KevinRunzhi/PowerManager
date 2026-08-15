@@ -1,6 +1,6 @@
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 
-/// Canonical schema-v1 transport shape shared by JSON export and restore.
+/// Canonical schema-v1/v2 transport shape shared by JSON export and restore.
 final class PowerManagerExportDto {
   PowerManagerExportDto({
     required this.schemaVersion,
@@ -11,12 +11,14 @@ final class PowerManagerExportDto {
     required List<MorningCheckIn> morningCheckIns,
     required List<StoredEstimatedActivity> activityRecords,
     required List<EnergyObservation> energyObservations,
+    List<ActivityFeedback> activityFeedback = const [],
     required List<DailySummary> dailySummaries,
     required List<PromptReceipt> promptReceipts,
   }) : ruleVersions = List.unmodifiable(ruleVersions),
        morningCheckIns = List.unmodifiable(morningCheckIns),
        activityRecords = List.unmodifiable(activityRecords),
        energyObservations = List.unmodifiable(energyObservations),
+       activityFeedback = List.unmodifiable(activityFeedback),
        dailySummaries = List.unmodifiable(dailySummaries),
        promptReceipts = List.unmodifiable(promptReceipts);
 
@@ -30,11 +32,12 @@ final class PowerManagerExportDto {
   /// Must include active and logically deleted rows.
   final List<StoredEstimatedActivity> activityRecords;
   final List<EnergyObservation> energyObservations;
+  final List<ActivityFeedback> activityFeedback;
   final List<DailySummary> dailySummaries;
   final List<PromptReceipt> promptReceipts;
 
   Map<String, Object?> toJson() {
-    return {
+    return <String, Object?>{
       'schemaVersion': schemaVersion,
       'exportedAt': _utc(exportedAt),
       'appVersion': appVersion,
@@ -42,7 +45,11 @@ final class PowerManagerExportDto {
       'ruleConfigVersions': ruleVersions.map(_ruleVersionJson).toList(),
       'morningCheckIns': morningCheckIns.map(_checkInJson).toList(),
       'activityRecords': activityRecords.map(_activityJson).toList(),
-      'energyObservations': energyObservations.map(_observationJson).toList(),
+      'energyObservations': energyObservations
+          .map((item) => _observationJson(item, schemaVersion: schemaVersion))
+          .toList(),
+      if (schemaVersion >= 2)
+        'activityFeedback': activityFeedback.map(_feedbackJson).toList(),
       'dailySummaries': dailySummaries.map(_summaryJson).toList(),
       'promptReceipts': promptReceipts.map(_receiptJson).toList(),
     };
@@ -104,7 +111,10 @@ Map<String, Object?> _activityJson(StoredEstimatedActivity activity) {
   };
 }
 
-Map<String, Object?> _observationJson(EnergyObservation observation) {
+Map<String, Object?> _observationJson(
+  EnergyObservation observation, {
+  required int schemaVersion,
+}) {
   return {
     'id': observation.id,
     'lifeDay': observation.lifeDay.toString(),
@@ -112,7 +122,46 @@ Map<String, Object?> _observationJson(EnergyObservation observation) {
     'absoluteState': observation.absoluteState?.code,
     'relativeState': observation.relativeState?.code,
     'estimateAtObservation': observation.estimateAtObservation,
+    if (schemaVersion >= 2) ...{
+      'contractVersion': observation.contractVersion,
+      'referenceType': observation.referenceType?.code,
+      'initialEstimateAtObservation': observation.initialEstimateAtObservation,
+      'estimatedOrdinalAtObservation':
+          observation.estimatedOrdinalAtObservation,
+      'baseEnergyAtObservation': observation.baseEnergyAtObservation,
+      'ruleVersionAtObservation': observation.ruleVersionAtObservation,
+      'comparisonBandVersion': observation.comparisonBandVersion,
+      'personalizationVersionAtObservation':
+          observation.personalizationVersionAtObservation,
+      'effectiveModelFingerprintAtObservation':
+          observation.effectiveModelFingerprintAtObservation,
+      'modelRegimeEpochAtObservation':
+          observation.modelRegimeEpochAtObservation,
+      'activeActivityCountAtObservation':
+          observation.activeActivityCountAtObservation,
+      'coverageState': observation.coverageState?.code,
+      'modelRegimeKey': observation.modelRegimeKey,
+    },
     'observedAt': _utc(observation.observedAt),
+  };
+}
+
+Map<String, Object?> _feedbackJson(ActivityFeedback feedback) {
+  return {
+    'id': feedback.id,
+    'activityRecordId': feedback.activityRecordId,
+    'lifeDay': feedback.lifeDay.toString(),
+    'subcategorySnapshot': feedback.subcategorySnapshot.code,
+    'durationMinutesSnapshot': feedback.durationSnapshot.minutes,
+    'theoreticalDeltaSnapshot': feedback.theoreticalDeltaSnapshot,
+    'appliedDeltaSnapshot': feedback.appliedDeltaSnapshot,
+    'impactSignSnapshot': feedback.impactSignSnapshot.code,
+    'ruleVersionSnapshot': feedback.ruleVersionSnapshot,
+    'activityUpdatedAtSnapshot': _utc(feedback.activityUpdatedAtSnapshot),
+    'direction': feedback.direction.code,
+    'status': feedback.status.code,
+    'invalidationReason': feedback.invalidationReason?.code,
+    'observedAt': _utc(feedback.observedAt),
   };
 }
 
