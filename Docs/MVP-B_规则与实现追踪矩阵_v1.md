@@ -4,7 +4,7 @@
 
 - 版本：2.0
 - 日期：2026-08-15
-- 状态：B3-2 工程实现完成，待 MVP-B 总体验收；B3-1 自动化与模拟器 gate 已通过；产品轨 inconclusive，正式生产门保持关闭
+- 状态：B3-2 工程实现完成，待 MVP-B 总体验收；自动化与 Pixel_7 模拟器 gate 已通过；产品轨 inconclusive，正式生产门保持关闭
 
 | 能力 | 产品来源 | 参数 / 算法来源 | 技术落点 | 主要验证 | 当前状态 |
 |---|---|---|---|---|---|
@@ -37,7 +37,7 @@
 | 活动 factor regime 隔离 | PRD 3.4 | 算法 5.4、8.3 | B3-0 key/rule/factor 边界 + v5 snapshot | 旧证据不重复、基准线变化不重置 | B3-1 迁移、regime 资格和旧活动不回算通过 |
 | 活动反馈抽样 | PRD 3.4、4.2 | 配置 3、算法 8.1、8.2 | `ActivityImpactSampler` + `ActivityFeedbackSamplesRepository` | 低频可跳过、选择无结果偏差、来源隔离 | B3-1 持久 sample、状态迁移和失效通过 |
 | 活动影响自动学习 | PRD 3.4、5.3 | B3 配置、算法 8.4 | `ActivityImpactLearningCoordinator` + `ModelActivationService` | 资格、方向 veto、取整、无证据不伪造 | B3-1 learner shadow candidate 与 B3-2 安全激活路径通过 |
-| 参数族串行 | PRD 2、6 | 算法 9.2 | `CombinedAutomaticLearningRequester` + shared pending slot | 同时就绪仍只变化一个参数族、跨族阻塞码 | B3-2 工程路径已接入，待总体验收 |
+| 参数族串行 | PRD 2、6 | 算法 9.2 | `CombinedAutomaticLearningRequester` + shared pending slot | 同时就绪仍只变化一个参数族、跨族阻塞码 | B3-2 工程路径已接入；双向 pending 阻断与 `blockedByOtherParameterFamily` 回归通过，待总体验收 |
 | v3 / v4 / v5 备份兼容 | PRD 5.1 | 算法 5 | BackupCodec、restore coordinator | 运行、版本、倍率往返且不重复激活 | v3 / v4 / v5 迁移、快照、factor/sample 往返与失败回滚通过 |
 
 ## 1. P0 追踪结论
@@ -57,3 +57,5 @@
 - B3-0 已冻结带水印的预生产抽样、按键审计、倍率边界和无结果选择合同；B3-1 已将其持久化并接入
   确定性 shadow learner。这些值只能用于工程 fixture，不代表真实用户参数，也不打开 activityImpact
   生产学习或自动应用。
+- B3-2 进一步锁定 automatic apply 独立闸门、零证据零写入、证据快照激活前重验和监测 life-day
+  边界；525 项全量测试通过，真实产品状态仍保持 `inconclusive`。

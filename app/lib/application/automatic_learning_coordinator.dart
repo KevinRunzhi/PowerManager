@@ -174,6 +174,8 @@ final class AutomaticLearningCoordinator implements AutomaticLearningRequester {
       var completed = 0;
       var retryable = 0;
       var terminal = 0;
+      var blockedByOtherParameterFamily = false;
+      var productionChanged = false;
       for (final package in evidence) {
         final outcome = await _process(package);
         created += outcome.created ? 1 : 0;
@@ -188,6 +190,16 @@ final class AutomaticLearningCoordinator implements AutomaticLearningRequester {
           completed += production.completed ? 1 : 0;
           retryable += production.retryableFailure ? 1 : 0;
           terminal += production.terminalFailure ? 1 : 0;
+          productionChanged =
+              productionChanged ||
+              production.created ||
+              production.resumed ||
+              production.completed ||
+              production.retryableFailure ||
+              production.terminalFailure;
+          blockedByOtherParameterFamily =
+              blockedByOtherParameterFamily ||
+              production.blockedByOtherParameterFamily;
         }
       }
       final unchanged =
@@ -203,7 +215,9 @@ final class AutomaticLearningCoordinator implements AutomaticLearningRequester {
         completedRuns: completed,
         retryableFailures: retryable,
         terminalFailures: terminal,
-        skipReason: unchanged
+        skipReason: blockedByOtherParameterFamily && !productionChanged
+            ? LearningCoordinationSkipReason.blockedByOtherParameterFamily
+            : unchanged
             ? LearningCoordinationSkipReason.unchangedEvidence
             : null,
       );
@@ -448,10 +462,10 @@ final class AutomaticLearningCoordinator implements AutomaticLearningRequester {
     if (pendingVersion != null &&
         pendingVersion.changedParameterFamily !=
             PersonalizationChangedParameterFamily.baseline) {
-      return const _RunOutcome();
+      return const _RunOutcome(blockedByOtherParameterFamily: true);
     }
     if (run == null && pendingVersion != null) {
-      return const _RunOutcome();
+      return const _RunOutcome(blockedByOtherParameterFamily: true);
     }
 
     var created = false;
@@ -777,6 +791,7 @@ final class _RunOutcome {
     this.completed = false,
     this.retryableFailure = false,
     this.terminalFailure = false,
+    this.blockedByOtherParameterFamily = false,
   });
 
   final bool created;
@@ -784,4 +799,5 @@ final class _RunOutcome {
   final bool completed;
   final bool retryableFailure;
   final bool terminalFailure;
+  final bool blockedByOtherParameterFamily;
 }

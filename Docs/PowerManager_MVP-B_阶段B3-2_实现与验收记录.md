@@ -9,6 +9,10 @@
 - 活动快照：新建、编辑和预览读取当前 active 版本的 factor，保存 default / factor / personalized delta / version / regime；回放仍只使用已持久化的 personalized delta。
 - 撤回：活动影响撤回创建未来版本并使用旧 factor 数值，但所有键开启新的 factor regime。
 - 监测：新增活动影响 monitoring evaluator/coordinator；directionMismatch veto 或恶化结果只暂停 activityImpact，不自动往返调参。
+- 本轮总验收前 P0 修订：automatic 模式增加独立 `activityImpactAutoApplyEnabled` 闸门；没有
+  responded sample 时 learning / monitoring 零写入；重复 evidence 不重复计数；活动候选注册固定使用
+  activity-rule contract，并在激活前重验 evidence 快照、采样策略、父模型与 factor regime；监测遵守
+  shared pending、冷却和 04:00 life-day 边界。
 - schema v5 兼容：在新建数据库、v4→v5 升级和已有 v5 打开路径统一确保 LearningRunsTable 接受 activityImpact 的 factors JSON；历史 schema v1–v4 fixture 仍保持原约束。
 - 备份链路：JSON export/restore、完整性校验、本地备份、升级 readiness 与 data health 共用按生产门配置的 codec，并包含 activity factors。
 
@@ -16,7 +20,11 @@
 
 - `flutter analyze`：通过，无 issue。
 - `flutter test test/data/db/schema_v2_migration_test.dart test/data/db/schema_v4_migration_test.dart test/data/db/schema_v5_migration_test.dart`：通过。
-- 全量 `flutter test --reporter compact`：通过，518 tests passed；新增活动影响 monitoring 边界和 review→schedule→activate 回归。
+- 全量 `flutter test --coverage`：通过，525 tests passed；新增活动协调器闸门、零证据、幂等、evidence
+  重验和参数族阻断回归。
+- `dart format --output=none --set-exit-if-changed lib test`：通过。
+- `git diff --check`：通过。
+- 最近安全修订提交：`67b829d`；验收记录提交：`ca840e6`。
 - `flutter analyze`：通过，无 issue。
 - 模拟器 `flutter run -d emulator-5554 --debug --no-resident`：启动、安装和同步成功；logcat 未发现 FATAL EXCEPTION、FlutterError、Unhandled 或 SQLite 数据库错误。只产生了本次 Debug 验证所需的临时 debug APK，不作为交付物。
 

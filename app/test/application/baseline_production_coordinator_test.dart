@@ -137,6 +137,10 @@ void main() {
 
       expect(report.completedRuns, 1); // shadow audit only
       expect(
+        report.skipReason,
+        LearningCoordinationSkipReason.blockedByOtherParameterFamily,
+      );
+      expect(
         (await harness.runs.list()).where(
           (run) => run.algorithmVersion == baselineProductionAlgorithmV1,
         ),
