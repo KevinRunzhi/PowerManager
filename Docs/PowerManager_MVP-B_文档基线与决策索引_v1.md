@@ -50,6 +50,9 @@
 | B3-2 | `PowerManager_MVP-B_阶段B3-2_活动影响安全激活与监测_Spec_v1.md` | 工程实现已完成，待总体验收；真机复验延期 |
 | 总验收 | `PowerManager_MVP-B_总体验收_Spec_v1.md`、`PowerManager_MVP-B_总体验收_实现与验收记录.md` | 工程自动化与模拟器已记录；实体手机和交付构建按用户要求延期 |
 
+两个参数族的产品状态统一记录在 `PowerManager_MVP-B_产品验证状态报告_v1.md`；当前均为
+`inconclusive`，不把工程 fixture 或模拟器行为写成真实效果。
+
 总分阶段计划只定义顺序和跨阶段门；每一阶段的目标、过程、测试矩阵、停止条件与验收证据以
 对应独立 Spec 为准。
 
