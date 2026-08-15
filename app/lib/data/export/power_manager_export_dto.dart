@@ -147,8 +147,7 @@ Map<String, Object?> _settingsJson(AppSettings settings) {
         : _utc(settings.baselineLearningSuspendedAt!),
     'baselineLearningSuspensionReason':
         settings.baselineLearningSuspensionReason,
-    'activityImpactLearningSuspended':
-        settings.activityImpactLearningSuspended,
+    'activityImpactLearningSuspended': settings.activityImpactLearningSuspended,
     'activityImpactLearningSuspendedAt':
         settings.activityImpactLearningSuspendedAt == null
         ? null
@@ -354,7 +353,9 @@ Map<String, Object?> _feedbackJson(
           ?.toString(),
       'collectionSource': feedback.collectionSource.code,
       'samplingPolicyVersion': feedback.samplingPolicyVersion,
-      'sampledAt': feedback.sampledAt == null ? null : _utc(feedback.sampledAt!),
+      'sampledAt': feedback.sampledAt == null
+          ? null
+          : _utc(feedback.sampledAt!),
       'sampleId': feedback.sampleId,
     },
   };
@@ -372,7 +373,9 @@ Map<String, Object?> _activityFactorJson(PersonalizationActivityFactor factor) {
   };
 }
 
-Map<String, Object?> _activityFeedbackSampleJson(ActivityFeedbackSample sample) {
+Map<String, Object?> _activityFeedbackSampleJson(
+  ActivityFeedbackSample sample,
+) {
   return {
     'id': sample.id,
     'activityRecordId': sample.activityRecordId,
@@ -381,8 +384,9 @@ Map<String, Object?> _activityFeedbackSampleJson(ActivityFeedbackSample sample) 
     'status': sample.status.code,
     'selectedAt': _utc(sample.selectedAt),
     'promptedAt': sample.promptedAt == null ? null : _utc(sample.promptedAt!),
-    'respondedAt':
-        sample.respondedAt == null ? null : _utc(sample.respondedAt!),
+    'respondedAt': sample.respondedAt == null
+        ? null
+        : _utc(sample.respondedAt!),
     'feedbackId': sample.feedbackId,
     'invalidatedAt': sample.invalidatedAt == null
         ? null

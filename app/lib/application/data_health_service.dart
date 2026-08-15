@@ -241,8 +241,7 @@ final class DataHealthService {
               baseEnergy: activeModel.baseEnergy,
               ruleVersion: appSettings.activeRuleVersion,
               comparisonBandVersion: mvpBComparisonBandV1,
-              effectiveModelFingerprint:
-                  activeModel.effectiveModelFingerprint,
+              effectiveModelFingerprint: activeModel.effectiveModelFingerprint,
               modelRegimeEpoch: activeModel.modelRegimeEpoch,
             );
       final eligibility = eligibilityService.evaluate(

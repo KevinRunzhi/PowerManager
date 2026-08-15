@@ -390,6 +390,10 @@ factor regime 隔离和按键 learner 均已完成；生产门保持关闭，B3-
 阶段工程验收通过后可以进入总体验收；`activityImpactAutoApplyEnabled` 的生产配置仍保持关闭，
 直到 MVP-B 最终真机门和相应真实产品证据通过。
 
+当前总体验收的自动化与 Pixel_7 证据记录在
+`PowerManager_MVP-B_总体验收_实现与验收记录.md`；实体手机、最终交付构建和真实产品观察按用户要求
+延期，不提前改变生产门。
+
 ## 15. MVP-B 总退出条件
 
 MVP-B 只有同时满足以下条件才完成：

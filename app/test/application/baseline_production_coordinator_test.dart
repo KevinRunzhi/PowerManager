@@ -1,3 +1,4 @@
+import 'package:crypto/crypto.dart';
 import 'package:power_manager/application/automatic_learning_coordinator.dart';
 import 'package:power_manager/application/business_write_coordinator.dart';
 import 'package:power_manager/application/model_activation_service.dart';
@@ -12,6 +13,7 @@ import 'package:power_manager/domain/energy/observation_comparison_service.dart'
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/learning/baseline_production_learner.dart';
+import 'package:power_manager/domain/learning/personalization_identity.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:test/test.dart';
 
@@ -92,7 +94,60 @@ void main() {
       expect(await harness.models.findPending(), isNull);
     },
   );
+
+  test(
+    'activity-impact pending candidate blocks a new baseline production run',
+    () async {
+      await harness.enable(LearningMode.review);
+      final active = await harness.models.getActive();
+      final evidence = '{"samples":["activity-pending"]}';
+      final activityRun = LearningRun(
+        id: 'activity-pending-run',
+        parameterFamily: LearningParameterFamily.activityImpact,
+        sourceModelIdentity: active.id,
+        sourcePersonalizationVersionId: active.id,
+        status: LearningRunStatus.completed,
+        result: LearningRunResult.candidate,
+        evidenceSnapshotJson: evidence,
+        evidenceHash: _hash(evidence),
+        evidenceHashVersion: canonicalEvidenceHashV1,
+        algorithmVersion: activityImpactLearningAlgorithmV1,
+        configVersion: activityImpactLearningConfigV1,
+        currentValuesJson:
+            '{"factors":{"selfStudyOrThesis|consumption":{"factorBps":100}}}',
+        candidateValuesJson:
+            '{"factors":{"selfStudyOrThesis|consumption":{"factorBps":105}}}',
+        reasonCodesJson: '["sampleCount"]',
+        triggeredAt: harness.clock.now(),
+        completedAt: harness.clock.now().add(const Duration(minutes: 1)),
+      );
+      await harness.runs.insert(activityRun);
+      final pending = learningPersonalizationVersion(
+        parent: active,
+        sourceRun: activityRun,
+        baseEnergy: active.baseEnergy,
+        createdAt: harness.clock.now(),
+        ruleVersion: energyRulesV2MvpAVersion,
+      );
+      await harness.models.insert(pending);
+
+      final report = await harness.coordinator().request(
+        AutomaticLearningTrigger.settlement,
+      );
+
+      expect(report.completedRuns, 1); // shadow audit only
+      expect(
+        (await harness.runs.list()).where(
+          (run) => run.algorithmVersion == baselineProductionAlgorithmV1,
+        ),
+        isEmpty,
+      );
+      expect((await harness.models.findPending())!.id, pending.id);
+    },
+  );
 }
+
+String _hash(String value) => sha256.convert(value.codeUnits).toString();
 
 final class _Harness {
   _Harness()

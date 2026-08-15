@@ -42,10 +42,7 @@ void main() {
     expect(runs.single.status, LearningRunStatus.completed);
     expect(runs.single.result, LearningRunResult.insufficientEvidence);
     expect(runs.single.candidateValuesJson, isNull);
-    expect(
-      (await harness.models.getActive()).baseEnergy,
-      before.baseEnergy,
-    );
+    expect((await harness.models.getActive()).baseEnergy, before.baseEnergy);
     expect((await harness.settings.get()).updatedAt, settingsBefore.updatedAt);
   });
 
@@ -79,10 +76,7 @@ void main() {
       );
       expect(runs.every((run) => run.candidateValuesJson == null), isTrue);
       final settingsAfter = await harness.settings.get();
-      expect(
-        (await harness.models.getActive()).id,
-        modelBefore.id,
-      );
+      expect((await harness.models.getActive()).id, modelBefore.id);
       expect(settingsAfter.activeRuleVersion, settingsBefore.activeRuleVersion);
       expect(
         settingsAfter.pendingRuleVersion,

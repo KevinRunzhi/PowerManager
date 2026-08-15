@@ -11,25 +11,25 @@ void main() {
         final observations = <ActivityImpactFeedbackObservation>[
           _observation(
             day: LifeDay(2026, 8, 1),
-          source: ActivityFeedbackCollectionSource.userInitiated,
+            source: ActivityFeedbackCollectionSource.userInitiated,
           ),
           _observation(
             day: LifeDay(2026, 8, 2),
-          source: ActivityFeedbackCollectionSource.sampledPrompt,
+            source: ActivityFeedbackCollectionSource.sampledPrompt,
           ),
           _observation(
             day: LifeDay(2026, 8, 3),
-          source: ActivityFeedbackCollectionSource.sampledPrompt,
+            source: ActivityFeedbackCollectionSource.sampledPrompt,
             direction: ActivityFeedbackDirection.strongerImpact,
           ),
           _observation(
             day: LifeDay(2026, 8, 4),
-          source: ActivityFeedbackCollectionSource.sampledPrompt,
+            source: ActivityFeedbackCollectionSource.sampledPrompt,
             direction: ActivityFeedbackDirection.weakerImpact,
           ),
           _observation(
             day: LifeDay(2026, 8, 5),
-          source: ActivityFeedbackCollectionSource.sampledPrompt,
+            source: ActivityFeedbackCollectionSource.sampledPrompt,
             direction: ActivityFeedbackDirection.aboutRight,
           ),
         ];

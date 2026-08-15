@@ -69,8 +69,7 @@ final class JsonExportService implements JsonExporter {
       final energyObservations = await observations.list();
       final activityFeedback = await feedback.list();
       final learningRunItems = await learningRuns.list();
-      final personalizationVersionItems =
-          await personalizationVersions.list();
+      final personalizationVersionItems = await personalizationVersions.list();
       final activityFactorItems = activityFactors == null
           ? const <PersonalizationActivityFactor>[]
           : await activityFactors!.list();

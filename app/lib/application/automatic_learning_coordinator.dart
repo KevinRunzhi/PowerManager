@@ -440,6 +440,20 @@ final class AutomaticLearningCoordinator implements AutomaticLearningRequester {
       return const _RunOutcome();
     }
 
+    // A pending candidate owns the shared activation slot.  Do not create or
+    // resume a baseline production run while the other parameter family is
+    // waiting for review/activation; otherwise both families can appear ready
+    // in the same preparation pass even though only one may proceed.
+    final pendingVersion = await personalizationVersions!.findPending();
+    if (pendingVersion != null &&
+        pendingVersion.changedParameterFamily !=
+            PersonalizationChangedParameterFamily.baseline) {
+      return const _RunOutcome();
+    }
+    if (run == null && pendingVersion != null) {
+      return const _RunOutcome();
+    }
+
     var created = false;
     var resumed = run != null;
     if (run == null) {

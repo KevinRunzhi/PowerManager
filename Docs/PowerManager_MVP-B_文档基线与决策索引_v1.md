@@ -48,7 +48,7 @@
 | B3-0 | `PowerManager_MVP-B_阶段B3-0_活动影响生产参数门_Spec_v1.md` | 工程合同与纯领域测试已通过；产品轨最终安装后 |
 | B3-1 | `PowerManager_MVP-B_阶段B3-1_SchemaV5与活动影响学习器_Spec_v1.md` | 工程、自动化与模拟器 gate 已通过；产品轨 inconclusive |
 | B3-2 | `PowerManager_MVP-B_阶段B3-2_活动影响安全激活与监测_Spec_v1.md` | 工程实现已完成，待总体验收；真机复验延期 |
-| 总验收 | `PowerManager_MVP-B_总体验收_Spec_v1.md` | 等待全部阶段 |
+| 总验收 | `PowerManager_MVP-B_总体验收_Spec_v1.md`、`PowerManager_MVP-B_总体验收_实现与验收记录.md` | 工程自动化与模拟器已记录；实体手机和交付构建按用户要求延期 |
 
 总分阶段计划只定义顺序和跨阶段门；每一阶段的目标、过程、测试矩阵、停止条件与验收证据以
 对应独立 Spec 为准。
@@ -79,7 +79,11 @@ B3-0 的参数合同、抽样选择、按键审计、倍率边界与模拟器证
 
 B3-1 的 schema v5、迁移回滚、备份往返、sample/feedback 快照、活动影响 learner 与模拟器证据记录在
 `PowerManager_MVP-B_阶段B3-1_SchemaV5与活动影响学习器_实现与验收记录.md`；learner 只产生带水印的
-shadow candidate，真实产品结论仍为 `inconclusive`，生产门保持关闭。
+ shadow candidate，真实产品结论仍为 `inconclusive`，生产门保持关闭。
+
+总体验收的工程命令、P0 追踪摘要、Pixel_7 模拟器日志和当前延期项记录在
+`PowerManager_MVP-B_总体验收_实现与验收记录.md`；该记录明确不把 Debug 模拟器载体当成交付 APK，
+也不把隔离 fixture 写成真实产品结论。
 
 ## 1.2 当前设备验收决策
 

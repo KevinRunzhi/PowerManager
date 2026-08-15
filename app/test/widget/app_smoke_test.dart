@@ -844,6 +844,45 @@ void main() {
     expect(settingsMutator.learningModeChanges, isEmpty);
   });
 
+  testWidgets('activity-impact suspension has an independent recovery card', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        appSettings: _appSettings(
+          onboardingCompleted: true,
+          activityImpactLearningSuspended: true,
+          activityImpactLearningSuspensionReason: 'monitoringWorsened',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    Navigator.of(context).pushNamed(AppRoutes.settings);
+    await tester.pumpAndSettle();
+
+    final card = find.byKey(
+      const Key('activity-impact-learning-suspension-card'),
+    );
+    await tester.scrollUntilVisible(
+      card,
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byKey(SettingsPage.pageKey),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(card, findsOneWidget);
+    expect(find.text('活动影响学习已暂停'), findsOneWidget);
+    expect(find.text('暂停原因：monitoringWorsened'), findsOneWidget);
+    expect(
+      find.byKey(const Key('resume-activity-impact-learning-button')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('preproduction watermark and family mode controls are explicit', (
     tester,
   ) async {
@@ -2024,6 +2063,8 @@ AppSettings _appSettings({
   required bool onboardingCompleted,
   LearningMode baselineLearningMode = LearningMode.off,
   LearningMode activityImpactLearningMode = LearningMode.off,
+  bool activityImpactLearningSuspended = false,
+  String? activityImpactLearningSuspensionReason,
 }) {
   return AppSettings(
     activeRuleVersion: 'energy-rules-v2-mvp-a',
@@ -2032,6 +2073,12 @@ AppSettings _appSettings({
     onboardingCompleted: onboardingCompleted,
     baselineLearningMode: baselineLearningMode,
     activityImpactLearningMode: activityImpactLearningMode,
+    activityImpactLearningSuspended: activityImpactLearningSuspended,
+    activityImpactLearningSuspendedAt: activityImpactLearningSuspended
+        ? DateTime.utc(2026, 7, 27)
+        : null,
+    activityImpactLearningSuspensionReason:
+        activityImpactLearningSuspensionReason,
     createdAt: DateTime.utc(2026, 7, 26),
     updatedAt: DateTime.utc(2026, 7, 26),
   );

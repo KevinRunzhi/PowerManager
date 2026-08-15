@@ -178,6 +178,40 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
                 : null,
           ),
         ],
+        if (widget.pendingModel case final pending?
+            when pending.changedParameterFamily ==
+                    PersonalizationChangedParameterFamily.activityImpact &&
+                pending.status.isPending) ...[
+          const SizedBox(height: AppSpacing.x3),
+          _LearningCandidateCard(
+            pending: pending,
+            run: pending.sourceLearningRunId == null
+                ? null
+                : ref
+                      .watch(learningRunProvider(pending.sourceLearningRunId!))
+                      .value,
+            busy: dataBusy,
+            onAccept:
+                pending.status == PersonalizationVersionStatus.awaitingReview
+                ? _acceptCandidate
+                : null,
+            onDefer:
+                pending.status == PersonalizationVersionStatus.awaitingReview
+                ? _deferCandidate
+                : null,
+            onReopen: pending.status == PersonalizationVersionStatus.deferred
+                ? _reopenCandidate
+                : null,
+            onReject:
+                pending.status == PersonalizationVersionStatus.awaitingReview ||
+                    pending.status == PersonalizationVersionStatus.deferred
+                ? _rejectCandidate
+                : null,
+            onCancel: pending.status == PersonalizationVersionStatus.scheduled
+                ? _cancelCandidate
+                : null,
+          ),
+        ],
         const SizedBox(height: AppSpacing.x3),
         TextField(
           key: const Key('base-estimate-field'),
@@ -216,6 +250,14 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
             reason: settings.baselineLearningSuspensionReason,
             busy: dataBusy,
             onResume: _resumeBaselineLearning,
+          ),
+        ],
+        if (settings.activityImpactLearningSuspended) ...[
+          const SizedBox(height: AppSpacing.x3),
+          _ActivityLearningSuspensionCard(
+            reason: settings.activityImpactLearningSuspensionReason,
+            busy: dataBusy,
+            onResume: _resumeActivityLearning,
           ),
         ],
         const SizedBox(height: AppSpacing.x3),
@@ -531,6 +573,27 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     }
   }
 
+  Future<void> _resumeActivityLearning() async {
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(modelActivationServiceProvider)
+          .resumeLearning(
+            parameterFamily: LearningParameterFamily.activityImpact,
+            at: ref.read(clockProvider).now(),
+          );
+      _invalidateLearningViews();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前配置暂不能恢复活动影响学习，请先确认学习模式与开放状态。')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _export() async {
     final fileStore = ref.read(temporaryExportFileStoreProvider);
     File? temporaryFile;
@@ -806,6 +869,48 @@ class _LearningSuspensionCard extends StatelessWidget {
   }
 }
 
+class _ActivityLearningSuspensionCard extends StatelessWidget {
+  const _ActivityLearningSuspensionCard({
+    required this.reason,
+    required this.busy,
+    required this.onResume,
+  });
+
+  final String? reason;
+  final bool busy;
+  final VoidCallback onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const Key('activity-impact-learning-suspension-card'),
+      color: Theme.of(context).colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('活动影响学习已暂停', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.unit),
+            const Text('最近一轮活动影响调整后的实际反馈变差，系统没有自动回滚当前倍率。'),
+            if (reason case final value? when value.isNotEmpty)
+              Text(
+                '暂停原因：$value',
+                key: const Key('activity-impact-learning-suspension-reason'),
+              ),
+            const SizedBox(height: AppSpacing.x2),
+            OutlinedButton(
+              key: const Key('resume-activity-impact-learning-button'),
+              onPressed: busy ? null : onResume,
+              child: const Text('恢复活动影响学习'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _LearningCandidateCard extends StatelessWidget {
   const _LearningCandidateCard({
     required this.pending,
@@ -829,9 +934,18 @@ class _LearningCandidateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final activityCandidate =
+        pending.changedParameterFamily ==
+        PersonalizationChangedParameterFamily.activityImpact;
     final current = _runBase(run, 'baseEnergy') ?? pending.baselineAnchorEnergy;
     final direction = _candidateDirection(run, current, pending.baseEnergy);
     final evidence = _evidenceSummary(run);
+    final activityRows = activityCandidate
+        ? _activityCandidateRows(run)
+        : const <_ActivityCandidateRow>[];
+    final activityPolicy = activityCandidate
+        ? _activityPolicyVersion(run)
+        : null;
     final status = switch (pending.status) {
       PersonalizationVersionStatus.awaitingReview => '等待你审核',
       PersonalizationVersionStatus.deferred => '已稍后处理，可重新打开',
@@ -847,16 +961,44 @@ class _LearningCandidateCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('基准线学习建议', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              activityCandidate ? '活动影响学习建议' : '基准线学习建议',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: AppSpacing.unit),
             Text(status, key: const Key('learning-candidate-status')),
-            Text('观察方向：$direction'),
-            Text(
-              '当前 $current → 候选 ${pending.baseEnergy}（单步 ${pending.baseEnergy - current}）',
-            ),
-            if (evidence != null) ...[
-              const SizedBox(height: AppSpacing.unit),
-              Text(evidence, key: const Key('learning-candidate-evidence')),
+            if (!activityCandidate) ...[
+              Text('观察方向：$direction'),
+              Text(
+                '当前 $current → 候选 ${pending.baseEnergy}（单步 ${pending.baseEnergy - current}）',
+              ),
+              if (evidence != null) ...[
+                const SizedBox(height: AppSpacing.unit),
+                Text(evidence, key: const Key('learning-candidate-evidence')),
+              ],
+            ] else if (activityRows.isEmpty)
+              const Text('候选详情暂不可用；系统会在下一次完整检查后重试。')
+            else ...[
+              if (activityPolicy != null) Text('抽样策略版本：$activityPolicy'),
+              for (final row in activityRows) ...[
+                const SizedBox(height: AppSpacing.x2),
+                Text('${row.subcategoryLabel} · ${row.signLabel}'),
+                Text(
+                  '当前倍率 ${row.currentFactor.toStringAsFixed(2)} → 候选倍率 ${row.candidateFactor.toStringAsFixed(2)}',
+                ),
+                Text(
+                  '抽样反馈 ${row.sampleCount} 条 · 覆盖 ${row.coverageDays} 天 · 影响更强 ${row.strongerCount} · 符合预期 ${row.aboutRightCount} · 影响更弱 ${row.weakerCount}',
+                ),
+                Text(
+                  '固定理论示例：${row.exampleBefore} → ${row.exampleAfter}；相反方向与未列键不变。',
+                ),
+                if (row.directionMismatchCount > 0)
+                  Text(
+                    '方向不一致 ${row.directionMismatchCount} 条：仅进入规则复核，不直接改变倍率。',
+                  ),
+                if (row.excludedCount > 0)
+                  Text('排除 ${row.excludedCount} 条不符合当前快照或规则的反馈。'),
+              ],
             ],
             if (pending.status == PersonalizationVersionStatus.scheduled)
               const Text('可以在生效前取消；系统通知之外，这条记录会一直保存在应用内。'),
@@ -902,6 +1044,185 @@ class _LearningCandidateCard extends StatelessWidget {
       ),
     );
   }
+}
+
+final class _ActivityCandidateRow {
+  const _ActivityCandidateRow({
+    required this.subcategoryLabel,
+    required this.signLabel,
+    required this.currentFactor,
+    required this.candidateFactor,
+    required this.sampleCount,
+    required this.coverageDays,
+    required this.strongerCount,
+    required this.aboutRightCount,
+    required this.weakerCount,
+    required this.directionMismatchCount,
+    required this.excludedCount,
+    required this.exampleBefore,
+    required this.exampleAfter,
+  });
+
+  final String subcategoryLabel;
+  final String signLabel;
+  final double currentFactor;
+  final double candidateFactor;
+  final int sampleCount;
+  final int coverageDays;
+  final int strongerCount;
+  final int aboutRightCount;
+  final int weakerCount;
+  final int directionMismatchCount;
+  final int excludedCount;
+  final int exampleBefore;
+  final int exampleAfter;
+}
+
+List<_ActivityCandidateRow> _activityCandidateRows(LearningRun? run) {
+  if (run == null) return const [];
+  final candidate = _decodeActivityFactors(run.candidateValuesJson);
+  if (candidate.isEmpty) return const [];
+  final current = _decodeActivityFactors(run.currentValuesJson);
+  final observations = _decodeActivityObservations(run.evidenceSnapshotJson);
+  final rows = <_ActivityCandidateRow>[];
+  for (final entry
+      in candidate.entries.toList()..sort((a, b) => a.key.compareTo(b.key))) {
+    final parts = entry.key.split('|');
+    if (parts.length != 2) continue;
+    ActivitySubcategory? subcategory;
+    for (final value in ActivitySubcategory.values) {
+      if (value.code == parts[0]) {
+        subcategory = value;
+        break;
+      }
+    }
+    if (subcategory == null) continue;
+    final candidateBps = entry.value['factorBps'];
+    if (candidateBps is! int) continue;
+    final currentBps = current[entry.key]?['factorBps'];
+    final stats = _activityObservationStats(observations, entry.key);
+    final before = parts[1] == 'consumption' ? -10 : 10;
+    final candidateFactor = candidateBps / 100.0;
+    rows.add(
+      _ActivityCandidateRow(
+        subcategoryLabel: subcategory.label,
+        signLabel: parts[1] == 'consumption' ? '消耗方向' : '恢复方向',
+        currentFactor: (currentBps is int ? currentBps : candidateBps) / 100.0,
+        candidateFactor: candidateFactor,
+        sampleCount: entry.value['sampleCount'] is int
+            ? entry.value['sampleCount'] as int
+            : stats.sampleCount,
+        coverageDays: entry.value['coverageDays'] is int
+            ? entry.value['coverageDays'] as int
+            : stats.coverageDays,
+        strongerCount: stats.strongerCount,
+        aboutRightCount: stats.aboutRightCount,
+        weakerCount: stats.weakerCount,
+        directionMismatchCount: stats.directionMismatchCount,
+        excludedCount: stats.excludedCount,
+        exampleBefore: before,
+        exampleAfter: (before * candidateFactor).round(),
+      ),
+    );
+  }
+  return rows;
+}
+
+String? _activityPolicyVersion(LearningRun? run) {
+  if (run == null) return null;
+  try {
+    final decoded = jsonDecode(run.evidenceSnapshotJson);
+    if (decoded is Map && decoded['policyVersion'] is String) {
+      return decoded['policyVersion'] as String;
+    }
+  } on Object {
+    // A malformed run is handled by the surrounding candidate gate.
+  }
+  return null;
+}
+
+Map<String, Map<String, Object?>> _decodeActivityFactors(String? json) {
+  if (json == null) return const {};
+  try {
+    final decoded = jsonDecode(json);
+    if (decoded is! Map || decoded['factors'] is! Map) return const {};
+    final factors = decoded['factors'] as Map;
+    final result = <String, Map<String, Object?>>{};
+    for (final entry in factors.entries) {
+      if (entry.key is String && entry.value is Map) {
+        result[entry.key as String] = Map<String, Object?>.from(
+          entry.value as Map,
+        );
+      }
+    }
+    return result;
+  } on Object {
+    return const {};
+  }
+}
+
+List<Map<String, Object?>> _decodeActivityObservations(String json) {
+  try {
+    final decoded = jsonDecode(json);
+    if (decoded is! Map || decoded['observations'] is! List) return const [];
+    return [
+      for (final value in decoded['observations'] as List)
+        if (value is Map) Map<String, Object?>.from(value),
+    ];
+  } on Object {
+    return const [];
+  }
+}
+
+({
+  int sampleCount,
+  int coverageDays,
+  int strongerCount,
+  int aboutRightCount,
+  int weakerCount,
+  int directionMismatchCount,
+  int excludedCount,
+})
+_activityObservationStats(List<Map<String, Object?>> observations, String key) {
+  final days = <String>{};
+  var sampleCount = 0;
+  var strongerCount = 0;
+  var aboutRightCount = 0;
+  var weakerCount = 0;
+  var directionMismatchCount = 0;
+  var excludedCount = 0;
+  for (final observation in observations) {
+    final observationKey =
+        '${observation['subcategory']}|${observation['impactSign']}';
+    if (observationKey != key) continue;
+    if (observation['sampleStatus'] == 'responded') sampleCount++;
+    if (observation['lifeDay'] is String) {
+      days.add(observation['lifeDay'] as String);
+    }
+    if (observation['exclusionReason'] != null) {
+      excludedCount++;
+      continue;
+    }
+    switch (observation['direction']) {
+      case 'strongerImpact':
+        strongerCount++;
+      case 'aboutRight':
+        aboutRightCount++;
+      case 'weakerImpact':
+        weakerCount++;
+      case 'directionMismatch':
+        directionMismatchCount++;
+    }
+  }
+  return (
+    sampleCount: sampleCount,
+    coverageDays: days.length,
+    strongerCount: strongerCount,
+    aboutRightCount: aboutRightCount,
+    weakerCount: weakerCount,
+    directionMismatchCount: directionMismatchCount,
+    excludedCount: excludedCount,
+  );
 }
 
 int? _runBase(LearningRun? run, String key) {
