@@ -6,6 +6,7 @@ import 'package:power_manager/application/activity_feedback_use_cases.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/automatic_learning_coordinator.dart';
+import 'package:power_manager/application/baseline_monitoring_coordinator.dart';
 import 'package:power_manager/application/backup_content_digest.dart';
 import 'package:power_manager/application/business_write_coordinator.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
@@ -36,6 +37,7 @@ import 'package:power_manager/data/repositories/drift_repositories.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/learning/baseline_production_learner.dart';
+import 'package:power_manager/domain/learning/baseline_monitoring.dart';
 import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -133,6 +135,12 @@ final learningProductionGateProvider = Provider<LearningProductionGate>((ref) {
 /// Pre-production lifecycle tests override this provider with the explicitly
 /// watermarked configuration and an isolated database.
 final baselineProductionConfigProvider = Provider<BaselineProductionConfig?>(
+  (ref) => null,
+);
+
+/// Formal providers keep post-activation monitoring disabled. A pre-production
+/// harness must override this with the explicitly watermarked configuration.
+final baselineMonitoringConfigProvider = Provider<BaselineMonitoringConfig?>(
   (ref) => null,
 );
 
@@ -257,18 +265,39 @@ final class CurrentPreparationRefreshNotifier
   }
 }
 
+final baselineMonitoringRequesterProvider =
+    Provider<BaselineMonitoringRequester>((ref) {
+      final config = ref.watch(baselineMonitoringConfigProvider);
+      if (config == null) return const NoopBaselineMonitoringRequester();
+      final database = ref.watch(appDatabaseProvider);
+      return BaselineMonitoringCoordinator(
+        transactionRunner: DriftTransactionRunner(database),
+        clock: ref.watch(clockProvider),
+        observations: ref.watch(observationsRepositoryProvider),
+        mornings: ref.watch(morningsRepositoryProvider),
+        summaries: ref.watch(summariesRepositoryProvider),
+        learningRuns: ref.watch(learningRunsRepositoryProvider),
+        versions: ref.watch(personalizationVersionsRepositoryProvider),
+        settings: ref.watch(settingsRepositoryProvider),
+        modelActivationService: ref.watch(modelActivationServiceProvider),
+        config: config,
+      );
+    });
+
 final currentPreparationProvider = FutureProvider<OperationPreparationResult>((
   ref,
 ) async {
   final request = ref.watch(currentPreparationRefreshProvider);
   final preparer = ref.watch(operationPreparerProvider);
   final learning = ref.watch(automaticLearningRequesterProvider);
+  final monitoring = ref.watch(baselineMonitoringRequesterProvider);
   final learningGate = ref.watch(preparationLearningRequestGateProvider);
   final result = await preparer.prepare(request.trigger);
   if (request.trigger != PreparationTrigger.beforeWrite &&
       learningGate.claim(request.revision)) {
     try {
       await learning.request(_automaticLearningTrigger(request.trigger));
+      await monitoring.request(_monitoringTrigger(request.trigger));
     } on Object {
       // Shadow learning must never make the core preparation flow unavailable.
     }
@@ -285,6 +314,16 @@ AutomaticLearningTrigger _automaticLearningTrigger(
   PreparationTrigger.safeRestore => AutomaticLearningTrigger.safeRestore,
   PreparationTrigger.beforeWrite => AutomaticLearningTrigger.retry,
 };
+
+BaselineMonitoringTrigger _monitoringTrigger(PreparationTrigger trigger) =>
+    switch (trigger) {
+      PreparationTrigger.coldStart => BaselineMonitoringTrigger.coldStart,
+      PreparationTrigger.resumed => BaselineMonitoringTrigger.resumed,
+      PreparationTrigger.lifeDayBoundary =>
+        BaselineMonitoringTrigger.settlement,
+      PreparationTrigger.safeRestore => BaselineMonitoringTrigger.resumed,
+      PreparationTrigger.beforeWrite => BaselineMonitoringTrigger.retry,
+    };
 
 final activityUseCasesProvider = Provider<ActivityMutator>((ref) {
   final database = ref.watch(appDatabaseProvider);

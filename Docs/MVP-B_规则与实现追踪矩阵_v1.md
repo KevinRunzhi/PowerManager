@@ -2,9 +2,9 @@
 
 ## 0. 状态
 
-- 版本：1.9
+- 版本：2.0
 - 日期：2026-08-15
-- 状态：B2-1 工程实现、自动化与模拟器正式 gate 回归已通过；预生产全生命周期由隔离 harness 验证；产品轨 inconclusive，正式生产门保持关闭
+- 状态：B2-2 工程实现、自动化与模拟器正式 gate 已通过；预生产监测/暂停全生命周期由隔离 harness 验证；产品轨 inconclusive，正式生产门保持关闭
 
 | 能力 | 产品来源 | 参数 / 算法来源 | 技术落点 | 主要验证 | 当前状态 |
 |---|---|---|---|---|---|
@@ -32,7 +32,7 @@
 | 基准线自动学习 | PRD 3.3 | B1 后生产配置、算法 7 | BaselineProductionLearner + AutomaticLearningCoordinator + model version v4 | 冷却、边界、反事实、相同证据防重、review/automatic 生命周期 | B2-1 工程、隔离预生产自动化与模拟器正式 gate 回归通过；产品轨 inconclusive，正式生产门仍关闭 |
 | 未来生活日幂等激活 | PRD 2、3.3 | 算法 5.3、5.4 | ModelActivationService + prepare | 通知窗口、重启、04:00、恢复只激活一次 | B2-0 已实现；24 小时边界、通知原子性、重启 / restore 复验通过 |
 | 通知、取消与撤回 | PRD 3.3、4.3、4.4 | 算法 5.3、7.2 | learning_notices、ActivationService、SettingsPage | 激活前取消、激活后未来恢复 | B2-1 候选详情、接受/稍后/拒绝/取消/撤回入口与隔离生命周期通过；模拟器正式 gate 回归通过 |
-| 恶化暂停 | PRD 3.3、5.3 | B1 后生产配置、算法 7.3、9.3 | learning suspension + evaluation | 不震荡、原因可见、手动恢复 | B2-0 已完成参数族隔离、暂停 / 冷却基础事务；B2-2 接入监测判定与 UI |
+| 恶化暂停 | PRD 3.3、5.3 | B1 后生产配置、算法 7.3、9.3 | `BaselineMonitoringEvaluator`、`BaselineMonitoringCoordinator`、`ModelActivationService`、`SettingsPage` | 新 epoch 14/21、2×7、冷却、边界、暂停、恢复、通知幂等、族隔离 | B2-2 工程与隔离预生产验证通过；产品轨 inconclusive |
 | 活动倍率方向隔离 | PRD 3.4 | B3 配置、算法 8.3 | factors v5、activity snapshot | consumption / recovery 不串用 | 阻塞于 B3-0 |
 | 活动 factor regime 隔离 | PRD 3.4 | 算法 5.4、8.3 | factor regime snapshot + learner | 旧证据不重复、基准线变化不重置 | 阻塞于 B3-0 |
 | 活动反馈抽样 | PRD 3.4、4.2 | 配置 3、算法 8.1、8.2 | ActivityFeedbackSampler + source snapshot | 低频可跳过、选择无结果偏差、来源隔离 | 阻塞于 B3-0 |

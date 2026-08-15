@@ -210,6 +210,14 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
         Text('自动学习', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: AppSpacing.x2),
         const Text('两个参数族分别授权；关闭学习不会删除历史观测。所有学习数据只保存在本机。'),
+        if (settings.baselineLearningSuspended) ...[
+          const SizedBox(height: AppSpacing.x3),
+          _LearningSuspensionCard(
+            reason: settings.baselineLearningSuspensionReason,
+            busy: dataBusy,
+            onResume: _resumeBaselineLearning,
+          ),
+        ],
         const SizedBox(height: AppSpacing.x3),
         _LearningModeCard(
           key: const Key('baseline-learning-mode-card'),
@@ -502,6 +510,27 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     }
   }
 
+  Future<void> _resumeBaselineLearning() async {
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(modelActivationServiceProvider)
+          .resumeLearning(
+            parameterFamily: LearningParameterFamily.baseline,
+            at: ref.read(clockProvider).now(),
+          );
+      _invalidateLearningViews();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前配置暂不能恢复基准线学习，请先确认学习模式与开放状态。')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _export() async {
     final fileStore = ref.read(temporaryExportFileStoreProvider);
     File? temporaryFile;
@@ -734,6 +763,48 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
 
 typedef _LearningModeSelection =
     Future<void> Function(LearningParameterFamily family, LearningMode mode);
+
+class _LearningSuspensionCard extends StatelessWidget {
+  const _LearningSuspensionCard({
+    required this.reason,
+    required this.busy,
+    required this.onResume,
+  });
+
+  final String? reason;
+  final bool busy;
+  final VoidCallback onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const Key('baseline-learning-suspension-card'),
+      color: Theme.of(context).colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('基准线学习已暂停', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.unit),
+            Text('最近一轮调整后的实际状态表现变差，系统没有自动回滚当前模型。'),
+            if (reason case final value? when value.isNotEmpty)
+              Text(
+                '暂停原因：$value',
+                key: const Key('baseline-learning-suspension-reason'),
+              ),
+            const SizedBox(height: AppSpacing.x2),
+            OutlinedButton(
+              key: const Key('resume-baseline-learning-button'),
+              onPressed: busy ? null : onResume,
+              child: const Text('恢复基准线学习'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _LearningCandidateCard extends StatelessWidget {
   const _LearningCandidateCard({
