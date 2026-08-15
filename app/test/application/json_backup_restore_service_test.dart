@@ -38,6 +38,7 @@ void main() {
     final feedback = DriftActivityFeedbackRepository(
       database.activityFeedbackDao,
     );
+    final learningRuns = DriftLearningRunsRepository(database.learningRunsDao);
     final summaries = DriftDailySummariesRepository(database.dailySummariesDao);
     final receipts = DriftPromptReceiptsRepository(database.promptReceiptsDao);
     final export = JsonExportService(
@@ -47,6 +48,7 @@ void main() {
       activities: activities,
       observations: observations,
       feedback: feedback,
+      learningRuns: learningRuns,
       summaries: summaries,
       receipts: receipts,
       transactionRunner: DriftTransactionRunner(database),
@@ -63,6 +65,7 @@ void main() {
       activities: activities,
       observations: observations,
       feedback: feedback,
+      learningRuns: learningRuns,
       summaries: summaries,
       receipts: receipts,
     );
@@ -92,6 +95,7 @@ void main() {
     expect(counts.ruleVersions, 1);
     expect(counts.total, 2);
     expect(counts.activityFeedback, 0);
+    expect(counts.learningRuns, 0);
   });
 
   test(
@@ -119,7 +123,8 @@ void main() {
         fileName: exported.fileName,
         bytes: Uint8List.fromList(utf8.encode(exported.contents)),
       );
-      expect(reparsed.backup.schemaVersion, 2);
+      expect(reparsed.backup.schemaVersion, 3);
+      expect(reparsed.backup.learningRuns, isEmpty);
       expect(reparsed.backup.energyObservations, isEmpty);
     },
   );
@@ -148,6 +153,33 @@ void main() {
     expect(
       reparsed.backup.activityFeedback.last.status,
       ActivityFeedbackStatus.invalidated,
+    );
+  });
+
+  test('schema v3 service restore round-trips shadow learning runs', () async {
+    safetyStore.fail = false;
+    final inspection = service.inspect(
+      fileName: 'backup-v3.json',
+      bytes: Uint8List.fromList(
+        utf8.encode(jsonEncode(backupFixtureV3().toJson())),
+      ),
+    );
+
+    await service.restore(inspection);
+
+    final counts = await service.currentCounts();
+    expect(counts.learningRuns, 1);
+    final exported = await service.exportService.create(
+      exportedAt: backupFixtureNow,
+    );
+    final reparsed = service.inspect(
+      fileName: exported.fileName,
+      bytes: Uint8List.fromList(utf8.encode(exported.contents)),
+    );
+    expect(reparsed.backup.learningRuns, hasLength(1));
+    expect(
+      reparsed.backup.learningRuns.single.evidenceHash,
+      backupFixtureV3().learningRuns.single.evidenceHash,
     );
   });
 }

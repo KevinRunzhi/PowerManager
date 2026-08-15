@@ -14,6 +14,7 @@ import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:test/test.dart';
 
 import '../db/test_database.dart';
+import '../../support/backup_fixture.dart';
 
 void main() {
   late AppDatabase database;
@@ -23,6 +24,7 @@ void main() {
   late DriftActivityRecordsRepository activitiesRepository;
   late DriftEnergyObservationsRepository observationsRepository;
   late DriftActivityFeedbackRepository feedbackRepository;
+  late DriftLearningRunsRepository learningRunsRepository;
   late DriftDailySummariesRepository summariesRepository;
   late DriftPromptReceiptsRepository receiptsRepository;
 
@@ -43,6 +45,9 @@ void main() {
     );
     feedbackRepository = DriftActivityFeedbackRepository(
       ActivityFeedbackDao(database),
+    );
+    learningRunsRepository = DriftLearningRunsRepository(
+      LearningRunsDao(database),
     );
     summariesRepository = DriftDailySummariesRepository(
       DailySummariesDao(database),
@@ -274,55 +279,84 @@ void main() {
     },
   );
 
-  test('export DTO contains eight data groups and logical deletes', () async {
-    final activity = _activity(
-      id: 'deleted-export',
-      completedAt: DateTime.utc(2026, 7, 26, 10),
-    );
-    await activitiesRepository.insert(activity);
-    await activitiesRepository.logicallyDelete(
-      activity.id,
-      DateTime.utc(2026, 7, 26, 11),
-    );
+  test(
+    'learning run repository round-trips, deduplicates, and protects finals',
+    () async {
+      final run = backupFixtureV3().learningRuns.single;
 
-    final dto = PowerManagerExportDto(
-      schemaVersion: database.schemaVersion,
-      exportedAt: testNow,
-      appVersion: '0.1.0+1',
-      appSettings: await settingsRepository.get(),
-      ruleVersions: await rulesRepository.list(),
-      morningCheckIns: await checkInsRepository.list(),
-      activityRecords: await activitiesRepository.listAllForExport(),
-      energyObservations: await observationsRepository.list(),
-      activityFeedback: await feedbackRepository.list(),
-      dailySummaries: await summariesRepository.list(),
-      promptReceipts: await receiptsRepository.list(),
-    );
-    final json = dto.toJson();
-    final activityJson =
-        (json['activityRecords']! as List<Object?>).single!
-            as Map<String, Object?>;
+      await learningRunsRepository.insert(run);
 
-    expect(
-      json.keys,
-      containsAll([
-        'schemaVersion',
-        'exportedAt',
-        'appVersion',
-        'appSettings',
-        'ruleConfigVersions',
-        'morningCheckIns',
-        'activityRecords',
-        'energyObservations',
-        'activityFeedback',
-        'dailySummaries',
-        'promptReceipts',
-      ]),
-    );
-    expect(activityJson['status'], 'deleted');
-    expect(activityJson['deletedAt'], isNotNull);
-    expect(jsonDecode(jsonEncode(json)), isA<Map<String, Object?>>());
-  });
+      final stored = await learningRunsRepository.find(run.id);
+      expect(stored?.evidenceHash, run.evidenceHash);
+      expect(await learningRunsRepository.list(), hasLength(1));
+      expect(
+        await learningRunsRepository.findByIdempotency(
+          parameterFamily: run.parameterFamily,
+          sourceModelIdentity: run.sourceModelIdentity,
+          algorithmVersion: run.algorithmVersion,
+          configVersion: run.configVersion,
+          evidenceHash: run.evidenceHash,
+        ),
+        isNotNull,
+      );
+      await expectLater(learningRunsRepository.insert(run), throwsA(anything));
+      await expectLater(learningRunsRepository.update(run), throwsA(anything));
+    },
+  );
+
+  test(
+    'export DTO contains schema-v3 data groups and logical deletes',
+    () async {
+      final activity = _activity(
+        id: 'deleted-export',
+        completedAt: DateTime.utc(2026, 7, 26, 10),
+      );
+      await activitiesRepository.insert(activity);
+      await activitiesRepository.logicallyDelete(
+        activity.id,
+        DateTime.utc(2026, 7, 26, 11),
+      );
+
+      final dto = PowerManagerExportDto(
+        schemaVersion: database.schemaVersion,
+        exportedAt: testNow,
+        appVersion: '0.1.0+1',
+        appSettings: await settingsRepository.get(),
+        ruleVersions: await rulesRepository.list(),
+        morningCheckIns: await checkInsRepository.list(),
+        activityRecords: await activitiesRepository.listAllForExport(),
+        energyObservations: await observationsRepository.list(),
+        activityFeedback: await feedbackRepository.list(),
+        dailySummaries: await summariesRepository.list(),
+        promptReceipts: await receiptsRepository.list(),
+      );
+      final json = dto.toJson();
+      final activityJson =
+          (json['activityRecords']! as List<Object?>).single!
+              as Map<String, Object?>;
+
+      expect(
+        json.keys,
+        containsAll([
+          'schemaVersion',
+          'exportedAt',
+          'appVersion',
+          'appSettings',
+          'ruleConfigVersions',
+          'morningCheckIns',
+          'activityRecords',
+          'energyObservations',
+          'activityFeedback',
+          'learningRuns',
+          'dailySummaries',
+          'promptReceipts',
+        ]),
+      );
+      expect(activityJson['status'], 'deleted');
+      expect(activityJson['deletedAt'], isNotNull);
+      expect(jsonDecode(jsonEncode(json)), isA<Map<String, Object?>>());
+    },
+  );
 
   test(
     'JSON export service emits parseable versioned backup with deletes',
@@ -346,6 +380,7 @@ void main() {
         activities: activitiesRepository,
         observations: observationsRepository,
         feedback: feedbackRepository,
+        learningRuns: learningRunsRepository,
         summaries: summariesRepository,
         receipts: receiptsRepository,
         transactionRunner: transactionRunner,
@@ -358,11 +393,12 @@ void main() {
       final deleted = records.single as Map<String, Object?>;
 
       expect(result.fileName, 'powermanager-20260726-120000Z.json');
-      expect(json['schemaVersion'], 2);
+      expect(json['schemaVersion'], 3);
       expect(json['appVersion'], '0.1.0+1');
       expect(json['exportedAt'], testNow.toIso8601String());
       expect(json['ruleConfigVersions'], isA<List<Object?>>());
       expect(json['activityFeedback'], isEmpty);
+      expect(json['learningRuns'], isEmpty);
       expect(deleted['status'], 'deleted');
       expect(deleted, isNot(contains('rowid')));
       expect(deleted, isNot(contains('internalId')));

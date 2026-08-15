@@ -1,6 +1,6 @@
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 
-/// Canonical schema-v1/v2 transport shape shared by JSON export and restore.
+/// Canonical schema-v1/v2/v3 transport shape shared by JSON export and restore.
 final class PowerManagerExportDto {
   PowerManagerExportDto({
     required this.schemaVersion,
@@ -12,6 +12,7 @@ final class PowerManagerExportDto {
     required List<StoredEstimatedActivity> activityRecords,
     required List<EnergyObservation> energyObservations,
     List<ActivityFeedback> activityFeedback = const [],
+    List<LearningRun> learningRuns = const [],
     required List<DailySummary> dailySummaries,
     required List<PromptReceipt> promptReceipts,
   }) : ruleVersions = List.unmodifiable(ruleVersions),
@@ -19,6 +20,7 @@ final class PowerManagerExportDto {
        activityRecords = List.unmodifiable(activityRecords),
        energyObservations = List.unmodifiable(energyObservations),
        activityFeedback = List.unmodifiable(activityFeedback),
+       learningRuns = List.unmodifiable(learningRuns),
        dailySummaries = List.unmodifiable(dailySummaries),
        promptReceipts = List.unmodifiable(promptReceipts);
 
@@ -33,6 +35,7 @@ final class PowerManagerExportDto {
   final List<StoredEstimatedActivity> activityRecords;
   final List<EnergyObservation> energyObservations;
   final List<ActivityFeedback> activityFeedback;
+  final List<LearningRun> learningRuns;
   final List<DailySummary> dailySummaries;
   final List<PromptReceipt> promptReceipts;
 
@@ -50,10 +53,33 @@ final class PowerManagerExportDto {
           .toList(),
       if (schemaVersion >= 2)
         'activityFeedback': activityFeedback.map(_feedbackJson).toList(),
+      if (schemaVersion >= 3)
+        'learningRuns': learningRuns.map(_learningRunJson).toList(),
       'dailySummaries': dailySummaries.map(_summaryJson).toList(),
       'promptReceipts': promptReceipts.map(_receiptJson).toList(),
     };
   }
+}
+
+Map<String, Object?> _learningRunJson(LearningRun run) {
+  return {
+    'id': run.id,
+    'parameterFamily': run.parameterFamily.code,
+    'sourceModelIdentity': run.sourceModelIdentity,
+    'sourcePersonalizationVersionId': run.sourcePersonalizationVersionId,
+    'status': run.status.code,
+    'result': run.result?.code,
+    'evidenceSnapshotJson': run.evidenceSnapshotJson,
+    'evidenceHash': run.evidenceHash,
+    'evidenceHashVersion': run.evidenceHashVersion,
+    'algorithmVersion': run.algorithmVersion,
+    'configVersion': run.configVersion,
+    'currentValuesJson': run.currentValuesJson,
+    'candidateValuesJson': run.candidateValuesJson,
+    'reasonCodesJson': run.reasonCodesJson,
+    'triggeredAt': _utc(run.triggeredAt),
+    'completedAt': run.completedAt == null ? null : _utc(run.completedAt!),
+  };
 }
 
 Map<String, Object?> _settingsJson(AppSettings settings) {

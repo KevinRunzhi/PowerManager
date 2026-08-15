@@ -284,6 +284,79 @@ class ActivityFeedbackTable extends Table {
   ];
 }
 
+@DataClassName('LearningRunRow')
+@TableIndex(
+  name: 'learning_runs_idempotency',
+  columns: {
+    #parameterFamily,
+    #sourceModelIdentity,
+    #algorithmVersion,
+    #configVersion,
+    #evidenceHash,
+  },
+  unique: true,
+)
+@TableIndex(
+  name: 'learning_runs_source_time',
+  columns: {#parameterFamily, #sourceModelIdentity, #triggeredAt, #id},
+)
+@TableIndex(
+  name: 'learning_runs_status_time',
+  columns: {#status, #triggeredAt, #id},
+)
+class LearningRunsTable extends Table {
+  @override
+  String get tableName => 'learning_runs';
+
+  TextColumn get id => text()();
+  TextColumn get parameterFamily => text()
+      .named('parameter_family')
+      .map(const LearningParameterFamilyConverter())();
+  TextColumn get sourceModelIdentity => text().named('source_model_identity')();
+  TextColumn get sourcePersonalizationVersionId =>
+      text().named('source_personalization_version_id').nullable()();
+  TextColumn get status => text().map(const LearningRunStatusConverter())();
+  TextColumn get result =>
+      text().map(const LearningRunResultConverter()).nullable()();
+  TextColumn get evidenceSnapshotJson =>
+      text().named('evidence_snapshot_json')();
+  TextColumn get evidenceHash => text().named('evidence_hash')();
+  TextColumn get evidenceHashVersion => text().named('evidence_hash_version')();
+  TextColumn get algorithmVersion => text().named('algorithm_version')();
+  TextColumn get configVersion => text().named('config_version')();
+  TextColumn get currentValuesJson => text().named('current_values_json')();
+  TextColumn get candidateValuesJson =>
+      text().named('candidate_values_json').nullable()();
+  TextColumn get reasonCodesJson => text().named('reason_codes_json')();
+  DateTimeColumn get triggeredAt => dateTime().named('triggered_at')();
+  DateTimeColumn get completedAt =>
+      dateTime().named('completed_at').nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+
+  @override
+  List<String> get customConstraints => const [
+    "CHECK (length(trim(id)) > 0)",
+    "CHECK (parameter_family IN ('baseline', 'activityImpact'))",
+    "CHECK (length(trim(source_model_identity)) > 0)",
+    'CHECK (source_personalization_version_id IS NULL)',
+    "CHECK (status IN ('pending', 'running', 'completed', 'retryableFailure', 'terminalFailure'))",
+    "CHECK (result IS NULL OR result IN ('insufficientEvidence', 'readyForAudit', 'configurationBlocked'))",
+    "CHECK (json_valid(evidence_snapshot_json) AND json_type(evidence_snapshot_json) = 'object')",
+    "CHECK (length(evidence_hash) = 64 AND evidence_hash = lower(evidence_hash) AND evidence_hash NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (evidence_hash_version = 'canonical-evidence-sha256-v1')",
+    "CHECK (algorithm_version = 'evidence-shadow-v1')",
+    "CHECK (config_version = 'evidence-readiness-14x21-v1')",
+    "CHECK (json_valid(current_values_json) AND json_type(current_values_json) = 'object')",
+    "CHECK (json_type(current_values_json, '\$.baseEnergy') = 'integer' AND json_extract(current_values_json, '\$.baseEnergy') BETWEEN 60 AND 140)",
+    "CHECK (current_values_json = json_object('baseEnergy', json_extract(current_values_json, '\$.baseEnergy')))",
+    'CHECK (candidate_values_json IS NULL)',
+    "CHECK (json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array')",
+    "CHECK (((status IN ('pending', 'running')) AND result IS NULL AND completed_at IS NULL) OR (status = 'completed' AND result IS NOT NULL AND completed_at IS NOT NULL) OR (status IN ('retryableFailure', 'terminalFailure') AND result IS NULL AND completed_at IS NOT NULL))",
+  ];
+}
+
 @DataClassName('DailySummaryRow')
 class DailySummariesTable extends Table {
   @override

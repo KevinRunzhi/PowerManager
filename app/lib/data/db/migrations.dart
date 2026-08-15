@@ -4,13 +4,26 @@ typedef SchemaMigrationFailureHook = Future<void> Function(String checkpoint);
 
 extension _SchemaMigrations on AppDatabase {
   Future<void> _upgradeSchema(Migrator migrator, int from, int to) async {
-    if (from != 1 || to != 2) {
+    if (from < 1 || to > 3 || from >= to) {
       throw StateError('Unsupported schema migration: $from -> $to');
     }
 
     await customStatement('PRAGMA foreign_keys = OFF');
     try {
-      await transaction(() => _migrateV1ToV2(migrator));
+      await transaction(() async {
+        var current = from;
+        if (current == 1 && to >= 2) {
+          await _migrateV1ToV2(migrator);
+          current = 2;
+        }
+        if (current == 2 && to >= 3) {
+          await _migrateV2ToV3(migrator);
+          current = 3;
+        }
+        if (current != to) {
+          throw StateError('Unsupported schema migration: $from -> $to');
+        }
+      });
     } finally {
       await customStatement('PRAGMA foreign_keys = ON');
     }
@@ -89,8 +102,19 @@ extension _SchemaMigrations on AppDatabase {
     await _createV2IndexesAfterMigration();
 
     await migrationFailureHook?.call('before-protection-triggers');
-    await _createProtectionTriggers();
+    await _createProtectionTriggers(includeLearningRuns: false);
     await _verifySchemaV2();
+  }
+
+  Future<void> _migrateV2ToV3(Migrator migrator) async {
+    await migrationFailureHook?.call('before-learning-runs-create');
+    await migrator.createTable(learningRunsTable);
+    await migrationFailureHook?.call('after-learning-runs-table');
+    await _createV3IndexesAfterMigration();
+    await migrationFailureHook?.call('after-learning-runs-indexes');
+    await _createLearningRunProtectionTrigger();
+    await migrationFailureHook?.call('before-v3-verify');
+    await _verifySchemaV3();
   }
 
   Future<void> _verifyObservationCopy(int sourceCount) async {
@@ -145,6 +169,32 @@ extension _SchemaMigrations on AppDatabase {
     ''');
   }
 
+  Future<void> _createV3IndexesAfterMigration() async {
+    await customStatement('''
+      CREATE UNIQUE INDEX learning_runs_idempotency
+      ON learning_runs (
+        parameter_family,
+        source_model_identity,
+        algorithm_version,
+        config_version,
+        evidence_hash
+      )
+    ''');
+    await customStatement('''
+      CREATE INDEX learning_runs_source_time
+      ON learning_runs (
+        parameter_family,
+        source_model_identity,
+        triggered_at,
+        id
+      )
+    ''');
+    await customStatement('''
+      CREATE INDEX learning_runs_status_time
+      ON learning_runs (status, triggered_at, id)
+    ''');
+  }
+
   Future<void> _verifySchemaV2() async {
     final foreignKeyIssues = await customSelect(
       'PRAGMA foreign_key_check',
@@ -187,6 +237,48 @@ extension _SchemaMigrations on AppDatabase {
     ''').get();
     if (forbiddenTables.isNotEmpty) {
       throw StateError('Schema v2 contains premature learning tables');
+    }
+  }
+
+  Future<void> _verifySchemaV3() async {
+    final foreignKeyIssues = await customSelect(
+      'PRAGMA foreign_key_check',
+    ).get();
+    if (foreignKeyIssues.isNotEmpty) {
+      throw StateError('Schema v3 migration violates foreign keys');
+    }
+
+    final integrity = await customSelect('PRAGMA integrity_check').get();
+    if (integrity.length != 1 ||
+        integrity.single.data.values.singleOrNull != 'ok') {
+      throw StateError('Schema v3 migration failed integrity_check');
+    }
+
+    final schemaObjects = await customSelect('''
+      SELECT name FROM sqlite_master
+      WHERE type IN ('table', 'index', 'trigger')
+    ''').get();
+    final names = schemaObjects.map((row) => row.read<String>('name')).toSet();
+    const required = <String>{
+      'learning_runs',
+      'learning_runs_idempotency',
+      'learning_runs_source_time',
+      'learning_runs_status_time',
+      'learning_runs_reject_final_update',
+    };
+    if (!names.containsAll(required)) {
+      throw StateError('Schema v3 learning run objects are missing');
+    }
+
+    if (await _tableRowCount('learning_runs') != 0) {
+      throw StateError('Schema v3 migration fabricated learning runs');
+    }
+    final forbiddenTables = await customSelect('''
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'personalization_versions'
+    ''').get();
+    if (forbiddenTables.isNotEmpty) {
+      throw StateError('Schema v3 contains premature model tables');
     }
   }
 }

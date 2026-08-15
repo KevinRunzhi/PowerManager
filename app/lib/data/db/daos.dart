@@ -221,6 +221,54 @@ final class ActivityFeedbackDao extends DatabaseAccessor<AppDatabase>
   }
 }
 
+@DriftAccessor(tables: [LearningRunsTable])
+final class LearningRunsDao extends DatabaseAccessor<AppDatabase>
+    with _$LearningRunsDaoMixin {
+  LearningRunsDao(super.attachedDatabase);
+
+  Future<void> insertRun(LearningRunsTableCompanion run) async {
+    await into(learningRunsTable).insert(run);
+  }
+
+  Future<LearningRunRow?> findById(String id) {
+    return (select(
+      learningRunsTable,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+  }
+
+  Future<LearningRunRow?> findByIdempotency({
+    required LearningParameterFamily parameterFamily,
+    required String sourceModelIdentity,
+    required String algorithmVersion,
+    required String configVersion,
+    required String evidenceHash,
+  }) {
+    return (select(learningRunsTable)..where(
+          (row) =>
+              row.parameterFamily.equalsValue(parameterFamily) &
+              row.sourceModelIdentity.equals(sourceModelIdentity) &
+              row.algorithmVersion.equals(algorithmVersion) &
+              row.configVersion.equals(configVersion) &
+              row.evidenceHash.equals(evidenceHash),
+        ))
+        .getSingleOrNull();
+  }
+
+  Future<List<LearningRunRow>> listAll() {
+    return (select(learningRunsTable)..orderBy([
+          (row) => OrderingTerm.asc(row.triggeredAt),
+          (row) => OrderingTerm.asc(row.id),
+        ]))
+        .get();
+  }
+
+  Future<int> updateById(String id, LearningRunsTableCompanion changes) {
+    return (update(
+      learningRunsTable,
+    )..where((row) => row.id.equals(id))).write(changes);
+  }
+}
+
 @DriftAccessor(tables: [DailySummariesTable])
 final class DailySummariesDao extends DatabaseAccessor<AppDatabase>
     with _$DailySummariesDaoMixin {

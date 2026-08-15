@@ -124,6 +124,12 @@ B1-0 在实现影子学习器时新增 `learning_runs`。该版本只保存可�
 B1 纯证据运行的 `candidateValuesJson` 必须为空。发布 shadow-only 候选配置后的非空值也只是
 离线结果，数据库约束和 Application 依赖图都不得把它解释成可生效模型。
 
+B1-0 的第一次可执行合同进一步固定为：`parameterFamily = baseline`、算法
+`evidence-shadow-v1`、配置 `evidence-readiness-14x21-v1`、摘要
+`canonical-evidence-sha256-v1`，candidateValuesJson 使用 SQL NULL。状态 / 结果 / completedAt 的
+组合 CHECK、64 位 lowercase hash、JSON 类型、completed / terminal 不可变保护和 v1 直升 v3 的
+整链原子回滚，以《阶段 B1-0 Spec》v1.1 为准。activityImpact 在 B3 抽样合同发布前不创建运行。
+
 ### 2.4 数据库 schema v4：基准线模型版本
 
 B1 审计通过并确认 B2 算法后新增：
@@ -301,6 +307,10 @@ v4 / v5 App 导入 v1～v3 备份时，旧 `baseEstimatedEnergy`、`pendingBaseE
 恢复后不得立即运行学习器。先验证唯一 active 模型、scheduled 版本、证据引用和当前生活日
 一致，再由串行协调器执行一次幂等准备。
 
+schema v3 导入 v1 / v2 时 `learningRuns = []`；导入 v3 时先严格验证运行状态组合、幂等唯一键、
+candidate SQL NULL 语义和证据 hash 格式，再进入事务。恢复成功本身不触发运行，必须等内存重建、
+prepare 与导出再解析完整性门完成。
+
 若恢复出的自动 scheduled 版本已经到达或错过原生效生活日，恢复事务必须使其失效；禁止
 首次 prepare 静默补应用。`reviewAccepted / manual / legacyManualPending` 按明确用户决定和原
 生效日幂等处理。新的自动候选必须基于恢复后状态重新学习并满足全部安全门。
@@ -352,6 +362,11 @@ B3 增加 `ActivityFeedbackSampler`：只从当前配置允许、尚未反馈且
 - 先检查构建门、对应参数族模式、暂停、冷却和是否已有未处理版本；
 - 已有全局待审核或待生效版本时不生成另一个参数族候选；
 - 两个参数族同时就绪时按配置优先级一次只运行一个。
+
+B1 的 run ID 由五元幂等键确定性派生。pending、running、completed / failure 使用分段事务：严重
+故障即使来不及写 failure，也保留可由同一 ID 恢复的 pending / running；不能把整个运行放进一个
+回滚后连失败证据都消失的事务。协调器与 B0-3 业务写入共用 BusinessWriteCoordinator，但
+beforeWrite 不得同步等待重新进入同一队列的学习任务。
 
 ### 5.7 ModelActivationService
 

@@ -353,6 +353,73 @@ final class DriftActivityFeedbackRepository
   }
 }
 
+final class DriftLearningRunsRepository implements LearningRunsRepository {
+  const DriftLearningRunsRepository(this.dao);
+
+  final LearningRunsDao dao;
+
+  @override
+  Future<void> insert(LearningRun run) {
+    return dao.insertRun(_learningRunCompanion(run));
+  }
+
+  @override
+  Future<void> update(LearningRun run) async {
+    final changed = await dao.updateById(
+      run.id,
+      LearningRunsTableCompanion(
+        parameterFamily: Value(run.parameterFamily),
+        sourceModelIdentity: Value(run.sourceModelIdentity),
+        sourcePersonalizationVersionId: Value(
+          run.sourcePersonalizationVersionId,
+        ),
+        status: Value(run.status),
+        result: Value(run.result),
+        evidenceSnapshotJson: Value(run.evidenceSnapshotJson),
+        evidenceHash: Value(run.evidenceHash),
+        evidenceHashVersion: Value(run.evidenceHashVersion),
+        algorithmVersion: Value(run.algorithmVersion),
+        configVersion: Value(run.configVersion),
+        currentValuesJson: Value(run.currentValuesJson),
+        candidateValuesJson: Value(run.candidateValuesJson),
+        reasonCodesJson: Value(run.reasonCodesJson),
+        triggeredAt: Value(run.triggeredAt.toUtc()),
+        completedAt: Value(run.completedAt?.toUtc()),
+      ),
+    );
+    _expectOneChanged(changed, 'learning run ${run.id}');
+  }
+
+  @override
+  Future<LearningRun?> find(String id) async {
+    final row = await dao.findById(id);
+    return row == null ? null : _mapLearningRun(row);
+  }
+
+  @override
+  Future<LearningRun?> findByIdempotency({
+    required LearningParameterFamily parameterFamily,
+    required String sourceModelIdentity,
+    required String algorithmVersion,
+    required String configVersion,
+    required String evidenceHash,
+  }) async {
+    final row = await dao.findByIdempotency(
+      parameterFamily: parameterFamily,
+      sourceModelIdentity: sourceModelIdentity,
+      algorithmVersion: algorithmVersion,
+      configVersion: configVersion,
+      evidenceHash: evidenceHash,
+    );
+    return row == null ? null : _mapLearningRun(row);
+  }
+
+  @override
+  Future<List<LearningRun>> list() async {
+    return (await dao.listAll()).map(_mapLearningRun).toList();
+  }
+}
+
 final class DriftDailySummariesRepository implements DailySummariesRepository {
   const DriftDailySummariesRepository(this.dao);
 
@@ -580,6 +647,48 @@ ActivityFeedbackTableCompanion _feedbackCompanion(ActivityFeedback feedback) {
     status: feedback.status,
     invalidationReason: Value(feedback.invalidationReason),
     observedAt: feedback.observedAt.toUtc(),
+  );
+}
+
+LearningRun _mapLearningRun(LearningRunRow row) {
+  return LearningRun(
+    id: row.id,
+    parameterFamily: row.parameterFamily,
+    sourceModelIdentity: row.sourceModelIdentity,
+    sourcePersonalizationVersionId: row.sourcePersonalizationVersionId,
+    status: row.status,
+    result: row.result,
+    evidenceSnapshotJson: row.evidenceSnapshotJson,
+    evidenceHash: row.evidenceHash,
+    evidenceHashVersion: row.evidenceHashVersion,
+    algorithmVersion: row.algorithmVersion,
+    configVersion: row.configVersion,
+    currentValuesJson: row.currentValuesJson,
+    candidateValuesJson: row.candidateValuesJson,
+    reasonCodesJson: row.reasonCodesJson,
+    triggeredAt: row.triggeredAt.toUtc(),
+    completedAt: row.completedAt?.toUtc(),
+  );
+}
+
+LearningRunsTableCompanion _learningRunCompanion(LearningRun run) {
+  return LearningRunsTableCompanion.insert(
+    id: run.id,
+    parameterFamily: run.parameterFamily,
+    sourceModelIdentity: run.sourceModelIdentity,
+    sourcePersonalizationVersionId: Value(run.sourcePersonalizationVersionId),
+    status: run.status,
+    result: Value(run.result),
+    evidenceSnapshotJson: run.evidenceSnapshotJson,
+    evidenceHash: run.evidenceHash,
+    evidenceHashVersion: run.evidenceHashVersion,
+    algorithmVersion: run.algorithmVersion,
+    configVersion: run.configVersion,
+    currentValuesJson: run.currentValuesJson,
+    candidateValuesJson: Value(run.candidateValuesJson),
+    reasonCodesJson: run.reasonCodesJson,
+    triggeredAt: run.triggeredAt.toUtc(),
+    completedAt: Value(run.completedAt?.toUtc()),
   );
 }
 

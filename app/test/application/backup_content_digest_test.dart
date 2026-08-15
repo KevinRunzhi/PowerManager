@@ -53,6 +53,16 @@ void main() {
     expect(digester.digest(reversed), digester.digest(source));
   });
 
+  test('schema v3 learning runs are part of the business digest', () {
+    final source = backupFixtureV3();
+    final withoutLearningRuns = _copy(source, learningRuns: const []);
+
+    expect(
+      digester.digest(withoutLearningRuns),
+      isNot(digester.digest(source)),
+    );
+  });
+
   test('nested object insertion order does not change the digest', () {
     final source = backupFixture();
     final forwardRule = RuleConfigVersion(
@@ -100,6 +110,7 @@ PowerManagerExportDto _copy(
   String? appVersion,
   List<RuleConfigVersion>? ruleVersions,
   List<ActivityFeedback>? activityFeedback,
+  List<LearningRun>? learningRuns,
 }) {
   return PowerManagerExportDto(
     schemaVersion: source.schemaVersion,
@@ -111,6 +122,7 @@ PowerManagerExportDto _copy(
     activityRecords: source.activityRecords,
     energyObservations: source.energyObservations,
     activityFeedback: activityFeedback ?? source.activityFeedback,
+    learningRuns: learningRuns ?? source.learningRuns,
     dailySummaries: source.dailySummaries,
     promptReceipts: source.promptReceipts,
   );

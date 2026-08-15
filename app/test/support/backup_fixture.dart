@@ -3,6 +3,8 @@ import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
 import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/canonical_json.dart';
+import 'package:power_manager/domain/learning/shadow_learning.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 
 final backupFixtureNow = DateTime.utc(2026, 8, 9, 4);
@@ -181,5 +183,63 @@ PowerManagerExportDto backupFixtureV2({int baseEnergy = 100}) {
     ],
     dailySummaries: legacy.dailySummaries,
     promptReceipts: legacy.promptReceipts,
+  );
+}
+
+PowerManagerExportDto backupFixtureV3({int baseEnergy = 100}) {
+  final previous = backupFixtureV2(baseEnergy: baseEnergy);
+  final lifeDay = previous.energyObservations
+      .firstWhere((item) => item.type == EnergyObservationType.dailyAbsolute)
+      .lifeDay;
+  final config = ShadowLearningConfig.evidenceReadinessV1();
+  final evidence = const ShadowEvidenceBuilder()
+      .buildAll(
+        observations: previous.energyObservations,
+        morningLifeDays: {lifeDay},
+        settledLifeDays: {lifeDay},
+        config: config,
+      )
+      .single;
+  final run = LearningRun(
+    id: deterministicLearningRunId(
+      parameterFamily: LearningParameterFamily.baseline,
+      sourceModelIdentity: evidence.sourceModelIdentity,
+      algorithmVersion: config.algorithmVersion,
+      configVersion: config.configVersion,
+      evidenceHash: evidence.evidenceHash,
+    ),
+    parameterFamily: LearningParameterFamily.baseline,
+    sourceModelIdentity: evidence.sourceModelIdentity,
+    sourcePersonalizationVersionId: null,
+    status: LearningRunStatus.completed,
+    result: LearningRunResult.insufficientEvidence,
+    evidenceSnapshotJson: evidence.evidenceSnapshotJson,
+    evidenceHash: evidence.evidenceHash,
+    evidenceHashVersion: config.evidenceHashVersion,
+    algorithmVersion: config.algorithmVersion,
+    configVersion: config.configVersion,
+    currentValuesJson: evidence.currentValuesJson,
+    candidateValuesJson: null,
+    reasonCodesJson: const CanonicalJsonEncoder().encode([
+      ShadowLearningReason.minimumEligibleObservationPairsNotMet.code,
+      ShadowLearningReason.minimumObservationSpanNotMet.code,
+      ShadowLearningReason.shadowWindowsIncomplete.code,
+    ]),
+    triggeredAt: backupFixtureNow,
+    completedAt: backupFixtureNow.add(const Duration(seconds: 1)),
+  );
+  return PowerManagerExportDto(
+    schemaVersion: 3,
+    exportedAt: previous.exportedAt,
+    appVersion: '0.1.3+fixture',
+    appSettings: previous.appSettings,
+    ruleVersions: previous.ruleVersions,
+    morningCheckIns: previous.morningCheckIns,
+    activityRecords: previous.activityRecords,
+    energyObservations: previous.energyObservations,
+    activityFeedback: previous.activityFeedback,
+    learningRuns: [run],
+    dailySummaries: previous.dailySummaries,
+    promptReceipts: previous.promptReceipts,
   );
 }

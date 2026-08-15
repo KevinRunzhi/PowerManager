@@ -213,6 +213,45 @@ final class ActivityFeedbackInvalidationReasonConverter
   String toSql(ActivityFeedbackInvalidationReason value) => value.code;
 }
 
+final class LearningParameterFamilyConverter
+    extends TypeConverter<LearningParameterFamily, String> {
+  const LearningParameterFamilyConverter();
+
+  @override
+  LearningParameterFamily fromSql(String fromDb) => _enumFromCode(
+    LearningParameterFamily.values,
+    fromDb,
+    (value) => value.code,
+  );
+
+  @override
+  String toSql(LearningParameterFamily value) => value.code;
+}
+
+final class LearningRunStatusConverter
+    extends TypeConverter<LearningRunStatus, String> {
+  const LearningRunStatusConverter();
+
+  @override
+  LearningRunStatus fromSql(String fromDb) =>
+      _enumFromCode(LearningRunStatus.values, fromDb, (value) => value.code);
+
+  @override
+  String toSql(LearningRunStatus value) => value.code;
+}
+
+final class LearningRunResultConverter
+    extends TypeConverter<LearningRunResult, String> {
+  const LearningRunResultConverter();
+
+  @override
+  LearningRunResult fromSql(String fromDb) =>
+      _enumFromCode(LearningRunResult.values, fromDb, (value) => value.code);
+
+  @override
+  String toSql(LearningRunResult value) => value.code;
+}
+
 final class AbsoluteEnergyStateConverter
     extends TypeConverter<AbsoluteEnergyState, String> {
   const AbsoluteEnergyStateConverter();

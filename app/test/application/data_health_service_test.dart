@@ -12,6 +12,7 @@ import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/learning_eligibility_service.dart';
 import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/shadow_learning.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 import 'package:test/test.dart';
@@ -54,7 +55,7 @@ void main() {
     expect(report.relativeCorrections, 1);
     expect(report.activityRecords, 2);
     expect(report.deletedActivityRecords, 1);
-    expect(report.schemaVersion, 2);
+    expect(report.schemaVersion, 3);
     expect(report.legacyObservations, 3);
     expect(report.contractObservations, 0);
     expect(report.activityFeedback, 2);
@@ -142,13 +143,29 @@ void main() {
         ),
         1,
       );
+      expect(report.automaticLearningProgress, hasLength(2));
+      final current = report.automaticLearningProgress.singleWhere(
+        (item) => item.referenceType == ObservationReferenceType.currentMoment,
+      );
+      final previous = report.automaticLearningProgress.singleWhere(
+        (item) =>
+            item.referenceType == ObservationReferenceType.previousLifeDayEnd,
+      );
+      expect(current.eligibleTotal, 1);
+      expect(current.missingToMinimum, 13);
+      expect(current.firstWindowSize, 1);
+      expect(previous.eligibleTotal, 0);
+      expect(
+        previous.exclusionCounts[LearningIneligibilityReason.coverageUncertain],
+        1,
+      );
     },
   );
 
   test('fourteen observations only reaches the discussion count', () {
     final report = DataHealthReport(
       checkedAt: backupFixtureNow,
-      schemaVersion: 2,
+      schemaVersion: 3,
       integrityPassed: true,
       settledDays: 14,
       standardEffectiveDays: 14,
@@ -166,6 +183,59 @@ void main() {
     expect(report.daysUntilLegacyDiscussionCount, 0);
     expect(report.reachedLegacyDiscussionCount, isTrue);
   });
+
+  test(
+    'reports the latest current-regime run without exposing its hash',
+    () async {
+      final observation = _contractActual(
+        day1,
+        'run-evidence',
+        referenceType: ObservationReferenceType.currentMoment,
+      );
+      final evidence = const ShadowEvidenceBuilder()
+          .buildAll(
+            observations: [observation],
+            morningLifeDays: {day1},
+            settledLifeDays: {day1},
+            config: ShadowLearningConfig.evidenceReadinessV1(),
+          )
+          .single;
+      final run = LearningRun(
+        id: 'safe-test-run',
+        parameterFamily: LearningParameterFamily.baseline,
+        sourceModelIdentity: evidence.sourceModelIdentity,
+        sourcePersonalizationVersionId: null,
+        status: LearningRunStatus.retryableFailure,
+        result: null,
+        evidenceSnapshotJson: evidence.evidenceSnapshotJson,
+        evidenceHash: evidence.evidenceHash,
+        evidenceHashVersion: canonicalEvidenceHashV1,
+        algorithmVersion: shadowLearningAlgorithmV1,
+        configVersion: shadowLearningConfigV1,
+        currentValuesJson: evidence.currentValuesJson,
+        candidateValuesJson: null,
+        reasonCodesJson: '["retryableLearningFailure"]',
+        triggeredAt: backupFixtureNow,
+        completedAt: backupFixtureNow,
+      );
+
+      final report = await _service(
+        summaries: [_summary(day1)],
+        observations: [observation],
+        mornings: [_morning(day1)],
+        learningRuns: [run],
+      ).check();
+      final progress = report.automaticLearningProgress.singleWhere(
+        (item) => item.referenceType == ObservationReferenceType.currentMoment,
+      );
+
+      expect(report.learningRuns, 1);
+      expect(report.retryableLearningRuns, 1);
+      expect(progress.latestRunStatus, LearningRunStatus.retryableFailure);
+      expect(progress.latestRunMatchesCurrentEvidence, isTrue);
+      expect(progress.latestRunAt, backupFixtureNow);
+    },
+  );
 }
 
 DataHealthService _service({
@@ -174,6 +244,7 @@ DataHealthService _service({
   List<StoredEstimatedActivity> activities = const [],
   List<ActivityFeedback> feedback = const [],
   List<MorningCheckIn> mornings = const [],
+  List<LearningRun> learningRuns = const [],
   String? exportContents,
 }) {
   return DataHealthService(
@@ -187,6 +258,7 @@ DataHealthService _service({
     activities: _Activities(activities),
     observations: _Observations(observations),
     feedback: _Feedback(feedback),
+    learningRuns: _LearningRuns(learningRuns),
     summaries: _Summaries(summaries),
     localBackupStore: _BackupStore(),
     upgradeReadiness: const _ReadinessChecker(),
@@ -446,6 +518,29 @@ final class _Feedback implements ActivityFeedbackRepository {
       throw UnimplementedError();
   @override
   Future<void> update(ActivityFeedback feedback) => throw UnimplementedError();
+}
+
+final class _LearningRuns implements LearningRunsRepository {
+  const _LearningRuns(this.items);
+
+  final List<LearningRun> items;
+
+  @override
+  Future<List<LearningRun>> list() async => items;
+  @override
+  Future<LearningRun?> find(String id) => throw UnimplementedError();
+  @override
+  Future<LearningRun?> findByIdempotency({
+    required LearningParameterFamily parameterFamily,
+    required String sourceModelIdentity,
+    required String algorithmVersion,
+    required String configVersion,
+    required String evidenceHash,
+  }) => throw UnimplementedError();
+  @override
+  Future<void> insert(LearningRun run) => throw UnimplementedError();
+  @override
+  Future<void> update(LearningRun run) => throw UnimplementedError();
 }
 
 ActivityFeedback _feedback({required bool active}) {

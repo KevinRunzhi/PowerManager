@@ -7,6 +7,7 @@ import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
 import 'package:power_manager/application/json_backup_codec.dart';
 import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
+import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/features/settings/presentation/onboarding_dialog.dart';
@@ -355,10 +356,25 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
       setState(() => _writingRestore = true);
       await service.restore(inspection);
       _invalidateAfterRestore();
+      ref
+          .read(currentPreparationRefreshProvider.notifier)
+          .refresh(PreparationTrigger.safeRestore);
+      var postRestoreCheckPassed = true;
+      try {
+        await ref.read(currentPreparationProvider.future);
+      } on Object {
+        postRestoreCheckPassed = false;
+      }
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('恢复成功，已保存恢复前安全副本。')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            postRestoreCheckPassed
+                ? '恢复成功，安全检查已完成，并已保存恢复前副本。'
+                : '恢复成功并已保存安全副本；自动检查将在下次启动时重试。',
+          ),
+        ),
+      );
       Navigator.of(
         context,
       ).pushNamedAndRemoveUntil(AppRoutes.home, (route) => false);
@@ -386,7 +402,6 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
 
   void _invalidateAfterRestore() {
     ref.invalidate(appSettingsProvider);
-    ref.invalidate(currentPreparationProvider);
     ref.invalidate(morningCompletionStatusProvider);
     ref.invalidate(currentMorningCheckInProvider);
     ref.invalidate(currentDailyObservationProvider);
@@ -634,6 +649,11 @@ class BackupPreviewSheet extends StatelessWidget {
               label: '活动反馈',
               value:
                   '${currentCounts.activityFeedback} → ${inspection.counts.activityFeedback}',
+            ),
+            _PreviewLine(
+              label: '影子学习运行',
+              value:
+                  '${currentCounts.learningRuns} → ${inspection.counts.learningRuns}',
             ),
             _PreviewLine(
               label: '日总结',

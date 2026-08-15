@@ -188,6 +188,44 @@ final class ActivityFeedback {
   final DateTime observedAt;
 }
 
+final class LearningRun {
+  const LearningRun({
+    required this.id,
+    required this.parameterFamily,
+    required this.sourceModelIdentity,
+    required this.sourcePersonalizationVersionId,
+    required this.status,
+    required this.result,
+    required this.evidenceSnapshotJson,
+    required this.evidenceHash,
+    required this.evidenceHashVersion,
+    required this.algorithmVersion,
+    required this.configVersion,
+    required this.currentValuesJson,
+    required this.candidateValuesJson,
+    required this.reasonCodesJson,
+    required this.triggeredAt,
+    required this.completedAt,
+  });
+
+  final String id;
+  final LearningParameterFamily parameterFamily;
+  final String sourceModelIdentity;
+  final String? sourcePersonalizationVersionId;
+  final LearningRunStatus status;
+  final LearningRunResult? result;
+  final String evidenceSnapshotJson;
+  final String evidenceHash;
+  final String evidenceHashVersion;
+  final String algorithmVersion;
+  final String configVersion;
+  final String currentValuesJson;
+  final String? candidateValuesJson;
+  final String reasonCodesJson;
+  final DateTime triggeredAt;
+  final DateTime? completedAt;
+}
+
 final class DailySummary {
   DailySummary({
     required this.lifeDay,

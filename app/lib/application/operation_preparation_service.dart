@@ -6,7 +6,13 @@ import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 
-enum PreparationTrigger { coldStart, resumed, lifeDayBoundary, beforeWrite }
+enum PreparationTrigger {
+  coldStart,
+  resumed,
+  lifeDayBoundary,
+  safeRestore,
+  beforeWrite,
+}
 
 abstract interface class TransactionRunner {
   Future<T> run<T>(Future<T> Function() action);

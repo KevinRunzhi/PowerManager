@@ -11,6 +11,7 @@ import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/learning_eligibility_service.dart';
 import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/shadow_learning.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 
@@ -39,6 +40,10 @@ final class DataHealthReport {
     this.earliestEligibleLifeDay,
     this.latestEligibleLifeDay,
     this.learningExclusionCounts = const {},
+    this.learningRuns = 0,
+    this.retryableLearningRuns = 0,
+    this.terminalLearningRuns = 0,
+    this.automaticLearningProgress = const [],
     required this.localBackup,
     required this.mvpBUpgradeReadiness,
   });
@@ -66,6 +71,10 @@ final class DataHealthReport {
   final LifeDay? earliestEligibleLifeDay;
   final LifeDay? latestEligibleLifeDay;
   final Map<LearningIneligibilityReason, int> learningExclusionCounts;
+  final int learningRuns;
+  final int retryableLearningRuns;
+  final int terminalLearningRuns;
+  final List<AutomaticLearningProgress> automaticLearningProgress;
   final LocalBackupMetadata? localBackup;
   final MvpBUpgradeReadinessReport mvpBUpgradeReadiness;
 
@@ -82,6 +91,53 @@ final class DataHealthReport {
       exclusionCount(LearningIneligibilityReason.unsettledLifeDay);
 }
 
+final class AutomaticLearningProgress {
+  AutomaticLearningProgress({
+    required this.referenceType,
+    required this.sourceModelIdentity,
+    required this.eligibleTotal,
+    required this.selectedEligible,
+    required this.excludedTotal,
+    required this.missingToMinimum,
+    required this.spanCalendarDays,
+    required this.earliestLifeDay,
+    required this.latestLifeDay,
+    required this.directionCounts,
+    required List<DirectionCounts> windowDirectionCounts,
+    required List<int> windowSizes,
+    required Map<LearningIneligibilityReason, int> exclusionCounts,
+    required this.ready,
+    required this.latestRunStatus,
+    required this.latestRunResult,
+    required this.latestRunAt,
+    required this.latestRunMatchesCurrentEvidence,
+  }) : windowDirectionCounts = List.unmodifiable(windowDirectionCounts),
+       windowSizes = List.unmodifiable(windowSizes),
+       exclusionCounts = Map.unmodifiable(exclusionCounts);
+
+  final ObservationReferenceType referenceType;
+  final String sourceModelIdentity;
+  final int eligibleTotal;
+  final int selectedEligible;
+  final int excludedTotal;
+  final int missingToMinimum;
+  final int spanCalendarDays;
+  final LifeDay? earliestLifeDay;
+  final LifeDay? latestLifeDay;
+  final DirectionCounts directionCounts;
+  final List<DirectionCounts> windowDirectionCounts;
+  final List<int> windowSizes;
+  final Map<LearningIneligibilityReason, int> exclusionCounts;
+  final bool ready;
+  final LearningRunStatus? latestRunStatus;
+  final LearningRunResult? latestRunResult;
+  final DateTime? latestRunAt;
+  final bool latestRunMatchesCurrentEvidence;
+
+  int get firstWindowSize => windowSizes.firstOrNull ?? 0;
+  int get secondWindowSize => windowSizes.length < 2 ? 0 : windowSizes[1];
+}
+
 final class DataHealthService {
   const DataHealthService({
     required this.exportService,
@@ -92,11 +148,13 @@ final class DataHealthService {
     required this.activities,
     required this.observations,
     required this.feedback,
+    required this.learningRuns,
     required this.summaries,
     required this.localBackupStore,
     required this.upgradeReadiness,
     this.eligibilityService = const LearningEligibilityService(),
     this.regimeKeyBuilder = const ModelRegimeKeyBuilder(),
+    this.evidenceBuilder = const ShadowEvidenceBuilder(),
   });
 
   final JsonExporter exportService;
@@ -107,11 +165,13 @@ final class DataHealthService {
   final ActivityRecordsRepository activities;
   final EnergyObservationsRepository observations;
   final ActivityFeedbackRepository feedback;
+  final LearningRunsRepository learningRuns;
   final DailySummariesRepository summaries;
   final LocalBackupStore localBackupStore;
   final MvpBUpgradeReadinessChecker upgradeReadiness;
   final LearningEligibilityService eligibilityService;
   final ModelRegimeKeyBuilder regimeKeyBuilder;
+  final ShadowEvidenceBuilder evidenceBuilder;
 
   Future<DataHealthReport> check() async {
     final checkedAt = clock.now();
@@ -120,6 +180,7 @@ final class DataHealthService {
       activities.listAllForExport(),
       observations.list(),
       feedback.list(),
+      learningRuns.list(),
       summaries.list(),
       localBackupStore.metadata(),
       upgradeReadiness.check(),
@@ -129,10 +190,11 @@ final class DataHealthService {
     final activityItems = values[1] as List<StoredEstimatedActivity>;
     final observationItems = values[2] as List<EnergyObservation>;
     final feedbackItems = values[3] as List<ActivityFeedback>;
-    final summaryItems = values[4] as List<DailySummary>;
-    final localBackup = values[5] as LocalBackupMetadata?;
-    final upgradeReadinessReport = values[6] as MvpBUpgradeReadinessReport;
-    final appSettings = values[7] as AppSettings;
+    final learningRunItems = values[4] as List<LearningRun>;
+    final summaryItems = values[5] as List<DailySummary>;
+    final localBackup = values[6] as LocalBackupMetadata?;
+    final upgradeReadinessReport = values[7] as MvpBUpgradeReadinessReport;
+    final appSettings = values[8] as AppSettings;
     var integrityPassed = false;
     try {
       final exported = await exportService.create(exportedAt: checkedAt);
@@ -206,6 +268,74 @@ final class DataHealthService {
               item.referenceType == ObservationReferenceType.previousLifeDayEnd,
         )
         .length;
+    final shadowConfig = ShadowLearningConfig.evidenceReadinessV1();
+    final evidenceBySource = {
+      for (final evidence in evidenceBuilder.buildAll(
+        observations: observationItems,
+        morningLifeDays: morningLifeDays,
+        settledLifeDays: summaryByLifeDay.keys.toSet(),
+        config: shadowConfig,
+      ))
+        evidence.sourceModelIdentity: evidence,
+    };
+    final currentRegimeByReference = {
+      for (final referenceType in ObservationReferenceType.values)
+        referenceType: regimeKeyBuilder.build(
+          referenceType: referenceType,
+          baseEnergy: appSettings.baseEstimatedEnergy,
+          ruleVersion: appSettings.activeRuleVersion,
+          comparisonBandVersion: mvpBComparisonBandV1,
+          effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
+          modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+        ),
+    };
+    final latestRunBySource = <String, LearningRun>{};
+    for (final run in learningRunItems) {
+      if (run.parameterFamily != LearningParameterFamily.baseline) continue;
+      final previous = latestRunBySource[run.sourceModelIdentity];
+      if (previous == null ||
+          run.triggeredAt.isAfter(previous.triggeredAt) ||
+          (run.triggeredAt == previous.triggeredAt &&
+              run.id.compareTo(previous.id) > 0)) {
+        latestRunBySource[run.sourceModelIdentity] = run;
+      }
+    }
+    final automaticProgress = <AutomaticLearningProgress>[];
+    for (final referenceType in ObservationReferenceType.values) {
+      final sourceModelIdentity = currentRegimeByReference[referenceType]!;
+      final evidence = evidenceBySource[sourceModelIdentity];
+      final latestRun = latestRunBySource[sourceModelIdentity];
+      automaticProgress.add(
+        AutomaticLearningProgress(
+          referenceType: referenceType,
+          sourceModelIdentity: sourceModelIdentity,
+          eligibleTotal: evidence?.eligibleTotal ?? 0,
+          selectedEligible: evidence?.selectedEligible ?? 0,
+          excludedTotal: evidence?.excludedTotal ?? 0,
+          missingToMinimum:
+              evidence?.missingToMinimum ??
+              shadowConfig.minimumEligibleObservationPairs,
+          spanCalendarDays: evidence?.readiness.spanCalendarDays ?? 0,
+          earliestLifeDay: evidence?.earliestLifeDay,
+          latestLifeDay: evidence?.latestLifeDay,
+          directionCounts:
+              evidence?.directionCounts ?? const DirectionCounts.empty(),
+          windowDirectionCounts:
+              evidence?.windowDirectionCounts ?? const <DirectionCounts>[],
+          windowSizes: evidence?.windowSizes ?? const <int>[],
+          exclusionCounts:
+              evidence?.exclusionCounts ??
+              const <LearningIneligibilityReason, int>{},
+          ready: evidence?.readiness.ready ?? false,
+          latestRunStatus: latestRun?.status,
+          latestRunResult: latestRun?.result,
+          latestRunAt: latestRun?.completedAt ?? latestRun?.triggeredAt,
+          latestRunMatchesCurrentEvidence:
+              evidence != null &&
+              latestRun?.evidenceHash == evidence.evidenceHash,
+        ),
+      );
+    }
     return DataHealthReport(
       checkedAt: checkedAt,
       schemaVersion: JsonExportService.schemaVersion,
@@ -253,6 +383,14 @@ final class DataHealthService {
       earliestEligibleLifeDay: eligibleLifeDays.firstOrNull,
       latestEligibleLifeDay: eligibleLifeDays.lastOrNull,
       learningExclusionCounts: Map.unmodifiable(exclusionCounts),
+      learningRuns: learningRunItems.length,
+      retryableLearningRuns: learningRunItems
+          .where((item) => item.status == LearningRunStatus.retryableFailure)
+          .length,
+      terminalLearningRuns: learningRunItems
+          .where((item) => item.status == LearningRunStatus.terminalFailure)
+          .length,
+      automaticLearningProgress: List.unmodifiable(automaticProgress),
       localBackup: localBackup,
       mvpBUpgradeReadiness: upgradeReadinessReport,
     );

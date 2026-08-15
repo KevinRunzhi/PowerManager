@@ -220,6 +220,10 @@ const fixedMvpAPersonalizationVersion = 'fixed-mvp-a';
 const fixedMvpAEffectiveModelFingerprint = 'fixed-mvp-a';
 const fixedMvpAInitialModelRegimeEpoch = 'fixed-mvp-a-initial';
 const mvpBModelRegimeKeyVersion = 'model-regime-sha256-v1';
+const shadowLearningAlgorithmV1 = 'evidence-shadow-v1';
+const shadowLearningConfigV1 = 'evidence-readiness-14x21-v1';
+const canonicalEvidenceHashV1 = 'canonical-evidence-sha256-v1';
+const deterministicLearningRunIdV1 = 'learning-run-sha256-v1';
 
 enum ObservationReferenceType {
   currentMoment('currentMoment'),
@@ -271,6 +275,34 @@ enum ActivityFeedbackInvalidationReason {
   integrityFailure('integrityFailure');
 
   const ActivityFeedbackInvalidationReason(this.code);
+  final String code;
+}
+
+enum LearningParameterFamily {
+  baseline('baseline'),
+  activityImpact('activityImpact');
+
+  const LearningParameterFamily(this.code);
+  final String code;
+}
+
+enum LearningRunStatus {
+  pending('pending'),
+  running('running'),
+  completed('completed'),
+  retryableFailure('retryableFailure'),
+  terminalFailure('terminalFailure');
+
+  const LearningRunStatus(this.code);
+  final String code;
+}
+
+enum LearningRunResult {
+  insufficientEvidence('insufficientEvidence'),
+  readyForAudit('readyForAudit'),
+  configurationBlocked('configurationBlocked');
+
+  const LearningRunResult(this.code);
   final String code;
 }
 

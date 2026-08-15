@@ -9,6 +9,7 @@ import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/app/theme/app_colors.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
+import 'package:power_manager/application/automatic_learning_coordinator.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/data_health_service.dart';
 import 'package:power_manager/application/history_review_service.dart';
@@ -24,6 +25,7 @@ import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/shadow_learning.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/debug/presentation/debug_environment_page.dart';
 import 'package:power_manager/features/debug/presentation/energy_orb_gallery_page.dart';
@@ -107,7 +109,10 @@ void main() {
     tester,
   ) async {
     final preparer = _RecordingPreparer();
-    await tester.pumpWidget(_testApp(preparer: preparer));
+    final learning = _FakeAutomaticLearningRequester();
+    await tester.pumpWidget(
+      _testApp(preparer: preparer, learningRequester: learning),
+    );
     await tester.pumpAndSettle();
 
     expect(preparer.triggers, [PreparationTrigger.coldStart]);
@@ -124,6 +129,10 @@ void main() {
       PreparationTrigger.coldStart,
       PreparationTrigger.resumed,
     ]);
+    expect(learning.triggers, [
+      AutomaticLearningTrigger.coldStart,
+      AutomaticLearningTrigger.resumed,
+    ]);
     expect(
       tester.widget<EnergyOrb>(find.byKey(HomePage.energyBallKey)).estimate,
       72,
@@ -136,7 +145,10 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     final clock = _MutableClock(DateTime(2026, 8, 14, 3, 59, 59));
     final preparer = _RecordingPreparer();
-    await tester.pumpWidget(_testApp(preparer: preparer, clock: clock));
+    final learning = _FakeAutomaticLearningRequester();
+    await tester.pumpWidget(
+      _testApp(preparer: preparer, clock: clock, learningRequester: learning),
+    );
     await tester.pumpAndSettle();
 
     clock.value = DateTime(2026, 8, 14, 4);
@@ -147,6 +159,66 @@ void main() {
       PreparationTrigger.coldStart,
       PreparationTrigger.lifeDayBoundary,
     ]);
+    expect(learning.triggers, [
+      AutomaticLearningTrigger.coldStart,
+      AutomaticLearningTrigger.settlement,
+    ]);
+  });
+
+  testWidgets(
+    'plain preparation invalidation does not request learning again',
+    (tester) async {
+      final learning = _FakeAutomaticLearningRequester();
+      await tester.pumpWidget(_testApp(learningRequester: learning));
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byKey(HomePage.pageKey));
+      final container = ProviderScope.containerOf(context);
+
+      container.invalidate(currentPreparationProvider);
+      await tester.pumpAndSettle();
+
+      expect(learning.triggers, [AutomaticLearningTrigger.coldStart]);
+    },
+  );
+
+  testWidgets('safe restore prepares before requesting one learning pass', (
+    tester,
+  ) async {
+    final preparer = _RecordingPreparer();
+    final learning = _FakeAutomaticLearningRequester();
+    await tester.pumpWidget(
+      _testApp(preparer: preparer, learningRequester: learning),
+    );
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byKey(HomePage.pageKey));
+    final container = ProviderScope.containerOf(context);
+
+    container
+        .read(currentPreparationRefreshProvider.notifier)
+        .refresh(PreparationTrigger.safeRestore);
+    await tester.pumpAndSettle();
+
+    expect(preparer.triggers, [
+      PreparationTrigger.coldStart,
+      PreparationTrigger.safeRestore,
+    ]);
+    expect(learning.triggers, [
+      AutomaticLearningTrigger.coldStart,
+      AutomaticLearningTrigger.safeRestore,
+    ]);
+  });
+
+  testWidgets('shadow learning failure never blocks the home preparation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(learningRequester: _FakeAutomaticLearningRequester(fail: true)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(HomePage.pageKey), findsOneWidget);
+    expect(find.text('读取当天状态失败。'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('home shell does not overflow on a compact landscape viewport', (
@@ -823,7 +895,7 @@ void main() {
       find.byKey(const Key('mvp-b-upgrade-ready-details')),
       findsOneWidget,
     );
-    expect(find.textContaining('schema v2'), findsOneWidget);
+    expect(find.textContaining('schema v3'), findsOneWidget);
   });
 
   testWidgets('data health shows aggregate coverage without private details', (
@@ -837,9 +909,21 @@ void main() {
 
     expect(find.byKey(DataHealthPage.pageKey), findsOneWidget);
     expect(find.text('完整性检查通过'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('validation-progress-card')),
+      500,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('0 / 6'), findsOneWidget);
     expect(find.text('0%'), findsOneWidget);
     expect(find.textContaining('旧版自用讨论计数还差 14'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('mvp-b-upgrade-readiness-health-card')),
+      -300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
     expect(
       find.byKey(const Key('mvp-b-upgrade-readiness-health-card')),
       findsOneWidget,
@@ -847,6 +931,63 @@ void main() {
     expect(find.textContaining('activity-'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'data health shows read-only automatic learning and safe failure',
+    (tester) async {
+      final progress = AutomaticLearningProgress(
+        referenceType: ObservationReferenceType.currentMoment,
+        sourceModelIdentity: 'private-model-hash',
+        eligibleTotal: 13,
+        selectedEligible: 13,
+        excludedTotal: 2,
+        missingToMinimum: 1,
+        spanCalendarDays: 20,
+        earliestLifeDay: LifeDay(2026, 7, 1),
+        latestLifeDay: LifeDay(2026, 7, 21),
+        directionCounts: const DirectionCounts(lower: 4, aligned: 5, higher: 4),
+        windowDirectionCounts: const [
+          DirectionCounts(lower: 2, aligned: 3, higher: 2),
+          DirectionCounts(lower: 2, aligned: 2, higher: 2),
+        ],
+        windowSizes: const [7, 6],
+        exclusionCounts: const {},
+        ready: false,
+        latestRunStatus: LearningRunStatus.retryableFailure,
+        latestRunResult: null,
+        latestRunAt: DateTime.utc(2026, 8, 9, 12),
+        latestRunMatchesCurrentEvidence: true,
+      );
+      await tester.pumpWidget(
+        _testApp(
+          dataHealthReport: _dataHealthReport(
+            learningRuns: 1,
+            retryableLearningRuns: 1,
+            automaticLearningProgress: [progress],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byKey(HomePage.pageKey));
+      Navigator.of(context).pushNamed(AppRoutes.dataHealth);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('automatic-learning-mode-label')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('automatic-learning-currentMoment')),
+        findsOneWidget,
+      );
+      expect(find.text('13 / 14'), findsOneWidget);
+      expect(find.text('20 / 21 天'), findsOneWidget);
+      expect(find.textContaining('等待安全重试'), findsOneWidget);
+      expect(find.textContaining('private-model-hash'), findsNothing);
+      expect(find.textContaining('sha256'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('data health survives 200 percent text scaling', (tester) async {
     await tester.pumpWidget(_testApp(textScaler: const TextScaler.linear(2)));
@@ -1131,6 +1272,7 @@ void main() {
 
 Widget _testApp({
   OperationPreparer? preparer,
+  AutomaticLearningRequester? learningRequester,
   Clock? clock,
   ActivityMutator? mutator,
   MorningCompletionStatus morningStatus = MorningCompletionStatus.notAnswered,
@@ -1155,6 +1297,9 @@ Widget _testApp({
     overrides: [
       if (clock != null) clockProvider.overrideWithValue(clock),
       operationPreparerProvider.overrideWithValue(preparer ?? _FakePreparer()),
+      automaticLearningRequesterProvider.overrideWithValue(
+        learningRequester ?? _FakeAutomaticLearningRequester(),
+      ),
       morningCompletionStatusProvider.overrideWith(
         (ref) async => morningStatus,
       ),
@@ -1276,12 +1421,17 @@ MvpBUpgradeReadinessReport _readyReadiness() => MvpBUpgradeReadinessReport(
     modifiedAt: DateTime.utc(2026, 8, 9, 12),
     byteLength: 4096,
   ),
-  backupSchemaVersion: 2,
+  backupSchemaVersion: 3,
 );
 
-DataHealthReport _dataHealthReport() => DataHealthReport(
+DataHealthReport _dataHealthReport({
+  int learningRuns = 0,
+  int retryableLearningRuns = 0,
+  int terminalLearningRuns = 0,
+  List<AutomaticLearningProgress> automaticLearningProgress = const [],
+}) => DataHealthReport(
   checkedAt: DateTime.utc(2026, 8, 9, 12),
-  schemaVersion: 2,
+  schemaVersion: 3,
   integrityPassed: true,
   settledDays: 8,
   standardEffectiveDays: 5,
@@ -1292,6 +1442,10 @@ DataHealthReport _dataHealthReport() => DataHealthReport(
   deletedActivityRecords: 0,
   dailyActualStates: 0,
   relativeCorrections: 1,
+  learningRuns: learningRuns,
+  retryableLearningRuns: retryableLearningRuns,
+  terminalLearningRuns: terminalLearningRuns,
+  automaticLearningProgress: automaticLearningProgress,
   localBackup: null,
   mvpBUpgradeReadiness: _notReadyReadiness(),
 );
@@ -1501,6 +1655,31 @@ final class _FakePreparer implements OperationPreparer {
   @override
   Future<OperationPreparationResult> prepare(PreparationTrigger trigger) async {
     return _preparationResult(trigger, _currentProjection());
+  }
+}
+
+final class _FakeAutomaticLearningRequester
+    implements AutomaticLearningRequester {
+  _FakeAutomaticLearningRequester({this.fail = false});
+
+  final bool fail;
+  final triggers = <AutomaticLearningTrigger>[];
+
+  @override
+  Future<LearningCoordinationReport> request(
+    AutomaticLearningTrigger trigger,
+  ) async {
+    triggers.add(trigger);
+    if (fail) throw StateError('simulated shadow learning failure');
+    return LearningCoordinationReport(
+      trigger: trigger,
+      createdRuns: 0,
+      resumedRuns: 0,
+      completedRuns: 0,
+      retryableFailures: 0,
+      terminalFailures: 0,
+      skipReason: LearningCoordinationSkipReason.unchangedEvidence,
+    );
   }
 }
 

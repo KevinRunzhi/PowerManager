@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:power_manager/application/json_backup_codec.dart';
 import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
+import 'package:power_manager/domain/learning/canonical_json.dart';
 import 'package:test/test.dart';
 
 import '../support/backup_fixture.dart';
@@ -87,8 +88,91 @@ void main() {
     expect(reparsed.backup.toJson(), inspection.backup.toJson());
   });
 
+  test('schema v3 round-trips canonical shadow learning runs', () {
+    final source = backupFixtureV3();
+    final inspection = _inspect(codec, source.toJson());
+
+    expect(inspection.backup.schemaVersion, 3);
+    expect(inspection.counts.learningRuns, 1);
+    expect(
+      inspection.backup.learningRuns.single.status,
+      LearningRunStatus.completed,
+    );
+    expect(
+      inspection.backup.learningRuns.single.result,
+      LearningRunResult.insufficientEvidence,
+    );
+
+    final reparsed = _inspect(codec, inspection.backup.toJson());
+    expect(reparsed.backup.toJson(), inspection.backup.toJson());
+  });
+
+  test('schema v3 rejects tampered or non-canonical learning runs', () {
+    final cases = <Map<String, Object?>>[];
+
+    final candidate = backupFixtureV3().toJson();
+    _learningRun(candidate)['candidateValuesJson'] = '{}';
+    cases.add(candidate);
+
+    final status = backupFixtureV3().toJson();
+    _learningRun(status)['status'] = 'running';
+    cases.add(status);
+
+    final hash = backupFixtureV3().toJson();
+    _learningRun(hash)['evidenceHash'] = List.filled(64, '0').join();
+    cases.add(hash);
+
+    final nonCanonical = backupFixtureV3().toJson();
+    _learningRun(nonCanonical)['currentValuesJson'] = '{ "baseEnergy": 100 }';
+    cases.add(nonCanonical);
+
+    final duplicate = backupFixtureV3().toJson();
+    final runs = duplicate['learningRuns']! as List<Object?>;
+    runs.add(Map<String, Object?>.from(runs.single! as Map<String, Object?>));
+    cases.add(duplicate);
+
+    final privateDescriptiveField = backupFixtureV3().toJson();
+    final privateRun = _learningRun(privateDescriptiveField);
+    final privateSnapshot =
+        jsonDecode(privateRun['evidenceSnapshotJson']! as String)
+            as Map<String, Object?>;
+    (privateSnapshot['descriptive']! as Map<String, Object?>)['activityTitle'] =
+        'must-not-enter-learning-runs';
+    privateRun['evidenceSnapshotJson'] = const CanonicalJsonEncoder().encode(
+      privateSnapshot,
+    );
+    cases.add(privateDescriptiveField);
+
+    final inconsistentDescription = backupFixtureV3().toJson();
+    final inconsistentRun = _learningRun(inconsistentDescription);
+    final inconsistentSnapshot =
+        jsonDecode(inconsistentRun['evidenceSnapshotJson']! as String)
+            as Map<String, Object?>;
+    final descriptive =
+        inconsistentSnapshot['descriptive']! as Map<String, Object?>;
+    descriptive['selectedEligible'] = 14;
+    inconsistentRun['evidenceSnapshotJson'] = const CanonicalJsonEncoder()
+        .encode(inconsistentSnapshot);
+    cases.add(inconsistentDescription);
+
+    final inconsistentResult = backupFixtureV3().toJson();
+    final resultRun = _learningRun(inconsistentResult);
+    resultRun['result'] = LearningRunResult.readyForAudit.code;
+    resultRun['reasonCodesJson'] = const CanonicalJsonEncoder().encode([
+      'readyForAudit',
+    ]);
+    cases.add(inconsistentResult);
+
+    for (final json in cases) {
+      expect(
+        () => _inspect(codec, json),
+        throwsA(isA<BackupFormatException>()),
+      );
+    }
+  });
+
   test('unsupported schema, extension and malformed UTF-8 are rejected', () {
-    final json = backupFixture().toJson()..['schemaVersion'] = 3;
+    final json = backupFixture().toJson()..['schemaVersion'] = 4;
 
     expect(
       () => codec.inspect(
@@ -219,6 +303,11 @@ void main() {
       ),
     );
   });
+}
+
+Map<String, Object?> _learningRun(Map<String, Object?> json) {
+  return (json['learningRuns']! as List<Object?>).single!
+      as Map<String, Object?>;
 }
 
 BackupInspection _inspect(JsonBackupCodec codec, Map<String, Object?> json) {

@@ -12,7 +12,7 @@ import 'package:test/test.dart';
 import 'test_database.dart';
 
 void main() {
-  test('schema v2 creates exactly eight business tables', () async {
+  test('schema v3 creates exactly nine business tables', () async {
     final database = createTestDatabase();
     addTearDown(database.close);
 
@@ -46,11 +46,12 @@ void main() {
       'app_settings',
       'daily_summaries',
       'energy_observations',
+      'learning_runs',
       'morning_check_ins',
       'prompt_receipts',
       'rule_config_versions',
     ]);
-    expect(version.read<int>('user_version'), 2);
+    expect(version.read<int>('user_version'), 3);
     expect(foreignKeys.read<int>('foreign_keys'), 1);
     expect(integrity.read<String>('integrity_check'), 'ok');
     expect(
@@ -66,6 +67,10 @@ void main() {
         'energy_observations_life_day_time',
         'energy_observations_contract_lookup',
         'energy_observations_one_daily_absolute',
+        'learning_runs_idempotency',
+        'learning_runs_source_time',
+        'learning_runs_status_time',
+        'learning_runs_reject_final_update',
         'referenced_rule_versions_reject_update',
       ]),
     );

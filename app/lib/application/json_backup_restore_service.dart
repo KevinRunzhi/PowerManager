@@ -23,6 +23,7 @@ final class JsonBackupRestoreService {
     required this.activities,
     required this.observations,
     required this.feedback,
+    required this.learningRuns,
     required this.summaries,
     required this.receipts,
   });
@@ -37,6 +38,7 @@ final class JsonBackupRestoreService {
   final ActivityRecordsRepository activities;
   final EnergyObservationsRepository observations;
   final ActivityFeedbackRepository feedback;
+  final LearningRunsRepository learningRuns;
   final DailySummariesRepository summaries;
   final PromptReceiptsRepository receipts;
 
@@ -52,6 +54,7 @@ final class JsonBackupRestoreService {
       final activityRecords = await activities.listAllForExport();
       final energyObservations = await observations.list();
       final activityFeedback = await feedback.list();
+      final learningRunItems = await learningRuns.list();
       final dailySummaries = await summaries.list();
       final promptReceipts = await receipts.list();
       return BackupDataCounts(
@@ -60,6 +63,7 @@ final class JsonBackupRestoreService {
         activityRecords: activityRecords.length,
         energyObservations: energyObservations.length,
         activityFeedback: activityFeedback.length,
+        learningRuns: learningRunItems.length,
         dailySummaries: dailySummaries.length,
         promptReceipts: promptReceipts.length,
       );

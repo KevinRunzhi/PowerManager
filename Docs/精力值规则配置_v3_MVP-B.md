@@ -10,10 +10,11 @@ fixedPersonalizationVersion = fixed-mvp-a
 fixedEffectiveModelFingerprint = fixed-mvp-a
 initialModelRegimeEpoch = fixed-mvp-a-initial
 modelRegimeKeyVersion = model-regime-sha256-v1
-shadowLearningVersion = evidence-shadow-v1
+shadowLearningAlgorithmVersion = evidence-shadow-v1
+shadowLearningConfigVersion = evidence-readiness-14x21-v1
 evidenceHashVersion = canonical-evidence-sha256-v1
 
-automaticLearningEngineEnabled = false
+automaticLearningEngineEnabled = true
 baselineProductionLearningEnabled = false
 baselineAutoApplyEnabled = false
 activityImpactProductionLearningEnabled = false
@@ -28,9 +29,12 @@ baseEnergyHardMaximum = 140
 本文件是 MVP-B 自动学习数值常量和功能开关的唯一来源。MVP-B 不原地修改现有 24 × 6 活动规则表；
 未激活个人模型时，活动计算继续读取《精力值规则配置 v2（MVP-A）》中的固定版本。
 
-当前设置均表示“文档已确认目标，但生产自动学习尚未获准启用”：
+当前设置表示“B1 只读影子引擎已获准自动运行，但生产学习和自动应用尚未获准启用”：
 
-- `automaticLearningEngineEnabled`：构建级总门。B1 影子实现和显式审计授权前保持 `false`。
+- `automaticLearningEngineEnabled`：B1 只读影子协调器总门。项目作者已授权按独立阶段 Spec 实施，
+  因此从 B1-0 配置起为 `true`；它本身不允许生成候选或改变参数。
+- `shadowLearningAlgorithmVersion`：当前只汇总证据就绪情况的算法版本，禁止输出候选值。
+- `shadowLearningConfigVersion`：固定绑定本文件第 2 节的 14 条、21 日、2 × 7 窗口门槛。
 - `baselineProductionLearningEnabled`：允许生成可执行基准线候选。B1 决策门前保持 `false`。
 - `baselineAutoApplyEnabled`：允许基准线候选跳过逐条确认进入自动安排。
 - `activityImpactProductionLearningEnabled`：允许生成可执行活动影响候选。B3 决策门前保持 `false`。
@@ -95,10 +99,13 @@ shadowWindowCount = 2
 shadowWindowEligiblePairs = 7
 ```
 
-在当前 `modelRegimeKey`（包含同一 `referenceType`）中按 `lifeDay + capturedAt + id` 稳定排序，
+在当前 `modelRegimeKey`（包含同一 `referenceType`）中按 `lifeDay + observedAt + id` 稳定排序，
 取最近 14 条合格观测；较早 7 条为窗口 1，较晚 7 条为窗口 2。21 日跨度也在这 14 条的最早
 与最晚参考生活日之间
 计算。更早证据只进入长期描述性统计，不参与本次双窗口结论。
+
+`observedAt` 是 schema 中的 UTC 提交时间；旧讨论稿中的 `capturedAt` 与它是同一语义，不新增
+第二个字段。规范编码固定使用六位小数的 UTC `YYYY-MM-DDTHH:mm:ss.ffffffZ`。
 
 这些值只回答“是否值得生成一次影子证据运行”，不定义持续方向、候选值或生产更新。B1-1
 必须先发布新的、明确标记为 shadow-only 的候选算法配置，才能生成候选模型并做反事实回放；

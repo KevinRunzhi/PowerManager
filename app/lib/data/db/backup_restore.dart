@@ -28,6 +28,7 @@ extension BackupRestoreDatabase on AppDatabase {
   }
 
   Future<void> _clearBusinessTables() async {
+    await delete(learningRunsTable).go();
     await delete(promptReceiptsTable).go();
     await delete(energyObservationsTable).go();
     await delete(morningCheckInsTable).go();
@@ -202,6 +203,31 @@ extension BackupRestoreDatabase on AppDatabase {
         ),
       );
     }
+    for (final run in backup.learningRuns) {
+      await into(learningRunsTable).insert(
+        LearningRunsTableCompanion.insert(
+          id: run.id,
+          parameterFamily: run.parameterFamily,
+          sourceModelIdentity: run.sourceModelIdentity,
+          sourcePersonalizationVersionId: Value(
+            run.sourcePersonalizationVersionId,
+          ),
+          status: run.status,
+          result: Value(run.result),
+          evidenceSnapshotJson: run.evidenceSnapshotJson,
+          evidenceHash: run.evidenceHash,
+          evidenceHashVersion: run.evidenceHashVersion,
+          algorithmVersion: run.algorithmVersion,
+          configVersion: run.configVersion,
+          currentValuesJson: run.currentValuesJson,
+          candidateValuesJson: Value(run.candidateValuesJson),
+          reasonCodesJson: run.reasonCodesJson,
+          triggeredAt: run.triggeredAt.toUtc(),
+          completedAt: Value(run.completedAt?.toUtc()),
+        ),
+      );
+    }
+    await failureHook?.call('after-learning-runs');
   }
 
   Future<void> _verifyBackup(PowerManagerExportDto backup) async {
@@ -222,6 +248,7 @@ extension BackupRestoreDatabase on AppDatabase {
       'activity_records': backup.activityRecords.length,
       'energy_observations': backup.energyObservations.length,
       'activity_feedback': backup.activityFeedback.length,
+      'learning_runs': backup.learningRuns.length,
       'daily_summaries': backup.dailySummaries.length,
       'prompt_receipts': backup.promptReceipts.length,
     };
@@ -242,4 +269,5 @@ const _protectionTriggerNames = [
   'app_settings_reject_delete',
   'daily_summaries_reject_delete',
   'referenced_rule_versions_reject_update',
+  'learning_runs_reject_final_update',
 ];

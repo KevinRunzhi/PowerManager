@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart';
 import 'package:power_manager/data/db/app_database.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
@@ -71,6 +72,28 @@ void main() {
     expect(observations, hasLength(2));
     expect(observations.first.contractVersion, mvpBObservationContractV1);
   });
+
+  test(
+    'schema v3 restore preserves and protects shadow learning runs',
+    () async {
+      final backup = backupFixtureV3(baseEnergy: 120);
+
+      await database.replaceWithBackup(backup);
+
+      final runs = await database.learningRunsDao.listAll();
+      expect(runs, hasLength(1));
+      expect(runs.single.evidenceHash, backup.learningRuns.single.evidenceHash);
+      await expectLater(
+        database.learningRunsDao.updateById(
+          runs.single.id,
+          const LearningRunsTableCompanion(
+            status: Value(LearningRunStatus.running),
+          ),
+        ),
+        throwsA(anything),
+      );
+    },
+  );
 
   test(
     'failure after clear rolls back old data and protection triggers',
@@ -160,6 +183,29 @@ void main() {
       await expectLater(
         database.customStatement('DELETE FROM app_settings'),
         throwsA(anything),
+      );
+    },
+  );
+
+  test(
+    'failure after learning runs rolls back and restores protection',
+    () async {
+      await expectLater(
+        database.replaceWithBackup(
+          backupFixtureV3(baseEnergy: 120),
+          failureHook: (checkpoint) async {
+            if (checkpoint == 'after-learning-runs') {
+              throw StateError('injected');
+            }
+          },
+        ),
+        throwsStateError,
+      );
+
+      expect(await database.learningRunsDao.listAll(), isEmpty);
+      expect(
+        (await database.appSettingsDao.getSettings()).baseEstimatedEnergy,
+        100,
       );
     },
   );

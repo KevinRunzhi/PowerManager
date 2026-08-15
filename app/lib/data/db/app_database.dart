@@ -22,6 +22,7 @@ part 'tables.dart';
     ActivityRecordsTable,
     EnergyObservationsTable,
     ActivityFeedbackTable,
+    LearningRunsTable,
     DailySummariesTable,
     PromptReceiptsTable,
   ],
@@ -32,6 +33,7 @@ part 'tables.dart';
     ActivityRecordsDao,
     EnergyObservationsDao,
     ActivityFeedbackDao,
+    LearningRunsDao,
     DailySummariesDao,
     PromptReceiptsDao,
   ],
@@ -57,7 +59,7 @@ final class AppDatabase extends _$AppDatabase {
   final SchemaMigrationFailureHook? migrationFailureHook;
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -86,7 +88,9 @@ final class AppDatabase extends _$AppDatabase {
     await _createProtectionTriggers();
   }
 
-  Future<void> _createProtectionTriggers() async {
+  Future<void> _createProtectionTriggers({
+    bool includeLearningRuns = true,
+  }) async {
     await customStatement('''
       CREATE TRIGGER IF NOT EXISTS daily_summaries_reject_update
       BEFORE UPDATE ON daily_summaries
@@ -135,6 +139,20 @@ final class AppDatabase extends _$AppDatabase {
         )
       BEGIN
         SELECT RAISE(ABORT, 'referenced rule versions are immutable');
+      END
+    ''');
+    if (includeLearningRuns) {
+      await _createLearningRunProtectionTrigger();
+    }
+  }
+
+  Future<void> _createLearningRunProtectionTrigger() async {
+    await customStatement('''
+      CREATE TRIGGER IF NOT EXISTS learning_runs_reject_final_update
+      BEFORE UPDATE ON learning_runs
+      WHEN OLD.status IN ('completed', 'terminalFailure')
+      BEGIN
+        SELECT RAISE(ABORT, 'final learning runs are immutable');
       END
     ''');
   }

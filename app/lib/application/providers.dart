@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:power_manager/application/activity_feedback_use_cases.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
+import 'package:power_manager/application/automatic_learning_coordinator.dart';
 import 'package:power_manager/application/backup_content_digest.dart';
 import 'package:power_manager/application/business_write_coordinator.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
@@ -93,6 +94,12 @@ final activityFeedbackRepositoryProvider = Provider<ActivityFeedbackRepository>(
   },
 );
 
+final learningRunsRepositoryProvider = Provider<LearningRunsRepository>((ref) {
+  return DriftLearningRunsRepository(
+    ref.watch(appDatabaseProvider).learningRunsDao,
+  );
+});
+
 final businessWriteCoordinatorProvider = Provider<BusinessWriteCoordinator>((
   ref,
 ) {
@@ -157,6 +164,21 @@ final currentPreparationRefreshProvider =
       PreparationRefreshRequest
     >(CurrentPreparationRefreshNotifier.new);
 
+final preparationLearningRequestGateProvider =
+    Provider<PreparationLearningRequestGate>((ref) {
+      return PreparationLearningRequestGate();
+    });
+
+final class PreparationLearningRequestGate {
+  var _lastClaimedRevision = -1;
+
+  bool claim(int revision) {
+    if (revision <= _lastClaimedRevision) return false;
+    _lastClaimedRevision = revision;
+    return true;
+  }
+}
+
 final class PreparationRefreshRequest {
   const PreparationRefreshRequest({
     required this.revision,
@@ -185,10 +207,32 @@ final class CurrentPreparationRefreshNotifier
 
 final currentPreparationProvider = FutureProvider<OperationPreparationResult>((
   ref,
-) {
+) async {
   final request = ref.watch(currentPreparationRefreshProvider);
-  return ref.watch(operationPreparerProvider).prepare(request.trigger);
+  final preparer = ref.watch(operationPreparerProvider);
+  final learning = ref.watch(automaticLearningRequesterProvider);
+  final learningGate = ref.watch(preparationLearningRequestGateProvider);
+  final result = await preparer.prepare(request.trigger);
+  if (request.trigger != PreparationTrigger.beforeWrite &&
+      learningGate.claim(request.revision)) {
+    try {
+      await learning.request(_automaticLearningTrigger(request.trigger));
+    } on Object {
+      // Shadow learning must never make the core preparation flow unavailable.
+    }
+  }
+  return result;
 });
+
+AutomaticLearningTrigger _automaticLearningTrigger(
+  PreparationTrigger trigger,
+) => switch (trigger) {
+  PreparationTrigger.coldStart => AutomaticLearningTrigger.coldStart,
+  PreparationTrigger.resumed => AutomaticLearningTrigger.resumed,
+  PreparationTrigger.lifeDayBoundary => AutomaticLearningTrigger.settlement,
+  PreparationTrigger.safeRestore => AutomaticLearningTrigger.safeRestore,
+  PreparationTrigger.beforeWrite => AutomaticLearningTrigger.retry,
+};
 
 final activityUseCasesProvider = Provider<ActivityMutator>((ref) {
   final database = ref.watch(appDatabaseProvider);
@@ -366,6 +410,7 @@ final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),
     feedback: ref.watch(activityFeedbackRepositoryProvider),
+    learningRuns: ref.watch(learningRunsRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
     transactionRunner: DriftTransactionRunner(ref.watch(appDatabaseProvider)),
@@ -375,6 +420,32 @@ final jsonExportServiceProvider = Provider<JsonExportService>((ref) {
     },
   );
 });
+
+final learningIntegrityVerifierProvider = Provider<LearningIntegrityVerifier>((
+  ref,
+) {
+  return BackupRoundTripLearningIntegrityVerifier(
+    exportService: ref.watch(jsonExportServiceProvider),
+    codec: const JsonBackupCodec(),
+    clock: ref.watch(clockProvider),
+  );
+});
+
+final automaticLearningRequesterProvider = Provider<AutomaticLearningRequester>(
+  (ref) {
+    final database = ref.watch(appDatabaseProvider);
+    return AutomaticLearningCoordinator(
+      writeCoordinator: ref.watch(businessWriteCoordinatorProvider),
+      transactionRunner: DriftTransactionRunner(database),
+      clock: ref.watch(clockProvider),
+      integrityVerifier: ref.watch(learningIntegrityVerifierProvider),
+      observations: ref.watch(observationsRepositoryProvider),
+      mornings: ref.watch(morningsRepositoryProvider),
+      summaries: ref.watch(summariesRepositoryProvider),
+      learningRuns: ref.watch(learningRunsRepositoryProvider),
+    );
+  },
+);
 
 final temporaryExportFileStoreProvider = Provider<TemporaryExportFileStore>((
   ref,
@@ -439,6 +510,7 @@ final dataHealthServiceProvider = Provider<DataHealthService>((ref) {
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),
     feedback: ref.watch(activityFeedbackRepositoryProvider),
+    learningRuns: ref.watch(learningRunsRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     localBackupStore: ref.watch(localBackupStoreProvider),
     upgradeReadiness: ref.watch(mvpBUpgradeReadinessServiceProvider),
@@ -466,6 +538,7 @@ final jsonBackupRestoreServiceProvider = Provider<JsonBackupRestoreService>((
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),
     feedback: ref.watch(activityFeedbackRepositoryProvider),
+    learningRuns: ref.watch(learningRunsRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
   );

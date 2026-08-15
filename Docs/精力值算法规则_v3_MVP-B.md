@@ -35,8 +35,9 @@
 | `currentMoment` | 你现在的整体状态 | 保存事务内的当前估计快照 |
 | `previousLifeDayEnd` | 昨天结束时的整体状态 | 昨日不可变摘要中的最终估计 |
 
-`capturedAt` 表示用户实际提交时间；`referenceType` 和 `lifeDay` 表示用户所评价的对象。
-补填昨日时不得把 `capturedAt` 当作昨日状态发生时间。
+`observedAt` 表示用户实际提交时间；旧讨论稿中的 `capturedAt` 与它是同一语义，不新增第二个
+字段。`referenceType` 和 `lifeDay` 表示用户所评价的对象。补填昨日时不得把 `observedAt` 当作
+昨日状态发生时间。
 
 ### 2.2 必须冻结的快照
 
@@ -56,7 +57,7 @@
 - `modelRegimeEpochAtObservation`
 - `activeActivityCountAtObservation`
 - `coverageState`
-- `capturedAt`
+- `observedAt`
 
 同日修改每日状态时，更新同一业务记录并替换整组快照。已经结算且完成的昨日状态继续只读。
 分析服务不得在以后使用变化后的活动记录重新猜测当时估计。
@@ -144,7 +145,7 @@ schema v4 创建的初始模型与 `fixed-mvp-a` 参数完全相同时沿用同�
 }
 ```
 
-字段顺序、名称和字符串值必须精确一致；不得加入 observation ID、lifeDay、capturedAt 或
+字段顺序、名称和字符串值必须精确一致；不得加入 observation ID、lifeDay、observedAt 或
 personalization version ID。原始组成字段仍分别保存在 observation 中供审计，哈希键只用于稳定
 分组和比较。
 
@@ -283,7 +284,7 @@ parameterFamily
 ### 6.1 输入
 
 - 单一 `modelRegimeKey` 下的合格每日观测；
-- 按 `lifeDay + capturedAt + id` 稳定排序，并按配置取最近一组固定数量证据；
+- 按 `lifeDay + observedAt + id` 稳定排序，并按配置取最近一组固定数量证据；
 - 满足规则配置中的总量、日期跨度和双窗口要求；
 - B3 准备阶段可同时读取合格活动反馈，但仍按独立参数族运行。
 

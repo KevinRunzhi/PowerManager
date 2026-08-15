@@ -1,14 +1,18 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_calculator.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
+import 'package:power_manager/domain/energy/learning_eligibility_service.dart';
 import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/energy/observation_comparison_service.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/canonical_json.dart';
+import 'package:power_manager/domain/learning/shadow_learning.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 
 final class BackupFormatException implements Exception {
@@ -27,6 +31,7 @@ final class BackupDataCounts {
     required this.activityRecords,
     required this.energyObservations,
     this.activityFeedback = 0,
+    this.learningRuns = 0,
     required this.dailySummaries,
     required this.promptReceipts,
   });
@@ -36,6 +41,7 @@ final class BackupDataCounts {
   final int activityRecords;
   final int energyObservations;
   final int activityFeedback;
+  final int learningRuns;
   final int dailySummaries;
   final int promptReceipts;
 
@@ -45,6 +51,7 @@ final class BackupDataCounts {
       activityRecords +
       energyObservations +
       activityFeedback +
+      learningRuns +
       dailySummaries +
       promptReceipts +
       1;
@@ -118,6 +125,7 @@ final class JsonBackupCodec {
           activityRecords: backup.activityRecords.length,
           energyObservations: backup.energyObservations.length,
           activityFeedback: backup.activityFeedback.length,
+          learningRuns: backup.learningRuns.length,
           dailySummaries: backup.dailySummaries.length,
           promptReceipts: backup.promptReceipts.length,
         ),
@@ -134,8 +142,8 @@ final class JsonBackupCodec {
 
 PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
   final schemaVersion = _int(json, 'schemaVersion', '顶层');
-  if (schemaVersion != 1 && schemaVersion != 2) {
-    throw const BackupFormatException('当前应用只支持 schemaVersion 1 或 2 的备份。');
+  if (schemaVersion != 1 && schemaVersion != 2 && schemaVersion != 3) {
+    throw const BackupFormatException('当前应用只支持 schemaVersion 1、2 或 3 的备份。');
   }
   final settingsJson = _map(json, 'appSettings', '顶层');
   final rules = _list(
@@ -166,6 +174,11 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
       : _list(json, 'activityFeedback', '顶层')
             .map((item) => _parseFeedback(_asMap(item, '活动反馈')))
             .toList(growable: false);
+  final learningRuns = schemaVersion < 3
+      ? const <LearningRun>[]
+      : _list(json, 'learningRuns', '顶层')
+            .map((item) => _parseLearningRun(_asMap(item, '影子学习运行')))
+            .toList(growable: false);
   final summaries = _list(
     json,
     'dailySummaries',
@@ -187,6 +200,7 @@ PowerManagerExportDto _parseBackup(Map<String, Object?> json) {
     activityRecords: activities,
     energyObservations: observations,
     activityFeedback: feedback,
+    learningRuns: learningRuns,
     dailySummaries: summaries,
     promptReceipts: receipts,
   );
@@ -468,6 +482,67 @@ ActivityFeedback _parseFeedback(Map<String, Object?> json) {
   );
 }
 
+LearningRun _parseLearningRun(Map<String, Object?> json) {
+  _requireKeys(json, const {
+    'id',
+    'parameterFamily',
+    'sourceModelIdentity',
+    'sourcePersonalizationVersionId',
+    'status',
+    'result',
+    'evidenceSnapshotJson',
+    'evidenceHash',
+    'evidenceHashVersion',
+    'algorithmVersion',
+    'configVersion',
+    'currentValuesJson',
+    'candidateValuesJson',
+    'reasonCodesJson',
+    'triggeredAt',
+    'completedAt',
+  }, '影子学习运行');
+  final resultCode = _nullableString(json, 'result', '影子学习运行');
+  return LearningRun(
+    id: _string(json, 'id', '影子学习运行'),
+    parameterFamily: _enumByCode(
+      LearningParameterFamily.values,
+      _string(json, 'parameterFamily', '影子学习运行'),
+      (value) => value.code,
+      '学习参数族',
+    ),
+    sourceModelIdentity: _string(json, 'sourceModelIdentity', '影子学习运行'),
+    sourcePersonalizationVersionId: _nullableString(
+      json,
+      'sourcePersonalizationVersionId',
+      '影子学习运行',
+    ),
+    status: _enumByCode(
+      LearningRunStatus.values,
+      _string(json, 'status', '影子学习运行'),
+      (value) => value.code,
+      '学习运行状态',
+    ),
+    result: resultCode == null
+        ? null
+        : _enumByCode<LearningRunResult>(
+            LearningRunResult.values,
+            resultCode,
+            (value) => value.code,
+            '学习运行结果',
+          ),
+    evidenceSnapshotJson: _string(json, 'evidenceSnapshotJson', '影子学习运行'),
+    evidenceHash: _string(json, 'evidenceHash', '影子学习运行'),
+    evidenceHashVersion: _string(json, 'evidenceHashVersion', '影子学习运行'),
+    algorithmVersion: _string(json, 'algorithmVersion', '影子学习运行'),
+    configVersion: _string(json, 'configVersion', '影子学习运行'),
+    currentValuesJson: _string(json, 'currentValuesJson', '影子学习运行'),
+    candidateValuesJson: _nullableString(json, 'candidateValuesJson', '影子学习运行'),
+    reasonCodesJson: _string(json, 'reasonCodesJson', '影子学习运行'),
+    triggeredAt: _date(json, 'triggeredAt', '影子学习运行'),
+    completedAt: _nullableDate(json, 'completedAt', '影子学习运行'),
+  );
+}
+
 DailySummary _parseSummary(Map<String, Object?> json) {
   final categoriesJson = _map(json, 'categorySummaries', '日总结');
   final categories = <ActivityCategory, CategoryEstimatedSummary>{};
@@ -622,6 +697,23 @@ void _validateBackup(PowerManagerExportDto backup) {
       rulesByVersion: rulesByVersion,
       activeFeedbackActivities: activeFeedbackActivities,
     );
+  }
+
+  final learningRunIds = <String>{};
+  final learningRunKeys = <String>{};
+  for (final run in backup.learningRuns) {
+    _unique(learningRunIds, run.id, '影子学习运行 ID');
+    _validateLearningRun(run);
+    final idempotencyKey = [
+      run.parameterFamily.code,
+      run.sourceModelIdentity,
+      run.algorithmVersion,
+      run.configVersion,
+      run.evidenceHash,
+    ].join('\u0000');
+    if (!learningRunKeys.add(idempotencyKey)) {
+      throw const BackupFormatException('影子学习运行幂等键重复。');
+    }
   }
 
   final summariesByDay = <LifeDay, DailySummary>{};
@@ -820,6 +912,664 @@ void _validateFeedback(
   }
 }
 
+void _validateLearningRun(LearningRun run) {
+  _nonEmpty(run.sourceModelIdentity, '影子学习来源模型');
+  _nonEmpty(run.algorithmVersion, '影子学习算法版本');
+  _nonEmpty(run.configVersion, '影子学习配置版本');
+  _nonEmpty(run.evidenceHashVersion, '影子学习证据哈希版本');
+  if (run.parameterFamily != LearningParameterFamily.baseline ||
+      run.sourcePersonalizationVersionId != null ||
+      run.algorithmVersion != shadowLearningAlgorithmV1 ||
+      run.configVersion != shadowLearningConfigV1 ||
+      run.evidenceHashVersion != canonicalEvidenceHashV1 ||
+      run.candidateValuesJson != null) {
+    throw const BackupFormatException('影子学习运行包含当前版本不支持的配置。');
+  }
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(run.evidenceHash)) {
+    throw const BackupFormatException('影子学习证据哈希格式不合法。');
+  }
+
+  final pendingShape =
+      (run.status == LearningRunStatus.pending ||
+          run.status == LearningRunStatus.running) &&
+      run.result == null &&
+      run.completedAt == null;
+  final completedShape =
+      run.status == LearningRunStatus.completed &&
+      run.result != null &&
+      run.completedAt != null;
+  final failureShape =
+      (run.status == LearningRunStatus.retryableFailure ||
+          run.status == LearningRunStatus.terminalFailure) &&
+      run.result == null &&
+      run.completedAt != null;
+  if (!pendingShape && !completedShape && !failureShape) {
+    throw const BackupFormatException('影子学习运行状态组合不合法。');
+  }
+  if (run.completedAt case final completed?
+      when completed.isBefore(run.triggeredAt)) {
+    throw const BackupFormatException('影子学习运行时间顺序不合法。');
+  }
+
+  final snapshot = _canonicalJsonObject(run.evidenceSnapshotJson, '影子学习证据快照');
+  _requireExactKeys(snapshot, const {'descriptive', 'hashInput'}, '影子学习证据快照');
+  final descriptive = _asMap(snapshot['descriptive'], '影子学习证据快照.descriptive');
+  final hashInput = _asMap(snapshot['hashInput'], '影子学习证据快照.hashInput');
+  final validatedEvidence = _validateLearningHashInput(hashInput, run);
+  final recomputedHash = sha256
+      .convert(utf8.encode(const CanonicalJsonEncoder().encode(hashInput)))
+      .toString();
+  if (recomputedHash != run.evidenceHash) {
+    throw const BackupFormatException('影子学习证据哈希与快照不一致。');
+  }
+
+  final currentValues = _canonicalJsonObject(run.currentValuesJson, '影子学习当前参数');
+  _requireExactKeys(currentValues, const {'baseEnergy'}, '影子学习当前参数');
+  final baseEnergy = _int(currentValues, 'baseEnergy', '影子学习当前参数');
+  _range(baseEnergy, 60, 140, '影子学习当前基准线');
+  final readiness = _validateLearningDescriptive(
+    descriptive,
+    evidence: validatedEvidence,
+    currentBaseEnergy: baseEnergy,
+  );
+
+  final reasonCodes = _canonicalJsonList(run.reasonCodesJson, '影子学习原因码');
+  if (reasonCodes.any((value) => value is! String || value.trim().isEmpty)) {
+    throw const BackupFormatException('影子学习原因码必须是非空文本。');
+  }
+  final reasonStrings = reasonCodes.cast<String>();
+  _validateLearningRunReasons(run, reasonStrings, readiness);
+
+  final expectedId = deterministicLearningRunId(
+    parameterFamily: run.parameterFamily,
+    sourceModelIdentity: run.sourceModelIdentity,
+    algorithmVersion: run.algorithmVersion,
+    configVersion: run.configVersion,
+    evidenceHash: run.evidenceHash,
+  );
+  if (run.id != expectedId) {
+    throw const BackupFormatException('影子学习运行 ID 不是确定性 ID。');
+  }
+}
+
+_ValidatedLearningEvidence _validateLearningHashInput(
+  Map<String, Object?> hashInput,
+  LearningRun run,
+) {
+  _requireExactKeys(hashInput, const {
+    'algorithmVersion',
+    'configVersion',
+    'evidenceHashVersion',
+    'parameterFamily',
+    'readinessThresholds',
+    'referenceType',
+    'scopedExcludedEvidence',
+    'selectedEligibleEvidence',
+    'sourceModelIdentity',
+  }, '影子学习 hashInput');
+  if (_string(hashInput, 'algorithmVersion', '影子学习 hashInput') !=
+          run.algorithmVersion ||
+      _string(hashInput, 'configVersion', '影子学习 hashInput') !=
+          run.configVersion ||
+      _string(hashInput, 'evidenceHashVersion', '影子学习 hashInput') !=
+          run.evidenceHashVersion ||
+      _string(hashInput, 'parameterFamily', '影子学习 hashInput') !=
+          run.parameterFamily.code ||
+      _string(hashInput, 'sourceModelIdentity', '影子学习 hashInput') !=
+          run.sourceModelIdentity) {
+    throw const BackupFormatException('影子学习 hashInput 与运行身份不一致。');
+  }
+  final referenceType = _enumByCode(
+    ObservationReferenceType.values,
+    _string(hashInput, 'referenceType', '影子学习 hashInput'),
+    (value) => value.code,
+    '影子学习参考类型',
+  );
+  final thresholds = _map(hashInput, 'readinessThresholds', '影子学习 hashInput');
+  _requireExactKeys(thresholds, const {
+    'minimumEligibleObservationPairs',
+    'minimumObservationSpanCalendarDays',
+    'shadowWindowCount',
+    'shadowWindowEligiblePairs',
+  }, '影子学习门槛');
+  if (_int(thresholds, 'minimumEligibleObservationPairs', '影子学习门槛') != 14 ||
+      _int(thresholds, 'minimumObservationSpanCalendarDays', '影子学习门槛') != 21 ||
+      _int(thresholds, 'shadowWindowCount', '影子学习门槛') != 2 ||
+      _int(thresholds, 'shadowWindowEligiblePairs', '影子学习门槛') != 7) {
+    throw const BackupFormatException('影子学习门槛与配置版本不一致。');
+  }
+  final selected = _list(
+    hashInput,
+    'selectedEligibleEvidence',
+    '影子学习 hashInput',
+  );
+  final excluded = _list(hashInput, 'scopedExcludedEvidence', '影子学习 hashInput');
+  if (selected.length > 14 || (selected.isEmpty && excluded.isEmpty)) {
+    throw const BackupFormatException('影子学习证据集合大小不合法。');
+  }
+  final evidenceIds = <String>{};
+  final selectedEvidence = <_ValidatedSelectedEvidence>[];
+  for (final item in selected) {
+    final evidence = _asMap(item, '影子学习可用证据');
+    _requireExactKeys(evidence, const {
+      'absoluteState',
+      'activeActivityCountAtObservation',
+      'actualOrdinal',
+      'alignmentDirection',
+      'baseEnergyAtObservation',
+      'comparisonBandVersion',
+      'contractVersion',
+      'coverageState',
+      'effectiveModelFingerprintAtObservation',
+      'estimateAtObservation',
+      'estimatedOrdinalAtObservation',
+      'hasMorningCheckIn',
+      'id',
+      'initialEstimateAtObservation',
+      'lifeDay',
+      'modelRegimeEpochAtObservation',
+      'modelRegimeKey',
+      'observedAt',
+      'personalizationVersionAtObservation',
+      'referenceType',
+      'ruleVersionAtObservation',
+      'settled',
+    }, '影子学习可用证据');
+    final id = _string(evidence, 'id', '影子学习可用证据');
+    _nonEmpty(id, '影子学习可用证据 ID');
+    if (!evidenceIds.add(id)) {
+      throw const BackupFormatException('影子学习证据 ID 重复。');
+    }
+    final lifeDay = _lifeDay(evidence, 'lifeDay', '影子学习可用证据');
+    _canonicalTimestamp(evidence, 'observedAt', '影子学习可用证据');
+    final observedAt = _date(evidence, 'observedAt', '影子学习可用证据');
+    final absoluteState = _enumByCode(
+      AbsoluteEnergyState.values,
+      _string(evidence, 'absoluteState', '影子学习可用证据'),
+      (value) => value.code,
+      '影子学习实际状态',
+    );
+    final evidenceReferenceType = _enumByCode(
+      ObservationReferenceType.values,
+      _string(evidence, 'referenceType', '影子学习可用证据'),
+      (value) => value.code,
+      '影子学习参考类型',
+    );
+    final coverageState = _enumByCode(
+      ObservationCoverageState.values,
+      _string(evidence, 'coverageState', '影子学习可用证据'),
+      (value) => value.code,
+      '影子学习覆盖状态',
+    );
+    final alignmentDirection = _enumByCode(
+      ObservationAlignmentDirection.values,
+      _string(evidence, 'alignmentDirection', '影子学习可用证据'),
+      (value) => value.code,
+      '影子学习对齐方向',
+    );
+    final activeActivityCount = _int(
+      evidence,
+      'activeActivityCountAtObservation',
+      '影子学习可用证据',
+    );
+    final actualOrdinal = _int(evidence, 'actualOrdinal', '影子学习可用证据');
+    final baseEnergy = _int(evidence, 'baseEnergyAtObservation', '影子学习可用证据');
+    final estimate = _int(evidence, 'estimateAtObservation', '影子学习可用证据');
+    final estimatedOrdinal = _int(
+      evidence,
+      'estimatedOrdinalAtObservation',
+      '影子学习可用证据',
+    );
+    final initialEstimate = _int(
+      evidence,
+      'initialEstimateAtObservation',
+      '影子学习可用证据',
+    );
+    final ruleVersion = _string(
+      evidence,
+      'ruleVersionAtObservation',
+      '影子学习可用证据',
+    );
+    final effectiveFingerprint = _string(
+      evidence,
+      'effectiveModelFingerprintAtObservation',
+      '影子学习可用证据',
+    );
+    final regimeEpoch = _string(
+      evidence,
+      'modelRegimeEpochAtObservation',
+      '影子学习可用证据',
+    );
+    _nonEmpty(ruleVersion, '影子学习规则版本');
+    _nonEmpty(effectiveFingerprint, '影子学习模型指纹');
+    _nonEmpty(regimeEpoch, '影子学习模型 epoch');
+    final comparison = const ObservationComparisonService().compare(
+      actualState: absoluteState,
+      estimate: estimate,
+      initialEstimate: initialEstimate,
+    );
+    final rebuiltRegime = const ModelRegimeKeyBuilder().build(
+      referenceType: evidenceReferenceType,
+      baseEnergy: baseEnergy,
+      ruleVersion: ruleVersion,
+      comparisonBandVersion: _string(
+        evidence,
+        'comparisonBandVersion',
+        '影子学习可用证据',
+      ),
+      effectiveModelFingerprint: effectiveFingerprint,
+      modelRegimeEpoch: regimeEpoch,
+    );
+    if (_string(evidence, 'modelRegimeKey', '影子学习可用证据') !=
+            run.sourceModelIdentity ||
+        rebuiltRegime != run.sourceModelIdentity ||
+        evidenceReferenceType != referenceType ||
+        _string(evidence, 'contractVersion', '影子学习可用证据') !=
+            mvpBObservationContractV1 ||
+        _string(evidence, 'comparisonBandVersion', '影子学习可用证据') !=
+            mvpBComparisonBandV1 ||
+        _string(evidence, 'personalizationVersionAtObservation', '影子学习可用证据') !=
+            fixedMvpAPersonalizationVersion ||
+        coverageState != ObservationCoverageState.confirmed ||
+        _bool(evidence, 'hasMorningCheckIn', '影子学习可用证据') != true ||
+        _bool(evidence, 'settled', '影子学习可用证据') != true ||
+        activeActivityCount < 0 ||
+        baseEnergy < 60 ||
+        baseEnergy > 140 ||
+        actualOrdinal != absoluteState.index ||
+        !comparison.isValid ||
+        comparison.estimatedOrdinal != estimatedOrdinal ||
+        comparison.direction != alignmentDirection) {
+      throw const BackupFormatException('影子学习可用证据不属于当前运行。');
+    }
+    selectedEvidence.add(
+      _ValidatedSelectedEvidence(
+        id: id,
+        lifeDay: lifeDay,
+        observedAt: observedAt,
+        baseEnergy: baseEnergy,
+        direction: alignmentDirection,
+      ),
+    );
+  }
+  _validateLearningEvidenceOrder(selectedEvidence);
+
+  final excludedEvidence = <_ValidatedExcludedEvidence>[];
+  final exclusionReasonCounts = <String, int>{};
+  for (final item in excluded) {
+    final evidence = _asMap(item, '影子学习排除证据');
+    _requireExactKeys(evidence, const {
+      'id',
+      'lifeDay',
+      'observedAt',
+      'reasonCodes',
+    }, '影子学习排除证据');
+    final id = _string(evidence, 'id', '影子学习排除证据');
+    _nonEmpty(id, '影子学习排除证据 ID');
+    if (!evidenceIds.add(id)) {
+      throw const BackupFormatException('影子学习证据 ID 重复。');
+    }
+    final lifeDay = _lifeDay(evidence, 'lifeDay', '影子学习排除证据');
+    _canonicalTimestamp(evidence, 'observedAt', '影子学习排除证据');
+    final observedAt = _date(evidence, 'observedAt', '影子学习排除证据');
+    final reasons = _list(evidence, 'reasonCodes', '影子学习排除证据');
+    final reasonStrings = reasons.whereType<String>().toList();
+    final expectedOrder = <String>[
+      for (final reason in LearningIneligibilityReason.values)
+        if (reasonStrings.contains(reason.code)) reason.code,
+    ];
+    if (reasons.isEmpty ||
+        reasonStrings.length != reasons.length ||
+        reasonStrings.toSet().length != reasonStrings.length ||
+        !_sameStringList(reasonStrings, expectedOrder)) {
+      throw const BackupFormatException('影子学习排除原因不合法。');
+    }
+    for (final reason in reasonStrings) {
+      exclusionReasonCounts.update(
+        reason,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+    excludedEvidence.add(
+      _ValidatedExcludedEvidence(
+        id: id,
+        lifeDay: lifeDay,
+        observedAt: observedAt,
+      ),
+    );
+  }
+  _validateLearningEvidenceOrder(excludedEvidence);
+  return _ValidatedLearningEvidence(
+    selected: selectedEvidence,
+    excluded: excludedEvidence,
+    exclusionReasonCounts: exclusionReasonCounts,
+  );
+}
+
+ShadowReadiness _validateLearningDescriptive(
+  Map<String, Object?> descriptive, {
+  required _ValidatedLearningEvidence evidence,
+  required int currentBaseEnergy,
+}) {
+  _requireExactKeys(descriptive, const {
+    'directionCounts',
+    'earliestSelectedLifeDay',
+    'eligibleTotal',
+    'excludedReasonCounts',
+    'excludedTotal',
+    'latestSelectedLifeDay',
+    'missingToMinimum',
+    'readiness',
+    'selectedEligible',
+    'windowDirectionCounts',
+    'windowSizes',
+  }, '影子学习描述');
+
+  final selected = evidence.selected;
+  if (selected.any((item) => item.baseEnergy != currentBaseEnergy)) {
+    throw const BackupFormatException('影子学习当前参数与证据不一致。');
+  }
+  final eligibleTotal = _int(descriptive, 'eligibleTotal', '影子学习描述');
+  final selectedCount = _int(descriptive, 'selectedEligible', '影子学习描述');
+  final excludedTotal = _int(descriptive, 'excludedTotal', '影子学习描述');
+  final missing = _int(descriptive, 'missingToMinimum', '影子学习描述');
+  final eligibleCountIsValid = selected.length < 14
+      ? eligibleTotal == selected.length
+      : eligibleTotal >= selected.length;
+  if (!eligibleCountIsValid ||
+      selectedCount != selected.length ||
+      excludedTotal != evidence.excluded.length ||
+      missing != (14 - selected.length).clamp(0, 14)) {
+    throw const BackupFormatException('影子学习描述计数与证据不一致。');
+  }
+
+  final earliest = _nullableLifeDay(
+    descriptive,
+    'earliestSelectedLifeDay',
+    '影子学习描述',
+  );
+  final latest = _nullableLifeDay(
+    descriptive,
+    'latestSelectedLifeDay',
+    '影子学习描述',
+  );
+  if (earliest != selected.firstOrNull?.lifeDay ||
+      latest != selected.lastOrNull?.lifeDay) {
+    throw const BackupFormatException('影子学习描述日期范围与证据不一致。');
+  }
+  final span = earliest == null || latest == null
+      ? 0
+      : DateTime.utc(latest.year, latest.month, latest.day)
+            .difference(
+              DateTime.utc(earliest.year, earliest.month, earliest.day),
+            )
+            .inDays;
+
+  final expectedDirections = _learningDirectionCounts(selected);
+  final actualDirections = _learningDirectionCountsJson(
+    _map(descriptive, 'directionCounts', '影子学习描述'),
+    '影子学习描述.directionCounts',
+  );
+  if (!_sameIntMap(actualDirections, expectedDirections)) {
+    throw const BackupFormatException('影子学习描述方向统计与证据不一致。');
+  }
+
+  final windows = <List<_ValidatedSelectedEvidence>>[];
+  for (var start = 0; start < selected.length; start += 7) {
+    windows.add(selected.sublist(start, (start + 7).clamp(0, selected.length)));
+  }
+  final windowSizes = _list(descriptive, 'windowSizes', '影子学习描述');
+  if (windowSizes.length != windows.length ||
+      windowSizes.indexed.any(
+        (entry) => entry.$2 is! int || entry.$2 != windows[entry.$1].length,
+      )) {
+    throw const BackupFormatException('影子学习窗口大小与证据不一致。');
+  }
+  final windowCounts = _list(descriptive, 'windowDirectionCounts', '影子学习描述');
+  if (windowCounts.length != windows.length) {
+    throw const BackupFormatException('影子学习窗口方向数量不一致。');
+  }
+  for (var index = 0; index < windows.length; index++) {
+    final actual = _learningDirectionCountsJson(
+      _asMap(windowCounts[index], '影子学习窗口方向'),
+      '影子学习窗口方向',
+    );
+    if (!_sameIntMap(actual, _learningDirectionCounts(windows[index]))) {
+      throw const BackupFormatException('影子学习窗口方向与证据不一致。');
+    }
+  }
+
+  final excludedCounts = _map(descriptive, 'excludedReasonCounts', '影子学习描述');
+  final parsedExcludedCounts = <String, int>{};
+  final allowedExclusionCodes = {
+    for (final reason in LearningIneligibilityReason.values) reason.code,
+  };
+  for (final entry in excludedCounts.entries) {
+    if (!allowedExclusionCodes.contains(entry.key) ||
+        entry.value is! int ||
+        (entry.value! as int) <= 0) {
+      throw const BackupFormatException('影子学习排除统计不合法。');
+    }
+    parsedExcludedCounts[entry.key] = entry.value! as int;
+  }
+  if (!_sameIntMap(parsedExcludedCounts, evidence.exclusionReasonCounts)) {
+    throw const BackupFormatException('影子学习排除统计与证据不一致。');
+  }
+
+  final readinessJson = _map(descriptive, 'readiness', '影子学习描述');
+  _requireExactKeys(readinessJson, const {
+    'hasCompleteWindows',
+    'hasMinimumCount',
+    'hasMinimumSpan',
+    'spanCalendarDays',
+  }, '影子学习就绪门');
+  final expectedReadiness = ShadowReadiness(
+    hasMinimumCount: selected.length >= 14,
+    hasMinimumSpan: span >= 21,
+    hasCompleteWindows:
+        windows.length == 2 && windows.every((window) => window.length == 7),
+    spanCalendarDays: span,
+  );
+  if (_bool(readinessJson, 'hasMinimumCount', '影子学习就绪门') !=
+          expectedReadiness.hasMinimumCount ||
+      _bool(readinessJson, 'hasMinimumSpan', '影子学习就绪门') !=
+          expectedReadiness.hasMinimumSpan ||
+      _bool(readinessJson, 'hasCompleteWindows', '影子学习就绪门') !=
+          expectedReadiness.hasCompleteWindows ||
+      _int(readinessJson, 'spanCalendarDays', '影子学习就绪门') != span) {
+    throw const BackupFormatException('影子学习就绪门与证据不一致。');
+  }
+  return expectedReadiness;
+}
+
+void _validateLearningRunReasons(
+  LearningRun run,
+  List<String> reasons,
+  ShadowReadiness readiness,
+) {
+  final expected = switch (run.status) {
+    LearningRunStatus.pending || LearningRunStatus.running => const <String>[],
+    LearningRunStatus.retryableFailure => const ['retryableLearningFailure'],
+    LearningRunStatus.terminalFailure => null,
+    LearningRunStatus.completed => switch (run.result!) {
+      LearningRunResult.configurationBlocked => const [
+        'automaticLearningEngineDisabled',
+      ],
+      LearningRunResult.readyForAudit => const ['readyForAudit'],
+      LearningRunResult.insufficientEvidence => <String>[
+        if (!readiness.hasMinimumCount) 'minimumEligibleObservationPairsNotMet',
+        if (!readiness.hasMinimumSpan) 'minimumObservationSpanNotMet',
+        if (!readiness.hasCompleteWindows) 'shadowWindowsIncomplete',
+      ],
+    },
+  };
+  final terminalReasonIsValid =
+      run.status == LearningRunStatus.terminalFailure &&
+      (reasons.length == 1 &&
+          (reasons.single == 'persistedRunMismatch' ||
+              reasons.single == 'deterministicEvidenceFailure'));
+  final resultMatchesReadiness = switch (run.result) {
+    LearningRunResult.readyForAudit => readiness.ready,
+    LearningRunResult.insufficientEvidence => !readiness.ready,
+    LearningRunResult.configurationBlocked || null => true,
+  };
+  if ((!terminalReasonIsValid &&
+          (expected == null || !_sameStringList(reasons, expected))) ||
+      !resultMatchesReadiness) {
+    throw const BackupFormatException('影子学习原因码与运行状态不一致。');
+  }
+}
+
+Map<String, int> _learningDirectionCounts(
+  List<_ValidatedSelectedEvidence> evidence,
+) {
+  final counts = <String, int>{'aligned': 0, 'higher': 0, 'lower': 0};
+  for (final item in evidence) {
+    counts[item.direction.code] = counts[item.direction.code]! + 1;
+  }
+  return counts;
+}
+
+Map<String, int> _learningDirectionCountsJson(
+  Map<String, Object?> json,
+  String context,
+) {
+  _requireExactKeys(json, const {'aligned', 'higher', 'lower'}, context);
+  final counts = <String, int>{
+    'aligned': _int(json, 'aligned', context),
+    'higher': _int(json, 'higher', context),
+    'lower': _int(json, 'lower', context),
+  };
+  if (counts.values.any((count) => count < 0)) {
+    throw const BackupFormatException('影子学习方向统计不能为负数。');
+  }
+  return counts;
+}
+
+void _validateLearningEvidenceOrder<T extends _OrderedLearningEvidence>(
+  List<T> evidence,
+) {
+  for (var index = 1; index < evidence.length; index++) {
+    final previous = evidence[index - 1];
+    final current = evidence[index];
+    final dayOrder = previous.lifeDay.compareTo(current.lifeDay);
+    final timeOrder = previous.observedAt.compareTo(current.observedAt);
+    final isOrdered =
+        dayOrder < 0 ||
+        (dayOrder == 0 &&
+            (timeOrder < 0 ||
+                (timeOrder == 0 && previous.id.compareTo(current.id) < 0)));
+    if (!isOrdered) {
+      throw const BackupFormatException('影子学习证据排序不稳定。');
+    }
+  }
+}
+
+bool _sameStringList(List<String> left, List<String> right) {
+  return left.length == right.length &&
+      left.indexed.every((entry) => entry.$2 == right[entry.$1]);
+}
+
+bool _sameIntMap(Map<String, int> left, Map<String, int> right) {
+  return left.length == right.length &&
+      left.entries.every((entry) => right[entry.key] == entry.value);
+}
+
+abstract interface class _OrderedLearningEvidence {
+  String get id;
+  LifeDay get lifeDay;
+  DateTime get observedAt;
+}
+
+final class _ValidatedSelectedEvidence implements _OrderedLearningEvidence {
+  const _ValidatedSelectedEvidence({
+    required this.id,
+    required this.lifeDay,
+    required this.observedAt,
+    required this.baseEnergy,
+    required this.direction,
+  });
+
+  @override
+  final String id;
+  @override
+  final LifeDay lifeDay;
+  @override
+  final DateTime observedAt;
+  final int baseEnergy;
+  final ObservationAlignmentDirection direction;
+}
+
+final class _ValidatedExcludedEvidence implements _OrderedLearningEvidence {
+  const _ValidatedExcludedEvidence({
+    required this.id,
+    required this.lifeDay,
+    required this.observedAt,
+  });
+
+  @override
+  final String id;
+  @override
+  final LifeDay lifeDay;
+  @override
+  final DateTime observedAt;
+}
+
+final class _ValidatedLearningEvidence {
+  const _ValidatedLearningEvidence({
+    required this.selected,
+    required this.excluded,
+    required this.exclusionReasonCounts,
+  });
+
+  final List<_ValidatedSelectedEvidence> selected;
+  final List<_ValidatedExcludedEvidence> excluded;
+  final Map<String, int> exclusionReasonCounts;
+}
+
+Map<String, Object?> _canonicalJsonObject(String value, String description) {
+  final decoded = _canonicalJson(value, description);
+  return _asMap(decoded, description);
+}
+
+List<Object?> _canonicalJsonList(String value, String description) {
+  final decoded = _canonicalJson(value, description);
+  if (decoded is! List<Object?>) {
+    throw BackupFormatException('$description 必须是数组。');
+  }
+  return decoded;
+}
+
+Object? _canonicalJson(String value, String description) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(value);
+  } on FormatException {
+    throw BackupFormatException('$description 不是合法 JSON。');
+  }
+  try {
+    if (const CanonicalJsonEncoder().encode(decoded) != value) {
+      throw BackupFormatException('$description 不是规范 JSON。');
+    }
+  } on ArgumentError {
+    throw BackupFormatException('$description 包含不受支持的数值或类型。');
+  }
+  return decoded;
+}
+
+void _canonicalTimestamp(
+  Map<String, Object?> json,
+  String key,
+  String context,
+) {
+  final raw = _string(json, key, context);
+  final parsed = _date(json, key, context);
+  if (canonicalUtcIso8601Micros(parsed) != raw) {
+    throw BackupFormatException('$context.$key 不是六位微秒 UTC 时间。');
+  }
+}
+
 ActivityImpactSign _impactSign(int theoreticalDelta) {
   if (theoreticalDelta < 0) return ActivityImpactSign.consumption;
   if (theoreticalDelta > 0) return ActivityImpactSign.recovery;
@@ -940,6 +1690,17 @@ void _requireKeys(Map<String, Object?> json, Set<String> keys, String context) {
     if (!json.containsKey(key)) {
       throw BackupFormatException('$context.$key 缺失。');
     }
+  }
+}
+
+void _requireExactKeys(
+  Map<String, Object?> json,
+  Set<String> keys,
+  String context,
+) {
+  _requireKeys(json, keys, context);
+  if (json.length != keys.length || !keys.containsAll(json.keys)) {
+    throw BackupFormatException('$context 包含未知字段。');
   }
 }
 

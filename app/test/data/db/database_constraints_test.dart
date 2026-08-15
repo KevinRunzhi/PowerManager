@@ -8,6 +8,7 @@ import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:test/test.dart';
 
+import '../../support/backup_fixture.dart';
 import 'test_database.dart';
 
 void main() {
@@ -285,6 +286,79 @@ void main() {
     },
   );
 
+  test(
+    'learning run state, JSON, candidate, uniqueness, and finality hold',
+    () async {
+      final repository = DriftLearningRunsRepository(LearningRunsDao(database));
+      final fixture = backupFixtureV3().learningRuns.single;
+      final pending = _learningRunState(
+        fixture,
+        status: LearningRunStatus.pending,
+        result: null,
+        reasonCodesJson: '[]',
+        completedAt: null,
+      );
+      await repository.insert(pending);
+
+      await expectLater(
+        database.learningRunsDao.updateById(
+          pending.id,
+          const LearningRunsTableCompanion(candidateValuesJson: Value('{}')),
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        database.learningRunsDao.updateById(
+          pending.id,
+          const LearningRunsTableCompanion(
+            currentValuesJson: Value('{"baseEnergy":100,"extra":1}'),
+          ),
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(
+        database.learningRunsDao.updateById(
+          pending.id,
+          const LearningRunsTableCompanion(
+            status: Value(LearningRunStatus.completed),
+          ),
+        ),
+        throwsA(isA<Exception>()),
+      );
+      await expectLater(repository.insert(pending), throwsA(isA<Exception>()));
+
+      final running = _learningRunState(
+        pending,
+        status: LearningRunStatus.running,
+        result: null,
+        reasonCodesJson: '[]',
+        completedAt: null,
+      );
+      await repository.update(running);
+      final retryable = _learningRunState(
+        running,
+        status: LearningRunStatus.retryableFailure,
+        result: null,
+        reasonCodesJson: '["retryableLearningFailure"]',
+        completedAt: backupFixtureNow.add(const Duration(seconds: 1)),
+      );
+      await repository.update(retryable);
+      await repository.update(running);
+      final completed = _learningRunState(
+        running,
+        status: LearningRunStatus.completed,
+        result: LearningRunResult.insufficientEvidence,
+        reasonCodesJson: fixture.reasonCodesJson,
+        completedAt: backupFixtureNow.add(const Duration(seconds: 2)),
+      );
+      await repository.update(completed);
+      await expectLater(
+        repository.update(completed),
+        throwsA(isA<Exception>()),
+      );
+    },
+  );
+
   test('daily summaries are unique and reject update or delete', () async {
     final repository = DriftDailySummariesRepository(
       DailySummariesDao(database),
@@ -447,6 +521,33 @@ void main() {
 
     expect(await repository.list(), isEmpty);
   });
+}
+
+LearningRun _learningRunState(
+  LearningRun source, {
+  required LearningRunStatus status,
+  required LearningRunResult? result,
+  required String reasonCodesJson,
+  required DateTime? completedAt,
+}) {
+  return LearningRun(
+    id: source.id,
+    parameterFamily: source.parameterFamily,
+    sourceModelIdentity: source.sourceModelIdentity,
+    sourcePersonalizationVersionId: source.sourcePersonalizationVersionId,
+    status: status,
+    result: result,
+    evidenceSnapshotJson: source.evidenceSnapshotJson,
+    evidenceHash: source.evidenceHash,
+    evidenceHashVersion: source.evidenceHashVersion,
+    algorithmVersion: source.algorithmVersion,
+    configVersion: source.configVersion,
+    currentValuesJson: source.currentValuesJson,
+    candidateValuesJson: source.candidateValuesJson,
+    reasonCodesJson: reasonCodesJson,
+    triggeredAt: source.triggeredAt,
+    completedAt: completedAt,
+  );
 }
 
 MorningCheckIn _checkIn({required String id}) {

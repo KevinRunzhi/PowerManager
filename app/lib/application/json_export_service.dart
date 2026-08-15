@@ -27,13 +27,14 @@ final class JsonExportService implements JsonExporter {
     required this.activities,
     required this.observations,
     required this.feedback,
+    required this.learningRuns,
     required this.summaries,
     required this.receipts,
     required this.appVersionLoader,
     required this.transactionRunner,
   });
 
-  static const schemaVersion = 2;
+  static const schemaVersion = 3;
 
   final AppSettingsRepository settings;
   final RuleConfigVersionsRepository rules;
@@ -41,6 +42,7 @@ final class JsonExportService implements JsonExporter {
   final ActivityRecordsRepository activities;
   final EnergyObservationsRepository observations;
   final ActivityFeedbackRepository feedback;
+  final LearningRunsRepository learningRuns;
   final DailySummariesRepository summaries;
   final PromptReceiptsRepository receipts;
   final AppVersionLoader appVersionLoader;
@@ -56,6 +58,7 @@ final class JsonExportService implements JsonExporter {
       final activityRecords = await activities.listAllForExport();
       final energyObservations = await observations.list();
       final activityFeedback = await feedback.list();
+      final learningRunItems = await learningRuns.list();
       final dailySummaries = await summaries.list();
       final promptReceipts = await receipts.list();
       return _ExportSnapshot(
@@ -65,6 +68,7 @@ final class JsonExportService implements JsonExporter {
         activityRecords: activityRecords,
         energyObservations: energyObservations,
         activityFeedback: activityFeedback,
+        learningRuns: learningRunItems,
         dailySummaries: dailySummaries,
         promptReceipts: promptReceipts,
       );
@@ -79,6 +83,7 @@ final class JsonExportService implements JsonExporter {
       activityRecords: snapshot.activityRecords,
       energyObservations: snapshot.energyObservations,
       activityFeedback: snapshot.activityFeedback,
+      learningRuns: snapshot.learningRuns,
       dailySummaries: snapshot.dailySummaries,
       promptReceipts: snapshot.promptReceipts,
     );
@@ -106,6 +111,7 @@ final class _ExportSnapshot {
     required this.activityRecords,
     required this.energyObservations,
     required this.activityFeedback,
+    required this.learningRuns,
     required this.dailySummaries,
     required this.promptReceipts,
   });
@@ -116,6 +122,7 @@ final class _ExportSnapshot {
   final List<StoredEstimatedActivity> activityRecords;
   final List<EnergyObservation> energyObservations;
   final List<ActivityFeedback> activityFeedback;
+  final List<LearningRun> learningRuns;
   final List<DailySummary> dailySummaries;
   final List<PromptReceipt> promptReceipts;
 }

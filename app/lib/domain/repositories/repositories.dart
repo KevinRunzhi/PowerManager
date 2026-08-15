@@ -48,6 +48,20 @@ abstract interface class ActivityFeedbackRepository {
   Future<List<ActivityFeedback>> list();
 }
 
+abstract interface class LearningRunsRepository {
+  Future<void> insert(LearningRun run);
+  Future<void> update(LearningRun run);
+  Future<LearningRun?> find(String id);
+  Future<LearningRun?> findByIdempotency({
+    required LearningParameterFamily parameterFamily,
+    required String sourceModelIdentity,
+    required String algorithmVersion,
+    required String configVersion,
+    required String evidenceHash,
+  });
+  Future<List<LearningRun>> list();
+}
+
 abstract interface class DailySummariesRepository {
   Future<DailySummary> insertOrGet(DailySummary summary);
   Future<DailySummary?> findByLifeDay(LifeDay lifeDay);
