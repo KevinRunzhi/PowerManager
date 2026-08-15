@@ -16,6 +16,9 @@ final class LearningProductionGate {
   const LearningProductionGate({
     required this.baselineProductionLearningEnabled,
     required this.activityImpactProductionLearningEnabled,
+    this.automaticLearningEngineEnabled = false,
+    this.baselineAutoApplyEnabled = false,
+    this.activityImpactAutoApplyEnabled = false,
     this.isPreproductionValidationOverride = false,
     this.supportedBaselineAlgorithms = const {},
     this.supportedBaselineConfigs = const {},
@@ -24,12 +27,21 @@ final class LearningProductionGate {
   const LearningProductionGate.closed()
     : baselineProductionLearningEnabled = false,
       activityImpactProductionLearningEnabled = false,
+      automaticLearningEngineEnabled = false,
+      baselineAutoApplyEnabled = false,
+      activityImpactAutoApplyEnabled = false,
       isPreproductionValidationOverride = false,
       supportedBaselineAlgorithms = const {},
       supportedBaselineConfigs = const {};
 
   final bool baselineProductionLearningEnabled;
   final bool activityImpactProductionLearningEnabled;
+
+  /// Master switch for generating production learning runs. Formal providers
+  /// use [closed]; tests must opt in explicitly when exercising lifecycle.
+  final bool automaticLearningEngineEnabled;
+  final bool baselineAutoApplyEnabled;
+  final bool activityImpactAutoApplyEnabled;
   final bool isPreproductionValidationOverride;
   final Set<String> supportedBaselineAlgorithms;
   final Set<String> supportedBaselineConfigs;
@@ -38,6 +50,11 @@ final class LearningProductionGate {
     LearningParameterFamily.baseline => baselineProductionLearningEnabled,
     LearningParameterFamily.activityImpact =>
       activityImpactProductionLearningEnabled,
+  };
+
+  bool allowsAutoApply(LearningParameterFamily family) => switch (family) {
+    LearningParameterFamily.baseline => baselineAutoApplyEnabled,
+    LearningParameterFamily.activityImpact => activityImpactAutoApplyEnabled,
   };
 }
 
@@ -279,6 +296,9 @@ final class ModelActivationService {
           noticeType = LearningNoticeType.candidateAvailable;
           noticeReason = 'reviewCandidateAvailable';
         case LearningMode.automatic:
+          if (!productionGate.allowsAutoApply(run.parameterFamily)) {
+            throw StateError('automaticApplyDisabled');
+          }
           candidate = lifecycle.transition(
             version: candidate,
             to: PersonalizationVersionStatus.scheduled,
@@ -1035,6 +1055,9 @@ final class ModelActivationService {
   }) {
     if (!productionGate.allows(parameterFamily)) {
       throw StateError('productionGateClosed');
+    }
+    if (!productionGate.automaticLearningEngineEnabled) {
+      throw StateError('automaticLearningEngineDisabled');
     }
     if (mode == LearningMode.off) throw StateError('learningModeOff');
     final suspended = parameterFamily == LearningParameterFamily.baseline

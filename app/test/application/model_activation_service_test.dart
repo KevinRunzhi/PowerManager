@@ -25,6 +25,8 @@ const _config = 'baseline-production-config-v1';
 const _openGate = LearningProductionGate(
   baselineProductionLearningEnabled: true,
   activityImpactProductionLearningEnabled: true,
+  automaticLearningEngineEnabled: true,
+  baselineAutoApplyEnabled: true,
   isPreproductionValidationOverride: true,
   supportedBaselineAlgorithms: {_algorithm},
   supportedBaselineConfigs: {_config},

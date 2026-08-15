@@ -35,6 +35,7 @@ import 'package:power_manager/data/export/temporary_export_file_store.dart';
 import 'package:power_manager/data/repositories/drift_repositories.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/learning/baseline_production_learner.dart';
 import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -127,6 +128,13 @@ final learningNoticesRepositoryProvider = Provider<LearningNoticesRepository>((
 final learningProductionGateProvider = Provider<LearningProductionGate>((ref) {
   return const LearningProductionGate.closed();
 });
+
+/// No production configuration is constructed by the formal app provider.
+/// Pre-production lifecycle tests override this provider with the explicitly
+/// watermarked configuration and an isolated database.
+final baselineProductionConfigProvider = Provider<BaselineProductionConfig?>(
+  (ref) => null,
+);
 
 final modelActivationServiceProvider = Provider<ModelActivationService>((ref) {
   return ModelActivationService(
@@ -453,6 +461,12 @@ final pendingPersonalizationVersionProvider =
       return ref.watch(personalizationVersionsRepositoryProvider).findPending();
     });
 
+final learningRunProvider = FutureProvider.autoDispose
+    .family<LearningRun?, String>((ref, id) {
+      ref.watch(currentPreparationRefreshProvider);
+      return ref.watch(learningRunsRepositoryProvider).find(id);
+    });
+
 final settingsServiceProvider = Provider<SettingsMutator>((ref) {
   return SettingsService(
     transactionRunner: DriftTransactionRunner(ref.watch(appDatabaseProvider)),
@@ -508,6 +522,13 @@ final automaticLearningRequesterProvider = Provider<AutomaticLearningRequester>(
       mornings: ref.watch(morningsRepositoryProvider),
       summaries: ref.watch(summariesRepositoryProvider),
       learningRuns: ref.watch(learningRunsRepositoryProvider),
+      productionGate: ref.watch(learningProductionGateProvider),
+      productionConfig: ref.watch(baselineProductionConfigProvider),
+      modelActivationService: ref.watch(modelActivationServiceProvider),
+      personalizationVersions: ref.watch(
+        personalizationVersionsRepositoryProvider,
+      ),
+      appSettings: ref.watch(settingsRepositoryProvider),
     );
   },
 );

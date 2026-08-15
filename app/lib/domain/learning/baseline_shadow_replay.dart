@@ -232,7 +232,7 @@ final class BaselineShadowReplayEngine {
       );
     }
 
-    final frozen = _decodeFrozenEvidence(evidence);
+    final frozen = _decodeFrozenEvidence(evidence, config);
     if (frozen == null || frozen.length != evidence.selectedEligible) {
       return _result(
         evidence: evidence,
@@ -449,6 +449,7 @@ final class BaselineShadowReplayEngine {
 
   List<_FrozenReplayObservation>? _decodeFrozenEvidence(
     ShadowEvidencePackage evidence,
+    BaselineShadowReplayConfig config,
   ) {
     try {
       final snapshot = jsonDecode(evidence.evidenceSnapshotJson);
@@ -458,8 +459,13 @@ final class BaselineShadowReplayEngine {
       }
       final hashInput = snapshot['hashInput'];
       if (hashInput is! Map<String, Object?>) return null;
-      if (hashInput['algorithmVersion'] != shadowLearningAlgorithmV1 ||
-          hashInput['configVersion'] != shadowLearningConfigV1 ||
+      final isShadowEvidenceIdentity =
+          hashInput['algorithmVersion'] == shadowLearningAlgorithmV1 &&
+          hashInput['configVersion'] == shadowLearningConfigV1;
+      final isReplayEvidenceIdentity =
+          hashInput['algorithmVersion'] == config.algorithmVersion &&
+          hashInput['configVersion'] == config.configVersion;
+      if ((!isShadowEvidenceIdentity && !isReplayEvidenceIdentity) ||
           hashInput['evidenceHashVersion'] != canonicalEvidenceHashV1 ||
           hashInput['parameterFamily'] !=
               LearningParameterFamily.baseline.code ||

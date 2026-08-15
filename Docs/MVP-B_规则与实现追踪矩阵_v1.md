@@ -2,9 +2,9 @@
 
 ## 0. 状态
 
-- 版本：1.8
+- 版本：1.9
 - 日期：2026-08-15
-- 状态：B2-0 工程轨已通过，产品轨 inconclusive；B2-1 可实施，正式生产门保持关闭
+- 状态：B2-1 工程实现、自动化与模拟器正式 gate 回归已通过；预生产全生命周期由隔离 harness 验证；产品轨 inconclusive，正式生产门保持关闭
 
 | 能力 | 产品来源 | 参数 / 算法来源 | 技术落点 | 主要验证 | 当前状态 |
 |---|---|---|---|---|---|
@@ -29,9 +29,9 @@
 | 不可变个人模型 | PRD 2、3.3 | 算法 5.1、5.3 | personalization_versions v4 | 唯一 active、历史冻结、单参数族 | B2-0 已实现；唯一 active / pending、身份与终态保护、全量迁移与恢复测试通过 |
 | legacy pending base 桥接 | PRD 5.1 | 算法 5.1 | schema v4 bridge transaction | 未来 / 到期 / 残缺 / 重启不丢不重 | B2-0 已实现；future / due / malformed / pending rule / 故障回滚与重启通过 |
 | 分参数族学习模式 | PRD 4.4 | 配置 0、算法 7.2、9.1 | app_settings、ModelActivationService | 两族独立模式、新能力不继承授权 | B2-0 已实现；正式 gate 零写入、预生产显式水印、两族授权隔离通过 |
-| 基准线自动学习 | PRD 3.3 | B1 后生产配置、算法 7 | learning_runs + model version v4 | 冷却、边界、反事实、相同证据防重 | B2-0 已完成安全接管与激活前复验；B2-1 接入生产 learner，正式生产门仍关闭 |
+| 基准线自动学习 | PRD 3.3 | B1 后生产配置、算法 7 | BaselineProductionLearner + AutomaticLearningCoordinator + model version v4 | 冷却、边界、反事实、相同证据防重、review/automatic 生命周期 | B2-1 工程、隔离预生产自动化与模拟器正式 gate 回归通过；产品轨 inconclusive，正式生产门仍关闭 |
 | 未来生活日幂等激活 | PRD 2、3.3 | 算法 5.3、5.4 | ModelActivationService + prepare | 通知窗口、重启、04:00、恢复只激活一次 | B2-0 已实现；24 小时边界、通知原子性、重启 / restore 复验通过 |
-| 通知、取消与撤回 | PRD 3.3、4.3、4.4 | 算法 5.3、7.2 | learning_notices、ActivationService | 激活前取消、激活后未来恢复 | B2-0 已完成通用事务与持久通知；候选详情和完整用户操作页进入 B2-1 / B2-2 |
+| 通知、取消与撤回 | PRD 3.3、4.3、4.4 | 算法 5.3、7.2 | learning_notices、ActivationService、SettingsPage | 激活前取消、激活后未来恢复 | B2-1 候选详情、接受/稍后/拒绝/取消/撤回入口与隔离生命周期通过；模拟器正式 gate 回归通过 |
 | 恶化暂停 | PRD 3.3、5.3 | B1 后生产配置、算法 7.3、9.3 | learning suspension + evaluation | 不震荡、原因可见、手动恢复 | B2-0 已完成参数族隔离、暂停 / 冷却基础事务；B2-2 接入监测判定与 UI |
 | 活动倍率方向隔离 | PRD 3.4 | B3 配置、算法 8.3 | factors v5、activity snapshot | consumption / recovery 不串用 | 阻塞于 B3-0 |
 | 活动 factor regime 隔离 | PRD 3.4 | 算法 5.4、8.3 | factor regime snapshot + learner | 旧证据不重复、基准线变化不重置 | 阻塞于 B3-0 |

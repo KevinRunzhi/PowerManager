@@ -143,6 +143,56 @@ final class ShadowEvidencePackage {
   final List<int> windowSizes;
   final Map<LearningIneligibilityReason, int> exclusionCounts;
   final ShadowReadiness readiness;
+
+  /// Rebinds an already frozen evidence package to a new learner identity.
+  ///
+  /// The selected observations and descriptive evidence remain byte-for-byte
+  /// the same; only the algorithm/config identity in the hash input changes.
+  /// This is used when the read-only B1 evidence is consumed by the B2
+  /// production learner, so a production run can be independently identified
+  /// and replayed without rebuilding evidence from mutable rows.
+  ShadowEvidencePackage reidentify({
+    required String algorithmVersion,
+    required String configVersion,
+    CanonicalJsonEncoder canonicalEncoder = const CanonicalJsonEncoder(),
+  }) {
+    final decoded = jsonDecode(evidenceSnapshotJson);
+    if (decoded is! Map<String, Object?>) {
+      throw const FormatException('Evidence snapshot must be an object');
+    }
+    final rawHashInput = decoded['hashInput'];
+    if (rawHashInput is! Map<String, Object?>) {
+      throw const FormatException('Evidence hash input must be an object');
+    }
+    final hashInput = Map<String, Object?>.of(rawHashInput)
+      ..['algorithmVersion'] = algorithmVersion
+      ..['configVersion'] = configVersion;
+    final snapshot = Map<String, Object?>.of(decoded)
+      ..['hashInput'] = hashInput;
+    final encoded = canonicalEncoder.encode(snapshot);
+    final hash = sha256
+        .convert(utf8.encode(canonicalEncoder.encode(hashInput)))
+        .toString();
+    return ShadowEvidencePackage(
+      sourceModelIdentity: sourceModelIdentity,
+      referenceType: referenceType,
+      baseEnergy: baseEnergy,
+      evidenceSnapshotJson: encoded,
+      evidenceHash: hash,
+      currentValuesJson: currentValuesJson,
+      eligibleTotal: eligibleTotal,
+      selectedEligible: selectedEligible,
+      excludedTotal: excludedTotal,
+      missingToMinimum: missingToMinimum,
+      earliestLifeDay: earliestLifeDay,
+      latestLifeDay: latestLifeDay,
+      directionCounts: directionCounts,
+      windowDirectionCounts: windowDirectionCounts,
+      windowSizes: windowSizes,
+      exclusionCounts: exclusionCounts,
+      readiness: readiness,
+    );
+  }
 }
 
 final class ShadowLearningEvaluation {

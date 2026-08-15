@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -7,10 +8,12 @@ import 'package:power_manager/app/app_routes.dart';
 import 'package:power_manager/app/theme/app_spacing.dart';
 import 'package:power_manager/application/json_backup_codec.dart';
 import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
+import 'package:power_manager/application/model_activation_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/providers.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
+import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 import 'package:power_manager/features/settings/presentation/onboarding_dialog.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -141,6 +144,40 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
             '待生效：${pending.baseEnergy} · ${pending.effectiveLifeDay}',
             key: const Key('pending-base-label'),
           ),
+        if (widget.pendingModel case final pending?
+            when pending.changedParameterFamily ==
+                    PersonalizationChangedParameterFamily.baseline &&
+                pending.status.isPending) ...[
+          const SizedBox(height: AppSpacing.x3),
+          _LearningCandidateCard(
+            pending: pending,
+            run: pending.sourceLearningRunId == null
+                ? null
+                : ref
+                      .watch(learningRunProvider(pending.sourceLearningRunId!))
+                      .value,
+            busy: dataBusy,
+            onAccept:
+                pending.status == PersonalizationVersionStatus.awaitingReview
+                ? _acceptCandidate
+                : null,
+            onDefer:
+                pending.status == PersonalizationVersionStatus.awaitingReview
+                ? _deferCandidate
+                : null,
+            onReopen: pending.status == PersonalizationVersionStatus.deferred
+                ? _reopenCandidate
+                : null,
+            onReject:
+                pending.status == PersonalizationVersionStatus.awaitingReview ||
+                    pending.status == PersonalizationVersionStatus.deferred
+                ? _rejectCandidate
+                : null,
+            onCancel: pending.status == PersonalizationVersionStatus.scheduled
+                ? _cancelCandidate
+                : null,
+          ),
+        ],
         const SizedBox(height: AppSpacing.x3),
         TextField(
           key: const Key('base-estimate-field'),
@@ -157,6 +194,18 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
           onPressed: dataBusy ? null : _saveBase,
           child: Text(_saving ? '保存中…' : '下一生活日起生效'),
         ),
+        if (widget.activeModel.creationSource ==
+                PersonalizationCreationSource.learningRun &&
+            widget.activeModel.parentVersionId != null) ...[
+          const SizedBox(height: AppSpacing.x3),
+          OutlinedButton.icon(
+            key: const Key('revert-active-learning-button'),
+            onPressed: dataBusy ? null : _revertActiveLearning,
+            icon: const Icon(Icons.undo_outlined),
+            label: const Text('撤回上一轮自动调整'),
+          ),
+          const Text('撤回只安排未来生活日，不重算已经结算的历史。'),
+        ],
         const SizedBox(height: AppSpacing.x6),
         Text('自动学习', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: AppSpacing.x2),
@@ -265,6 +314,115 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
         ),
       ],
     );
+  }
+
+  void _invalidateLearningViews() {
+    ref.invalidate(appSettingsProvider);
+    ref.invalidate(activePersonalizationVersionProvider);
+    ref.invalidate(pendingPersonalizationVersionProvider);
+    ref.invalidate(currentPreparationProvider);
+    ref.invalidate(dataHealthReportProvider);
+  }
+
+  Future<void> _acceptCandidate() async {
+    final pending = widget.pendingModel;
+    if (pending == null) return;
+    setState(() => _saving = true);
+    try {
+      final now = ref.read(clockProvider).now();
+      final currentDay = LifeDayCalculator().lifeDayFor(now);
+      await ref
+          .read(modelActivationServiceProvider)
+          .acceptReviewCandidate(
+            versionId: pending.id,
+            currentLifeDay: currentDay,
+            effectiveLifeDay: currentDay.next,
+            at: now,
+          );
+      _invalidateLearningViews();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('候选已变化或已过期，请重新检查。')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _deferCandidate() => _transitionCandidate(
+    (service, pending, now) =>
+        service.deferReviewCandidate(versionId: pending.id, at: now),
+  );
+
+  Future<void> _reopenCandidate() => _transitionCandidate(
+    (service, pending, now) =>
+        service.reopenDeferredCandidate(versionId: pending.id, at: now),
+  );
+
+  Future<void> _rejectCandidate() => _transitionCandidate(
+    (service, pending, now) =>
+        service.rejectReviewCandidate(versionId: pending.id, at: now),
+  );
+
+  Future<void> _cancelCandidate() => _transitionCandidate(
+    (service, pending, now) =>
+        service.cancelPendingChange(versionId: pending.id, at: now),
+  );
+
+  Future<void> _transitionCandidate(
+    Future<PersonalizationVersion> Function(
+      ModelActivationService service,
+      PersonalizationVersion pending,
+      DateTime now,
+    )
+    action,
+  ) async {
+    final pending = widget.pendingModel;
+    if (pending == null) return;
+    setState(() => _saving = true);
+    try {
+      final now = ref.read(clockProvider).now();
+      await action(ref.read(modelActivationServiceProvider), pending, now);
+      _invalidateLearningViews();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('候选已变化，请重新打开设置查看。')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _revertActiveLearning() async {
+    final active = widget.activeModel;
+    final target = active.parentVersionId;
+    if (target == null) return;
+    setState(() => _saving = true);
+    try {
+      final now = ref.read(clockProvider).now();
+      final currentDay = LifeDayCalculator().lifeDayFor(now);
+      await ref
+          .read(modelActivationServiceProvider)
+          .scheduleRevert(
+            targetVersionId: target,
+            currentLifeDay: currentDay,
+            effectiveLifeDay: currentDay.next,
+            at: now,
+          );
+      _invalidateLearningViews();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('撤回暂时不可用，请先处理待生效变更。')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _saveBase() async {
@@ -576,6 +734,151 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
 
 typedef _LearningModeSelection =
     Future<void> Function(LearningParameterFamily family, LearningMode mode);
+
+class _LearningCandidateCard extends StatelessWidget {
+  const _LearningCandidateCard({
+    required this.pending,
+    required this.run,
+    required this.busy,
+    required this.onAccept,
+    required this.onDefer,
+    required this.onReopen,
+    required this.onReject,
+    required this.onCancel,
+  });
+
+  final PersonalizationVersion pending;
+  final LearningRun? run;
+  final bool busy;
+  final VoidCallback? onAccept;
+  final VoidCallback? onDefer;
+  final VoidCallback? onReopen;
+  final VoidCallback? onReject;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _runBase(run, 'baseEnergy') ?? pending.baselineAnchorEnergy;
+    final direction = _candidateDirection(run, current, pending.baseEnergy);
+    final evidence = _evidenceSummary(run);
+    final status = switch (pending.status) {
+      PersonalizationVersionStatus.awaitingReview => '等待你审核',
+      PersonalizationVersionStatus.deferred => '已稍后处理，可重新打开',
+      PersonalizationVersionStatus.scheduled =>
+        '已安排 · ${pending.effectiveLifeDay}',
+      _ => pending.status.code,
+    };
+    return Card(
+      key: const Key('learning-candidate-card'),
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('基准线学习建议', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.unit),
+            Text(status, key: const Key('learning-candidate-status')),
+            Text('观察方向：$direction'),
+            Text(
+              '当前 $current → 候选 ${pending.baseEnergy}（单步 ${pending.baseEnergy - current}）',
+            ),
+            if (evidence != null) ...[
+              const SizedBox(height: AppSpacing.unit),
+              Text(evidence, key: const Key('learning-candidate-evidence')),
+            ],
+            if (pending.status == PersonalizationVersionStatus.scheduled)
+              const Text('可以在生效前取消；系统通知之外，这条记录会一直保存在应用内。'),
+            const SizedBox(height: AppSpacing.x2),
+            Wrap(
+              spacing: AppSpacing.unit,
+              runSpacing: AppSpacing.unit,
+              children: [
+                if (onAccept != null)
+                  FilledButton(
+                    key: const Key('accept-learning-candidate-button'),
+                    onPressed: busy ? null : onAccept,
+                    child: const Text('接受'),
+                  ),
+                if (onDefer != null)
+                  OutlinedButton(
+                    key: const Key('defer-learning-candidate-button'),
+                    onPressed: busy ? null : onDefer,
+                    child: const Text('稍后'),
+                  ),
+                if (onReopen != null)
+                  OutlinedButton(
+                    key: const Key('reopen-learning-candidate-button'),
+                    onPressed: busy ? null : onReopen,
+                    child: const Text('重新打开'),
+                  ),
+                if (onReject != null)
+                  TextButton(
+                    key: const Key('reject-learning-candidate-button'),
+                    onPressed: busy ? null : onReject,
+                    child: const Text('拒绝'),
+                  ),
+                if (onCancel != null)
+                  OutlinedButton(
+                    key: const Key('cancel-learning-candidate-button'),
+                    onPressed: busy ? null : onCancel,
+                    child: const Text('取消安排'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+int? _runBase(LearningRun? run, String key) {
+  if (run == null) return null;
+  try {
+    final value = jsonDecode(run.currentValuesJson);
+    return value is Map<String, Object?> && value[key] is int
+        ? value[key] as int
+        : null;
+  } on Object {
+    return null;
+  }
+}
+
+String _candidateDirection(LearningRun? run, int current, int candidate) {
+  if (candidate < current) return '持续低于估计，向下';
+  if (candidate > current) return '持续高于估计，向上';
+  return '无变化';
+}
+
+String? _evidenceSummary(LearningRun? run) {
+  if (run == null) return null;
+  try {
+    final snapshot = jsonDecode(run.evidenceSnapshotJson);
+    if (snapshot is! Map<String, Object?>) return null;
+    final descriptive = snapshot['descriptive'];
+    final hashInput = snapshot['hashInput'];
+    if (descriptive is! Map<String, Object?> ||
+        hashInput is! Map<String, Object?>) {
+      return null;
+    }
+    final selected = descriptive['selectedEligible'];
+    final earliest = descriptive['earliestSelectedLifeDay'];
+    final latest = descriptive['latestSelectedLifeDay'];
+    final reference = hashInput['referenceType'];
+    final excluded = descriptive['excludedTotal'];
+    if (selected is! int ||
+        earliest is! String ||
+        latest is! String ||
+        reference is! String ||
+        excluded is! int) {
+      return null;
+    }
+    return '合格证据 $selected 条 · $earliest～$latest · $reference · 排除 $excluded 条';
+  } on Object {
+    return null;
+  }
+}
 
 class _LearningPreproductionWatermark extends StatelessWidget {
   const _LearningPreproductionWatermark();
