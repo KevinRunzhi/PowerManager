@@ -63,6 +63,31 @@ void main() {
     },
   );
 
+  test('automatic mode requires the separate automatic-apply gate', () {
+    final result = learner.evaluate(
+      observations: [
+        for (var index = 0; index < 8; index++)
+          _observation(
+            day: LifeDay(2026, 8, 1 + index % 4),
+            id: 'automatic-$index',
+            direction: ActivityFeedbackDirection.strongerImpact,
+          ),
+      ],
+      current: current,
+      config: const ActivityImpactLearningConfig(
+        mode: LearningMode.automatic,
+        productionLearningEnabled: true,
+        automaticLearningEngineEnabled: true,
+        automaticApplyEnabled: false,
+      ),
+    );
+
+    expect(result.result, LearningRunResult.configurationBlocked);
+    expect(result.candidateValuesJson, isNull);
+    expect(result.candidateExecutable, isFalse);
+    expect(result.reasonCodes, contains('automaticApplyDisabled'));
+  });
+
   test('weaker feedback decreases factor and about-right makes no change', () {
     final weaker = learner.evaluate(
       observations: [

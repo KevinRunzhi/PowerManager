@@ -1585,6 +1585,7 @@ final class ModelActivationService {
     if (recomputed != run.evidenceHash) {
       throw StateError('learningEvidenceHashChanged');
     }
+    await _validateActivityEvidenceSnapshot(snapshot, active: active);
     for (final key in full.keys) {
       if (!key.isFactorEligible) throw StateError('candidateValuesInvalid');
     }
@@ -1592,6 +1593,135 @@ final class ModelActivationService {
       throw StateError('unsupportedRuleVersion');
     }
     return full;
+  }
+
+  Future<void> _validateActivityEvidenceSnapshot(
+    Map<String, Object?> snapshot, {
+    required PersonalizationVersion active,
+  }) async {
+    if (!_hasExactKeys(snapshot, const {
+      'algorithmVersion',
+      'currentFactorRegimeStartedLifeDay',
+      'currentPersonalizationVersionId',
+      'observations',
+      'policyVersion',
+    })) {
+      throw StateError('activityEvidenceShapeInvalid');
+    }
+    if (snapshot['algorithmVersion'] != activityImpactSamplingAlgorithmV1 ||
+        snapshot['policyVersion'] != activityFeedbackSamplingPolicyV1 ||
+        snapshot['currentPersonalizationVersionId'] != active.id ||
+        snapshot['currentFactorRegimeStartedLifeDay'] is! String) {
+      throw StateError('activityEvidenceSourceChanged');
+    }
+    try {
+      LifeDay.parse(snapshot['currentFactorRegimeStartedLifeDay']! as String);
+    } on Object {
+      throw StateError('activityEvidenceRegimeInvalid');
+    }
+    final observations = snapshot['observations'];
+    if (observations is! List<Object?> || observations.isEmpty) {
+      throw StateError('activityEvidenceShapeInvalid');
+    }
+    for (final raw in observations) {
+      if (raw is! Map<String, Object?>) {
+        throw StateError('activityEvidenceObservationInvalid');
+      }
+      _validateActivityEvidenceObservation(raw);
+    }
+    final rows = await activityFactors!.listForVersion(active.id);
+    if (rows.isNotEmpty) {
+      final expected = rows
+          .map((row) => row.factorRegimeStartedLifeDay)
+          .reduce((a, b) => a.compareTo(b) <= 0 ? a : b);
+      if (LifeDay.parse(
+            snapshot['currentFactorRegimeStartedLifeDay']! as String,
+          ) !=
+          expected) {
+        throw StateError('activityEvidenceRegimeChanged');
+      }
+    }
+  }
+
+  void _validateActivityEvidenceObservation(Map<String, Object?> value) {
+    const required = {
+      'activityId',
+      'appliedDelta',
+      'collectionSource',
+      'defaultTheoreticalDelta',
+      'direction',
+      'durationMinutes',
+      'factorBps',
+      'feedbackId',
+      'impactSign',
+      'lifeDay',
+      'personalizedTheoreticalDelta',
+      'sampleId',
+      'sampleStatus',
+      'samplingPolicyVersion',
+      'settled',
+      'subcategory',
+    };
+    final allowed = {...required, 'exclusionReason'};
+    if (value.keys.any((key) => !allowed.contains(key)) ||
+        !value.keys.toSet().containsAll(required)) {
+      throw StateError('activityEvidenceObservationInvalid');
+    }
+    for (final key in const [
+      'activityId',
+      'feedbackId',
+      'sampleId',
+      'lifeDay',
+      'subcategory',
+      'impactSign',
+      'direction',
+      'collectionSource',
+      'sampleStatus',
+    ]) {
+      if (value[key] is! String || (value[key]! as String).isEmpty) {
+        throw StateError('activityEvidenceObservationInvalid');
+      }
+    }
+    if (value['samplingPolicyVersion'] != null &&
+        value['samplingPolicyVersion'] is! String) {
+      throw StateError('activityEvidenceObservationInvalid');
+    }
+    for (final key in const [
+      'appliedDelta',
+      'defaultTheoreticalDelta',
+      'durationMinutes',
+      'factorBps',
+      'personalizedTheoreticalDelta',
+    ]) {
+      if (value[key] is! int) {
+        throw StateError('activityEvidenceObservationInvalid');
+      }
+    }
+    if (value['settled'] is! bool) {
+      throw StateError('activityEvidenceObservationInvalid');
+    }
+    try {
+      LifeDay.parse(value['lifeDay']! as String);
+    } on Object {
+      throw StateError('activityEvidenceObservationInvalid');
+    }
+    if (!ActivitySubcategory.values.any(
+          (item) => item.code == value['subcategory'],
+        ) ||
+        !ActivityImpactSign.values.any(
+          (item) => item.code == value['impactSign'],
+        ) ||
+        !ActivityFeedbackDirection.values.any(
+          (item) => item.code == value['direction'],
+        ) ||
+        !ActivityFeedbackCollectionSource.values.any(
+          (item) => item.code == value['collectionSource'],
+        ) ||
+        !ActivityFeedbackSampleStatus.values.any(
+          (item) => item.code == value['sampleStatus'],
+        )) {
+      throw StateError('activityEvidenceObservationInvalid');
+    }
   }
 
   Map<ActivityImpactKey, double> _decodeActivityFactors(Object? value) {

@@ -10,7 +10,7 @@ import 'package:power_manager/domain/learning/activity_impact_learner.dart';
 import 'package:power_manager/domain/learning/activity_impact_monitoring.dart';
 import 'package:power_manager/domain/learning/canonical_json.dart';
 import 'package:power_manager/domain/learning/shadow_learning.dart';
-import 'package:power_manager/domain/life_day/life_day.dart';
+import 'package:power_manager/domain/life_day/life_day_calculator.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 
 final class ActivityImpactMonitoringCoordinator {
@@ -52,13 +52,22 @@ final class ActivityImpactMonitoringCoordinator {
 
   Future<LearningRun?> request() {
     return writeCoordinator.run(() async {
-      if (!productionGate.activityImpactProductionLearningEnabled ||
+      if (!productionGate.automaticLearningEngineEnabled ||
+          !productionGate.activityImpactProductionLearningEnabled ||
           !await integrityVerifier.verify()) {
         return null;
       }
       final appSettings = await settings.get();
       if (appSettings.activityImpactLearningMode == LearningMode.off ||
-          appSettings.activityImpactLearningSuspended) {
+          appSettings.activityImpactLearningSuspended ||
+          _cooldownActive(appSettings) ||
+          !const ActivityImpactSamplingPolicyV1().isValid) {
+        return null;
+      }
+      // Monitoring is part of the same serial parameter-family lifecycle as
+      // candidate generation.  Never evaluate old evidence while another
+      // family has a pending version waiting for activation.
+      if (await versions.findPending() != null) {
         return null;
       }
       final active = await versions.getActive();
@@ -91,9 +100,15 @@ final class ActivityImpactMonitoringCoordinator {
           );
         }
       }
+      if (observations.isEmpty) {
+        // Monitoring is evidence-driven too.  Avoid a zero-evidence run on
+        // every settlement/restart trigger.
+        return null;
+      }
       final rows = await factors.listForVersion(active.id);
       final regime = rows.isEmpty
-          ? active.effectiveLifeDay ?? LifeDay.fromLocalDateTime(clock.now())
+          ? active.effectiveLifeDay ??
+                LifeDayCalculator().lifeDayFor(clock.now())
           : rows
                 .map((item) => item.factorRegimeStartedLifeDay)
                 .reduce((a, b) => a.compareTo(b) <= 0 ? a : b);
@@ -172,4 +187,10 @@ final class ActivityImpactMonitoringCoordinator {
       return run;
     });
   }
+
+  bool _cooldownActive(AppSettings value) =>
+      value.activityImpactLearningCooldownUntil?.toUtc().isAfter(
+        clock.now().toUtc(),
+      ) ??
+      false;
 }

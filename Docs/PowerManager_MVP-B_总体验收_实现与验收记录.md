@@ -29,6 +29,11 @@ B3-0、B3-1、B3-2。当前代码基线为 B3-2，最近阶段提交为 `2da9d79
 | 恶化保护 | activity monitoring evaluator/coordinator 只暂停 activity，不自动回滚；边界与 UI 测试 | 通过 |
 | 生产门 | 正式 provider 使用 closed gate，未构造生产配置；活动/基准线写路径仅在显式隔离测试 gate 可达 | 通过 |
 
+本轮总验收前修订还补齐了三项 P0 防线：automatic 模式必须同时打开
+`activityImpactAutoApplyEnabled`，没有 responded sample 时 learning/monitoring 均零写入，且重复活动证据
+不会重复计数；活动候选注册使用 activity-rule contract，并在激活前重验 evidence 快照、采样策略、父模型
+和 factor regime。
+
 ## 3. 自动化验收
 
 在 `app` 目录执行：
@@ -39,7 +44,7 @@ B3-0、B3-1、B3-2。当前代码基线为 B3-2，最近阶段提交为 `2da9d79
 | `dart run build_runner build --delete-conflicting-outputs` | 通过；生成文件无工作树差异。Drift 报告的 learning_runs 循环外键警告与现有手写 v5 迁移真源一致，未产生错误输出 |
 | `dart format --output=none --set-exit-if-changed lib test` | 通过；同时修正 5 个既有未格式化文件 |
 | `flutter analyze` | 通过，No issues found |
-| `flutter test --coverage` | 通过，520 tests passed；覆盖率文件已生成（新增活动影响暂停 UI 回归） |
+| `flutter test --coverage` | 通过，525 tests passed；覆盖率文件已生成（含活动协调器闸门、零证据与幂等回归） |
 | `git diff --check` | 通过 |
 
 已有测试直接覆盖的总验收场景包括：v1→v2→v3→v4→v5 迁移和回滚、v1/v2/v3/v4/v5 备份往返、

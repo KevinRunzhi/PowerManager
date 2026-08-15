@@ -131,6 +131,15 @@ final class ActivityImpactLearningCoordinator
           ),
         );
       }
+      if (observations.isEmpty) {
+        // A trigger without a responded sample is not new learning evidence.
+        // Do not create an auditable run whose only purpose is to say that
+        // nothing happened; the next response should be the idempotency key.
+        return _report(
+          trigger,
+          LearningCoordinationSkipReason.noSettledEvidence,
+        );
+      }
       final factorRows = await factors.listForVersion(active.id);
       final factorMap = {
         for (final row in factorRows)
@@ -157,9 +166,10 @@ final class ActivityImpactLearningCoordinator
               productionGate.activityImpactProductionLearningEnabled,
           automaticLearningEngineEnabled:
               productionGate.automaticLearningEngineEnabled,
+          automaticApplyEnabled: productionGate.activityImpactAutoApplyEnabled,
         ),
       );
-      final run = await _completeRun(
+      final runOutcome = await _completeRun(
         active: active,
         evaluation: evaluation,
         triggeredAt: clock.now().toUtc(),
@@ -167,10 +177,12 @@ final class ActivityImpactLearningCoordinator
       if (evaluation.result == LearningRunResult.candidate) {
         try {
           await modelActivationService.registerLearningCandidate(
-            run: run,
+            run: runOutcome.run,
             currentLifeDay: LifeDayCalculator().lifeDayFor(clock.now()),
             atLocal: clock.now(),
-            ruleVersion: currentSettings.activeRuleVersion,
+            // Activity factors are governed by the activity-rule contract,
+            // not the energy-rule setting stored on AppSettings.
+            ruleVersion: activityImpactSupportedRuleVersion,
           );
         } on StateError {
           // The run is an immutable audit record; a later trigger may retry
@@ -179,9 +191,9 @@ final class ActivityImpactLearningCoordinator
       }
       return LearningCoordinationReport(
         trigger: trigger,
-        createdRuns: 1,
+        createdRuns: runOutcome.created ? 1 : 0,
         resumedRuns: 0,
-        completedRuns: 1,
+        completedRuns: runOutcome.created ? 1 : 0,
         retryableFailures: 0,
         terminalFailures: 0,
         skipReason: null,
@@ -189,7 +201,7 @@ final class ActivityImpactLearningCoordinator
     });
   }
 
-  Future<LearningRun> _completeRun({
+  Future<_ActivityRunOutcome> _completeRun({
     required PersonalizationVersion active,
     required ActivityImpactLearningEvaluation evaluation,
     required DateTime triggeredAt,
@@ -209,7 +221,9 @@ final class ActivityImpactLearningCoordinator
       configVersion: activityImpactLearningConfigV1,
       evidenceHash: evaluation.evidenceHash,
     );
-    if (existing != null) return existing;
+    if (existing != null) {
+      return _ActivityRunOutcome(run: existing, created: false);
+    }
     final pending = LearningRun(
       id: id,
       parameterFamily: LearningParameterFamily.activityImpact,
@@ -247,7 +261,7 @@ final class ActivityImpactLearningCoordinator
       completedAt: _completionTime(running),
     );
     await transactionRunner.run(() => learningRuns.update(completed));
-    return completed;
+    return _ActivityRunOutcome(run: completed, created: true);
   }
 
   LearningRun _transition(
@@ -299,6 +313,13 @@ final class ActivityImpactLearningCoordinator
     terminalFailures: 0,
     skipReason: reason,
   );
+}
+
+final class _ActivityRunOutcome {
+  const _ActivityRunOutcome({required this.run, required this.created});
+
+  final LearningRun run;
+  final bool created;
 }
 
 final class CombinedAutomaticLearningRequester

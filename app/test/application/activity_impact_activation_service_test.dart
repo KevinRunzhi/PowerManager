@@ -71,7 +71,31 @@ void main() {
         },
       });
       final evidence = encoder.encode({
-        'samples': ['sample-1'],
+        'algorithmVersion': activityImpactSamplingAlgorithmV1,
+        'currentFactorRegimeStartedLifeDay': '2026-08-15',
+        'currentPersonalizationVersionId': active.id,
+        'observations': [
+          {
+            'activityId': 'activity-1',
+            'feedbackId': 'feedback-1',
+            'sampleId': 'sample-1',
+            'lifeDay': '2026-08-15',
+            'subcategory': ActivitySubcategory.selfStudyOrThesis.code,
+            'durationMinutes': DurationSlot.minutes30.minutes,
+            'defaultTheoreticalDelta': -6,
+            'factorBps': 100,
+            'personalizedTheoreticalDelta': -6,
+            'appliedDelta': -6,
+            'impactSign': ActivityImpactSign.consumption.code,
+            'direction': ActivityFeedbackDirection.aboutRight.code,
+            'collectionSource':
+                ActivityFeedbackCollectionSource.sampledPrompt.code,
+            'samplingPolicyVersion': activityFeedbackSamplingPolicyV1,
+            'sampleStatus': ActivityFeedbackSampleStatus.responded.code,
+            'settled': true,
+          },
+        ],
+        'policyVersion': activityFeedbackSamplingPolicyV1,
       });
       final run = LearningRun(
         id: deterministicLearningRunId(

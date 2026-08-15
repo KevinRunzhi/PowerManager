@@ -32,6 +32,7 @@ final class ActivityImpactLearningConfig {
     this.mode = LearningMode.review,
     this.productionLearningEnabled = false,
     this.automaticLearningEngineEnabled = false,
+    this.automaticApplyEnabled = false,
   });
 
   final ActivityImpactSamplingPolicyV1 policy;
@@ -39,11 +40,16 @@ final class ActivityImpactLearningConfig {
   final bool productionLearningEnabled;
   final bool automaticLearningEngineEnabled;
 
+  /// Automatic mode is a production write path.  Keep candidate generation
+  /// fail-closed unless the separate apply gate is explicitly open.
+  final bool automaticApplyEnabled;
+
   bool get isValid => policy.isValid;
 
   bool get executableCandidate =>
       productionLearningEnabled &&
       automaticLearningEngineEnabled &&
+      (mode != LearningMode.automatic || automaticApplyEnabled) &&
       mode != LearningMode.off;
 }
 
@@ -173,6 +179,14 @@ final class ActivityImpactLearner {
         all: all,
         currentValues: currentValues,
         reason: 'activityImpactLearningModeOff',
+      );
+    }
+    if (config.mode == LearningMode.automatic &&
+        !config.automaticApplyEnabled) {
+      return _blocked(
+        all: all,
+        currentValues: currentValues,
+        reason: 'automaticApplyDisabled',
       );
     }
 
