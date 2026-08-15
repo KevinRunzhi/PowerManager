@@ -9,6 +9,8 @@ import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
+import 'package:power_manager/domain/energy/learning_eligibility_service.dart';
+import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
@@ -88,6 +90,61 @@ void main() {
     expect(report.effectiveDays, 1);
   });
 
+  test(
+    'aggregates B0-3 evidence through the shared eligibility service',
+    () async {
+      final report = await _service(
+        summaries: [
+          _summary(day1, standard: true),
+          _summary(day2, standard: true),
+          _summary(day4),
+        ],
+        mornings: [_morning(day1), _morning(day2)],
+        observations: [
+          _contractActual(
+            day1,
+            'eligible-current',
+            referenceType: ObservationReferenceType.currentMoment,
+          ),
+          _contractActual(
+            day2,
+            'uncertain-yesterday',
+            referenceType: ObservationReferenceType.previousLifeDayEnd,
+            coverageState: ObservationCoverageState.uncertain,
+          ),
+          _contractActual(
+            day3,
+            'unsettled-current',
+            referenceType: ObservationReferenceType.currentMoment,
+          ),
+          _actual(day4, 'legacy-daily'),
+        ],
+      ).check();
+
+      expect(report.currentMomentContractObservations, 2);
+      expect(report.previousLifeDayEndContractObservations, 1);
+      expect(report.contractObservations, 3);
+      expect(report.eligibleCurrentRegimeObservations, 1);
+      expect(report.earliestEligibleLifeDay, day1);
+      expect(report.latestEligibleLifeDay, day1);
+      expect(report.unsettledContractObservations, 1);
+      expect(
+        report.exclusionCount(LearningIneligibilityReason.legacyContract),
+        1,
+      );
+      expect(
+        report.exclusionCount(LearningIneligibilityReason.coverageUncertain),
+        1,
+      );
+      expect(
+        report.exclusionCount(
+          LearningIneligibilityReason.missingMorningCheckIn,
+        ),
+        1,
+      );
+    },
+  );
+
   test('fourteen observations only reaches the discussion count', () {
     final report = DataHealthReport(
       checkedAt: backupFixtureNow,
@@ -116,6 +173,7 @@ DataHealthService _service({
   required List<EnergyObservation> observations,
   List<StoredEstimatedActivity> activities = const [],
   List<ActivityFeedback> feedback = const [],
+  List<MorningCheckIn> mornings = const [],
   String? exportContents,
 }) {
   return DataHealthService(
@@ -124,7 +182,8 @@ DataHealthService _service({
     ),
     codec: const JsonBackupCodec(),
     clock: const _Clock(),
-    mornings: _Mornings(),
+    settings: const _Settings(),
+    mornings: _Mornings(mornings),
     activities: _Activities(activities),
     observations: _Observations(observations),
     feedback: _Feedback(feedback),
@@ -186,6 +245,55 @@ EnergyObservation _correction(LifeDay day) => EnergyObservation(
   observedAt: DateTime.utc(2026, 8, 9),
 );
 
+EnergyObservation _contractActual(
+  LifeDay day,
+  String id, {
+  required ObservationReferenceType referenceType,
+  ObservationCoverageState coverageState = ObservationCoverageState.confirmed,
+}) {
+  final key = const ModelRegimeKeyBuilder().build(
+    referenceType: referenceType,
+    baseEnergy: 100,
+    ruleVersion: 'test',
+    comparisonBandVersion: mvpBComparisonBandV1,
+    effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
+    modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+  );
+  return EnergyObservation(
+    id: id,
+    lifeDay: day,
+    type: EnergyObservationType.dailyAbsolute,
+    absoluteState: AbsoluteEnergyState.okay,
+    relativeState: null,
+    estimateAtObservation: 90,
+    observedAt: DateTime.utc(2026, 8, 9),
+    contractVersion: mvpBObservationContractV1,
+    referenceType: referenceType,
+    initialEstimateAtObservation: 100,
+    estimatedOrdinalAtObservation: 4,
+    baseEnergyAtObservation: 100,
+    ruleVersionAtObservation: 'test',
+    comparisonBandVersion: mvpBComparisonBandV1,
+    personalizationVersionAtObservation: fixedMvpAPersonalizationVersion,
+    effectiveModelFingerprintAtObservation: fixedMvpAEffectiveModelFingerprint,
+    modelRegimeEpochAtObservation: fixedMvpAInitialModelRegimeEpoch,
+    activeActivityCountAtObservation: 1,
+    coverageState: coverageState,
+    modelRegimeKey: key,
+  );
+}
+
+MorningCheckIn _morning(LifeDay day) => MorningCheckIn(
+  id: 'morning-$day',
+  lifeDay: day,
+  overallState: MorningOverallState.normal,
+  freeTimeLevel: FreeTimeLevel.medium,
+  pressureSource: PressureSource.low,
+  sleepRecovery: SleepRecovery.good,
+  morningAdjustment: 0,
+  completedAt: DateTime.utc(day.year, day.month, day.day, 5),
+);
+
 StoredEstimatedActivity _activity(
   LifeDay day,
   String id, {
@@ -228,6 +336,26 @@ final class _ReadinessChecker implements MvpBUpgradeReadinessChecker {
   Future<MvpBUpgradeReadinessReport> check() async => _notCheckedReadiness;
 }
 
+final class _Settings implements AppSettingsRepository {
+  const _Settings();
+
+  @override
+  Future<AppSettings> get() async => AppSettings(
+    baseEstimatedEnergy: 100,
+    pendingBaseEstimatedEnergy: null,
+    baseEnergyEffectiveLifeDay: null,
+    activeRuleVersion: 'test',
+    pendingRuleVersion: null,
+    pendingRuleEffectiveLifeDay: null,
+    onboardingCompleted: true,
+    createdAt: backupFixtureNow,
+    updatedAt: backupFixtureNow,
+  );
+
+  @override
+  Future<void> save(AppSettings settings) => throw UnimplementedError();
+}
+
 final class _BackupStore implements LocalBackupStore {
   @override
   Future<LocalBackupMetadata?> metadata() async => null;
@@ -239,8 +367,12 @@ final class _BackupStore implements LocalBackupStore {
 }
 
 final class _Mornings implements MorningCheckInsRepository {
+  const _Mornings(this.items);
+
+  final List<MorningCheckIn> items;
+
   @override
-  Future<List<MorningCheckIn>> list() async => const [];
+  Future<List<MorningCheckIn>> list() async => items;
   @override
   Future<void> delete(String id) => throw UnimplementedError();
   @override

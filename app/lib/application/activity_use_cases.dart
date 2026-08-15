@@ -1,9 +1,8 @@
-import 'dart:async';
-
+import 'package:power_manager/application/activity_feedback_use_cases.dart';
+import 'package:power_manager/application/business_write_coordinator.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/energy_rule_config_loader.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
-import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/domain/energy/energy_calculator.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
@@ -56,32 +55,32 @@ abstract interface class ActivityMutator {
 
 final class ActivityUseCases implements ActivityMutator {
   ActivityUseCases({
-    required this.clock,
     required this.lifeDayCalculator,
+    required this.writeCoordinator,
     required this.transactionRunner,
     required this.preparer,
     required this.activities,
     required RuleConfigVersionsRepository rules,
     required this.summaries,
     required this.projectionService,
+    required this.feedbackMaintenance,
     this.calculator = const EnergyCalculator(),
   }) : ruleLoader = EnergyRuleConfigLoader(rules);
 
-  final Clock clock;
   final LifeDayCalculator lifeDayCalculator;
+  final BusinessWriteCoordinator writeCoordinator;
   final TransactionRunner transactionRunner;
   final OperationPreparer preparer;
   final ActivityRecordsRepository activities;
   final DailySummariesRepository summaries;
   final CurrentDayProjectionService projectionService;
+  final ActivityFeedbackMaintenance feedbackMaintenance;
   final EnergyCalculator calculator;
   final EnergyRuleConfigLoader ruleLoader;
 
-  Future<void> _tail = Future.value();
-
   @override
   Future<ActivityMutationResult> create(ActivityDraft draft) {
-    return _serialized(() async {
+    return writeCoordinator.run(() async {
       _validateDraft(draft);
       return transactionRunner.run(() async {
         final prepared = await preparer.prepare(PreparationTrigger.beforeWrite);
@@ -101,7 +100,7 @@ final class ActivityUseCases implements ActivityMutator {
           subcategory: draft.subcategory,
           duration: draft.duration,
         );
-        final nowUtc = clock.now().toUtc();
+        final nowUtc = prepared.nowUtc;
         final activity = StoredEstimatedActivity(
           id: draft.operationId,
           lifeDay: prepared.current.lifeDay,
@@ -118,7 +117,10 @@ final class ActivityUseCases implements ActivityMutator {
           deletedAt: null,
         );
         await activities.insert(activity);
-        final current = await _replayAndPersist(prepared.current);
+        final current = await _replayAndPersist(
+          prepared.current,
+          nowUtc: prepared.nowUtc,
+        );
         return ActivityMutationResult(
           activity: (await activities.find(activity.id))!,
           current: current,
@@ -136,7 +138,7 @@ final class ActivityUseCases implements ActivityMutator {
     required DurationSlot duration,
     required DateTime completedAt,
   }) {
-    return _serialized(() async {
+    return writeCoordinator.run(() async {
       _validateCategory(category, subcategory);
       return transactionRunner.run(() async {
         final prepared = await preparer.prepare(PreparationTrigger.beforeWrite);
@@ -150,12 +152,35 @@ final class ActivityUseCases implements ActivityMutator {
           subcategory: subcategory,
           duration: duration,
         );
+        final projectedAppliedDelta = prepared.current.projection.activities
+            .singleWhere((item) => item.record.id == existing!.id)
+            .appliedDelta;
+        final isNoOp =
+            existing!.category == category &&
+            existing.subcategory == subcategory &&
+            existing.duration == duration &&
+            existing.completedAt.toUtc().isAtSameMomentAs(
+              validatedCompletion,
+            ) &&
+            existing.theoreticalDelta == theoreticalDelta &&
+            existing.appliedDelta == projectedAppliedDelta &&
+            existing.ruleVersion == prepared.current.ruleVersion;
+        if (isNoOp) {
+          return ActivityMutationResult(
+            activity: existing,
+            current: prepared.current,
+            wasAlreadyApplied: true,
+          );
+        }
         final changed = StoredEstimatedActivity(
-          id: existing!.id,
+          id: existing.id,
           lifeDay: existing.lifeDay,
           completedAt: validatedCompletion,
           createdAt: existing.createdAt,
-          updatedAt: clock.now().toUtc(),
+          updatedAt: nextActivityUpdatedAt(
+            previous: existing.updatedAt,
+            nowUtc: prepared.nowUtc,
+          ),
           category: category,
           subcategory: subcategory,
           duration: duration,
@@ -165,8 +190,15 @@ final class ActivityUseCases implements ActivityMutator {
           status: ActivityRecordStatus.active,
           deletedAt: null,
         );
+        await feedbackMaintenance.invalidateForSnapshotChange(
+          before: existing,
+          after: changed,
+        );
         await activities.update(changed);
-        final current = await _replayAndPersist(prepared.current);
+        final current = await _replayAndPersist(
+          prepared.current,
+          nowUtc: prepared.nowUtc,
+        );
         return ActivityMutationResult(
           activity: (await activities.find(activityId))!,
           current: current,
@@ -178,7 +210,7 @@ final class ActivityUseCases implements ActivityMutator {
 
   @override
   Future<ActivityMutationResult> delete(String activityId) {
-    return _serialized(() async {
+    return writeCoordinator.run(() async {
       return transactionRunner.run(() async {
         final prepared = await preparer.prepare(PreparationTrigger.beforeWrite);
         await _ensureWritable(prepared);
@@ -194,8 +226,21 @@ final class ActivityUseCases implements ActivityMutator {
           );
         }
         _ensureActiveCurrent(existing, prepared);
-        await activities.logicallyDelete(activityId, clock.now().toUtc());
-        final current = await _replayAndPersist(prepared.current);
+        await feedbackMaintenance.invalidateActive(
+          activityId,
+          ActivityFeedbackInvalidationReason.activityDeleted,
+        );
+        await activities.logicallyDelete(
+          activityId,
+          nextActivityUpdatedAt(
+            previous: existing.updatedAt,
+            nowUtc: prepared.nowUtc,
+          ),
+        );
+        final current = await _replayAndPersist(
+          prepared.current,
+          nowUtc: prepared.nowUtc,
+        );
         return ActivityMutationResult(
           activity: (await activities.find(activityId))!,
           current: current,
@@ -207,7 +252,7 @@ final class ActivityUseCases implements ActivityMutator {
 
   @override
   Future<ActivityMutationResult> restore(String activityId) {
-    return _serialized(() async {
+    return writeCoordinator.run(() async {
       return transactionRunner.run(() async {
         final prepared = await preparer.prepare(PreparationTrigger.beforeWrite);
         await _ensureWritable(prepared);
@@ -226,7 +271,10 @@ final class ActivityUseCases implements ActivityMutator {
             lifeDay: existing.lifeDay,
             completedAt: existing.completedAt,
             createdAt: existing.createdAt,
-            updatedAt: clock.now().toUtc(),
+            updatedAt: nextActivityUpdatedAt(
+              previous: existing.updatedAt,
+              nowUtc: prepared.nowUtc,
+            ),
             category: existing.category,
             subcategory: existing.subcategory,
             duration: existing.duration,
@@ -237,7 +285,10 @@ final class ActivityUseCases implements ActivityMutator {
             deletedAt: null,
           ),
         );
-        final current = await _replayAndPersist(prepared.current);
+        final current = await _replayAndPersist(
+          prepared.current,
+          nowUtc: prepared.nowUtc,
+        );
         return ActivityMutationResult(
           activity: (await activities.find(activityId))!,
           current: current,
@@ -245,18 +296,6 @@ final class ActivityUseCases implements ActivityMutator {
         );
       });
     });
-  }
-
-  Future<T> _serialized<T>(Future<T> Function() action) {
-    final completer = Completer<T>();
-    _tail = _tail.then((_) async {
-      try {
-        completer.complete(await action());
-      } catch (error, stackTrace) {
-        completer.completeError(error, stackTrace);
-      }
-    });
-    return completer.future;
   }
 
   void _validateDraft(ActivityDraft draft) {
@@ -283,8 +322,7 @@ final class ActivityUseCases implements ActivityMutator {
     DateTime completedAt,
     OperationPreparationResult prepared,
   ) {
-    final now = clock.now();
-    if (completedAt.toUtc().isAfter(now.toUtc())) {
+    if (completedAt.toUtc().isAfter(prepared.nowUtc)) {
       throw ArgumentError.value(
         completedAt,
         'completedAt',
@@ -327,8 +365,9 @@ final class ActivityUseCases implements ActivityMutator {
   }
 
   Future<CurrentDayProjection> _replayAndPersist(
-    CurrentDayProjection context,
-  ) async {
+    CurrentDayProjection context, {
+    required DateTime nowUtc,
+  }) async {
     var replayed = await projectionService.project(
       lifeDay: context.lifeDay,
       baseEstimatedEnergy: context.baseEstimatedEnergy,
@@ -343,23 +382,29 @@ final class ActivityUseCases implements ActivityMutator {
     )) {
       final appliedDelta = byId[activity.id]!;
       if (activity.appliedDelta != appliedDelta) {
-        await activities.update(
-          StoredEstimatedActivity(
-            id: activity.id,
-            lifeDay: activity.lifeDay,
-            completedAt: activity.completedAt,
-            createdAt: activity.createdAt,
-            updatedAt: activity.updatedAt,
-            category: activity.category,
-            subcategory: activity.subcategory,
-            duration: activity.duration,
-            theoreticalDelta: activity.theoreticalDelta,
-            appliedDelta: appliedDelta,
-            ruleVersion: activity.ruleVersion,
-            status: activity.status,
-            deletedAt: activity.deletedAt,
+        final changed = StoredEstimatedActivity(
+          id: activity.id,
+          lifeDay: activity.lifeDay,
+          completedAt: activity.completedAt,
+          createdAt: activity.createdAt,
+          updatedAt: nextActivityUpdatedAt(
+            previous: activity.updatedAt,
+            nowUtc: nowUtc,
           ),
+          category: activity.category,
+          subcategory: activity.subcategory,
+          duration: activity.duration,
+          theoreticalDelta: activity.theoreticalDelta,
+          appliedDelta: appliedDelta,
+          ruleVersion: activity.ruleVersion,
+          status: activity.status,
+          deletedAt: activity.deletedAt,
         );
+        await feedbackMaintenance.invalidateForSnapshotChange(
+          before: activity,
+          after: changed,
+        );
+        await activities.update(changed);
       }
     }
     replayed = await projectionService.project(

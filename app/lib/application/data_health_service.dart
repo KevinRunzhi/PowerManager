@@ -8,7 +8,10 @@ import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/backup/local_backup_store.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
+import 'package:power_manager/domain/energy/learning_eligibility_service.dart';
+import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 
 final class DataHealthReport {
@@ -30,6 +33,12 @@ final class DataHealthReport {
     this.activityFeedback = 0,
     this.activeActivityFeedback = 0,
     this.invalidatedActivityFeedback = 0,
+    this.currentMomentContractObservations = 0,
+    this.previousLifeDayEndContractObservations = 0,
+    this.eligibleCurrentRegimeObservations = 0,
+    this.earliestEligibleLifeDay,
+    this.latestEligibleLifeDay,
+    this.learningExclusionCounts = const {},
     required this.localBackup,
     required this.mvpBUpgradeReadiness,
   });
@@ -51,6 +60,12 @@ final class DataHealthReport {
   final int activityFeedback;
   final int activeActivityFeedback;
   final int invalidatedActivityFeedback;
+  final int currentMomentContractObservations;
+  final int previousLifeDayEndContractObservations;
+  final int eligibleCurrentRegimeObservations;
+  final LifeDay? earliestEligibleLifeDay;
+  final LifeDay? latestEligibleLifeDay;
+  final Map<LearningIneligibilityReason, int> learningExclusionCounts;
   final LocalBackupMetadata? localBackup;
   final MvpBUpgradeReadinessReport mvpBUpgradeReadiness;
 
@@ -61,6 +76,10 @@ final class DataHealthReport {
   int get daysUntilLegacyDiscussionCount =>
       math.max(0, 14 - effectiveDaysWithActualState);
   bool get reachedLegacyDiscussionCount => effectiveDaysWithActualState >= 14;
+  int exclusionCount(LearningIneligibilityReason reason) =>
+      learningExclusionCounts[reason] ?? 0;
+  int get unsettledContractObservations =>
+      exclusionCount(LearningIneligibilityReason.unsettledLifeDay);
 }
 
 final class DataHealthService {
@@ -68,6 +87,7 @@ final class DataHealthService {
     required this.exportService,
     required this.codec,
     required this.clock,
+    required this.settings,
     required this.mornings,
     required this.activities,
     required this.observations,
@@ -75,11 +95,14 @@ final class DataHealthService {
     required this.summaries,
     required this.localBackupStore,
     required this.upgradeReadiness,
+    this.eligibilityService = const LearningEligibilityService(),
+    this.regimeKeyBuilder = const ModelRegimeKeyBuilder(),
   });
 
   final JsonExporter exportService;
   final JsonBackupCodec codec;
   final Clock clock;
+  final AppSettingsRepository settings;
   final MorningCheckInsRepository mornings;
   final ActivityRecordsRepository activities;
   final EnergyObservationsRepository observations;
@@ -87,6 +110,8 @@ final class DataHealthService {
   final DailySummariesRepository summaries;
   final LocalBackupStore localBackupStore;
   final MvpBUpgradeReadinessChecker upgradeReadiness;
+  final LearningEligibilityService eligibilityService;
+  final ModelRegimeKeyBuilder regimeKeyBuilder;
 
   Future<DataHealthReport> check() async {
     final checkedAt = clock.now();
@@ -98,6 +123,7 @@ final class DataHealthService {
       summaries.list(),
       localBackupStore.metadata(),
       upgradeReadiness.check(),
+      settings.get(),
     ]);
     final morningItems = values[0] as List<MorningCheckIn>;
     final activityItems = values[1] as List<StoredEstimatedActivity>;
@@ -106,6 +132,7 @@ final class DataHealthService {
     final summaryItems = values[4] as List<DailySummary>;
     final localBackup = values[5] as LocalBackupMetadata?;
     final upgradeReadinessReport = values[6] as MvpBUpgradeReadinessReport;
+    final appSettings = values[7] as AppSettings;
     var integrityPassed = false;
     try {
       final exported = await exportService.create(exportedAt: checkedAt);
@@ -128,6 +155,57 @@ final class DataHealthService {
         if (observation.type == EnergyObservationType.dailyAbsolute)
           observation.lifeDay,
     };
+    final summaryByLifeDay = {
+      for (final summary in summaryItems) summary.lifeDay: summary,
+    };
+    final morningLifeDays = {
+      for (final morning in morningItems) morning.lifeDay,
+    };
+    final dailyObservations = observationItems
+        .where((item) => item.type == EnergyObservationType.dailyAbsolute)
+        .toList();
+    final exclusionCounts = <LearningIneligibilityReason, int>{};
+    final eligibleLifeDays = <LifeDay>[];
+    for (final observation in dailyObservations) {
+      final referenceType = observation.referenceType;
+      final expectedModelRegimeKey = referenceType == null
+          ? null
+          : regimeKeyBuilder.build(
+              referenceType: referenceType,
+              baseEnergy: appSettings.baseEstimatedEnergy,
+              ruleVersion: appSettings.activeRuleVersion,
+              comparisonBandVersion: mvpBComparisonBandV1,
+              effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
+              modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+            );
+      final eligibility = eligibilityService.evaluate(
+        observation: observation,
+        hasMorningCheckIn: morningLifeDays.contains(observation.lifeDay),
+        settled: summaryByLifeDay.containsKey(observation.lifeDay),
+        expectedModelRegimeKey: expectedModelRegimeKey,
+      );
+      if (eligibility.eligible) {
+        eligibleLifeDays.add(observation.lifeDay);
+      }
+      for (final reason in eligibility.reasonCodes) {
+        exclusionCounts.update(reason, (count) => count + 1, ifAbsent: () => 1);
+      }
+    }
+    eligibleLifeDays.sort();
+    final currentMomentContractObservations = dailyObservations
+        .where(
+          (item) =>
+              item.contractVersion == mvpBObservationContractV1 &&
+              item.referenceType == ObservationReferenceType.currentMoment,
+        )
+        .length;
+    final previousLifeDayEndContractObservations = dailyObservations
+        .where(
+          (item) =>
+              item.contractVersion == mvpBObservationContractV1 &&
+              item.referenceType == ObservationReferenceType.previousLifeDayEnd,
+        )
+        .length;
     return DataHealthReport(
       checkedAt: checkedAt,
       schemaVersion: JsonExportService.schemaVersion,
@@ -158,9 +236,9 @@ final class DataHealthService {
       legacyObservations: observationItems
           .where((item) => item.contractVersion == null)
           .length,
-      contractObservations: observationItems
-          .where((item) => item.contractVersion != null)
-          .length,
+      contractObservations:
+          currentMomentContractObservations +
+          previousLifeDayEndContractObservations,
       activityFeedback: feedbackItems.length,
       activeActivityFeedback: feedbackItems
           .where((item) => item.status == ActivityFeedbackStatus.active)
@@ -168,6 +246,13 @@ final class DataHealthService {
       invalidatedActivityFeedback: feedbackItems
           .where((item) => item.status == ActivityFeedbackStatus.invalidated)
           .length,
+      currentMomentContractObservations: currentMomentContractObservations,
+      previousLifeDayEndContractObservations:
+          previousLifeDayEndContractObservations,
+      eligibleCurrentRegimeObservations: eligibleLifeDays.length,
+      earliestEligibleLifeDay: eligibleLifeDays.firstOrNull,
+      latestEligibleLifeDay: eligibleLifeDays.lastOrNull,
+      learningExclusionCounts: Map.unmodifiable(exclusionCounts),
       localBackup: localBackup,
       mvpBUpgradeReadiness: upgradeReadinessReport,
     );

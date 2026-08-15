@@ -125,6 +125,21 @@ void main() {
       observation.remove('modelRegimeKey');
       cases.add(missingSnapshot);
 
+      final mismatchedOrdinal = backupFixtureV2().toJson();
+      final ordinalObservation =
+          (mismatchedOrdinal['energyObservations']! as List<Object?>).first!
+              as Map<String, Object?>;
+      ordinalObservation['estimatedOrdinalAtObservation'] = 0;
+      cases.add(mismatchedOrdinal);
+
+      final mismatchedRegimeKey = backupFixtureV2().toJson();
+      final regimeObservation =
+          (mismatchedRegimeKey['energyObservations']! as List<Object?>).first!
+              as Map<String, Object?>;
+      regimeObservation['modelRegimeKey'] =
+          'model-regime-sha256-v1:${List.filled(64, '0').join()}';
+      cases.add(mismatchedRegimeKey);
+
       final missingActivity = backupFixtureV2().toJson();
       final missingActivityFeedback =
           (missingActivity['activityFeedback']! as List<Object?>).first!

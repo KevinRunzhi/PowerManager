@@ -1,4 +1,6 @@
+import 'package:power_manager/application/activity_feedback_use_cases.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
+import 'package:power_manager/application/business_write_coordinator.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
@@ -10,6 +12,9 @@ import 'package:power_manager/data/repositories/drift_repositories.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
+import 'package:power_manager/domain/energy/learning_eligibility_service.dart';
+import 'package:power_manager/domain/energy/model_regime_key.dart';
+import 'package:power_manager/domain/energy/observation_comparison_service.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/life_day/life_day_calculator.dart';
@@ -510,17 +515,23 @@ void main() {
       final first = await useCases.saveDailyAbsolute(
         observationId: 'today-daily',
         targetLifeDay: LifeDay(2026, 7, 26),
+        referenceType: ObservationReferenceType.currentMoment,
         state: AbsoluteEnergyState.low,
+        coverageState: ObservationCoverageState.confirmed,
       );
       final updated = await useCases.saveDailyAbsolute(
         observationId: 'ignored-id',
         targetLifeDay: LifeDay(2026, 7, 26),
+        referenceType: ObservationReferenceType.currentMoment,
         state: AbsoluteEnergyState.good,
+        coverageState: ObservationCoverageState.uncertain,
       );
       final yesterday = await useCases.saveDailyAbsolute(
         observationId: 'yesterday-daily',
         targetLifeDay: LifeDay(2026, 7, 25),
+        referenceType: ObservationReferenceType.previousLifeDayEnd,
         state: AbsoluteEnergyState.exhausted,
+        coverageState: ObservationCoverageState.confirmed,
       );
       expect(first.wasUpdated, isFalse);
       expect(updated.wasUpdated, isTrue);
@@ -534,7 +545,9 @@ void main() {
         useCases.saveDailyAbsolute(
           observationId: 'second-yesterday',
           targetLifeDay: LifeDay(2026, 7, 25),
+          referenceType: ObservationReferenceType.previousLifeDayEnd,
           state: AbsoluteEnergyState.full,
+          coverageState: ObservationCoverageState.confirmed,
         ),
         throwsStateError,
       );
@@ -544,6 +557,475 @@ void main() {
         ))!.finalEstimatedEnergy,
         70,
       );
+    },
+  );
+
+  test(
+    'current observation freezes a complete v1 contract and becomes eligible after settlement',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 8);
+      await harness.wellbeingUseCases().saveMorningCheckIn(
+        _morningWith(
+          LifeDay(2026, 7, 26),
+          overall: MorningOverallState.good,
+          sleep: SleepRecovery.good,
+        ),
+      );
+      await harness.activityUseCases().create(
+        ActivityDraft(
+          operationId: 'contract-activity',
+          category: ActivityCategory.study,
+          subcategory: ActivitySubcategory.homework,
+          duration: DurationSlot.minutes30,
+          completedAt: DateTime(2026, 7, 26, 7),
+        ),
+      );
+      clock.value = DateTime(2026, 7, 26, 12);
+
+      final result = await harness.wellbeingUseCases().saveDailyAbsolute(
+        observationId: 'contract-current',
+        targetLifeDay: LifeDay(2026, 7, 26),
+        referenceType: ObservationReferenceType.currentMoment,
+        state: AbsoluteEnergyState.good,
+        coverageState: ObservationCoverageState.confirmed,
+      );
+      final observation = result.observation;
+      final expectedKey = const ModelRegimeKeyBuilder().build(
+        referenceType: ObservationReferenceType.currentMoment,
+        baseEnergy: 100,
+        ruleVersion: energyRulesV2MvpAVersion,
+        comparisonBandVersion: mvpBComparisonBandV1,
+        effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
+        modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+      );
+
+      expect(observation.contractVersion, mvpBObservationContractV1);
+      expect(observation.referenceType, ObservationReferenceType.currentMoment);
+      expect(observation.estimateAtObservation, 98);
+      expect(observation.initialEstimateAtObservation, 106);
+      expect(observation.estimatedOrdinalAtObservation, 4);
+      expect(observation.baseEnergyAtObservation, 100);
+      expect(observation.ruleVersionAtObservation, energyRulesV2MvpAVersion);
+      expect(observation.comparisonBandVersion, mvpBComparisonBandV1);
+      expect(
+        observation.personalizationVersionAtObservation,
+        fixedMvpAPersonalizationVersion,
+      );
+      expect(
+        observation.effectiveModelFingerprintAtObservation,
+        fixedMvpAEffectiveModelFingerprint,
+      );
+      expect(
+        observation.modelRegimeEpochAtObservation,
+        fixedMvpAInitialModelRegimeEpoch,
+      );
+      expect(observation.activeActivityCountAtObservation, 1);
+      expect(observation.coverageState, ObservationCoverageState.confirmed);
+      expect(observation.modelRegimeKey, expectedKey);
+      expect(observation.observedAt, DateTime(2026, 7, 26, 12).toUtc());
+
+      final eligibilityService = const LearningEligibilityService();
+      final beforeSettlement = eligibilityService.evaluate(
+        observation: observation,
+        hasMorningCheckIn: true,
+        settled: false,
+        expectedModelRegimeKey: expectedKey,
+      );
+      expect(beforeSettlement.eligible, isFalse);
+      expect(beforeSettlement.reasonCodes, [
+        LearningIneligibilityReason.unsettledLifeDay,
+      ]);
+
+      clock.value = DateTime(2026, 7, 27, 5);
+      await harness.prepare(PreparationTrigger.lifeDayBoundary);
+      final afterSettlement = eligibilityService.evaluate(
+        observation: observation,
+        hasMorningCheckIn: true,
+        settled:
+            await harness.summaries.findByLifeDay(LifeDay(2026, 7, 26)) != null,
+        expectedModelRegimeKey: expectedKey,
+      );
+      expect(afterSettlement.eligible, isTrue);
+      expect(afterSettlement.reasonCodes, isEmpty);
+    },
+  );
+
+  test(
+    'yesterday observation uses immutable summary context and current capture time',
+    () async {
+      final yesterday = LifeDay(2026, 7, 25);
+      await harness.summaries.insertOrGet(
+        _summary(yesterday, finalEstimate: 70),
+      );
+      await harness.activities.insert(
+        _activity('yesterday-active', yesterday, minute: 10),
+      );
+      clock.value = DateTime(2026, 7, 26, 13, 30);
+
+      final result = await harness.wellbeingUseCases().saveDailyAbsolute(
+        observationId: 'yesterday-contract',
+        targetLifeDay: yesterday,
+        referenceType: ObservationReferenceType.previousLifeDayEnd,
+        state: AbsoluteEnergyState.low,
+        coverageState: ObservationCoverageState.confirmed,
+      );
+
+      expect(result.systemEstimate, 70);
+      expect(result.observation.lifeDay, yesterday);
+      expect(
+        result.observation.referenceType,
+        ObservationReferenceType.previousLifeDayEnd,
+      );
+      expect(result.observation.initialEstimateAtObservation, 100);
+      expect(result.observation.baseEnergyAtObservation, 100);
+      expect(
+        result.observation.ruleVersionAtObservation,
+        energyRulesV2MvpAVersion,
+      );
+      expect(result.observation.activeActivityCountAtObservation, 1);
+      expect(
+        result.observation.observedAt,
+        DateTime(2026, 7, 26, 13, 30).toUtc(),
+      );
+    },
+  );
+
+  test(
+    'a current-moment sheet crossing 04:00 is rejected atomically',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 3, 59, 59);
+      await harness.activityUseCases().create(
+        ActivityDraft(
+          operationId: 'before-boundary',
+          category: ActivityCategory.study,
+          subcategory: ActivitySubcategory.homework,
+          duration: DurationSlot.minutes15,
+          completedAt: DateTime(2026, 7, 25, 22),
+        ),
+      );
+      clock.value = DateTime(2026, 7, 26, 4);
+
+      await expectLater(
+        harness.wellbeingUseCases().saveDailyAbsolute(
+          observationId: 'stale-current-sheet',
+          targetLifeDay: LifeDay(2026, 7, 25),
+          referenceType: ObservationReferenceType.currentMoment,
+          state: AbsoluteEnergyState.okay,
+          coverageState: ObservationCoverageState.confirmed,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'staleSheet',
+          ),
+        ),
+      );
+      expect(await harness.observations.find('stale-current-sheet'), isNull);
+      expect(
+        await harness.summaries.findByLifeDay(LifeDay(2026, 7, 25)),
+        isNull,
+      );
+    },
+  );
+
+  test('observation insert failure rolls back the complete record', () async {
+    clock.value = DateTime(2026, 7, 26, 12);
+    final failing = _InsertThenFailObservations(harness.observations);
+
+    await expectLater(
+      harness
+          .wellbeingUseCases(observationsOverride: failing)
+          .saveDailyAbsolute(
+            observationId: 'rollback-observation',
+            targetLifeDay: LifeDay(2026, 7, 26),
+            referenceType: ObservationReferenceType.currentMoment,
+            state: AbsoluteEnergyState.okay,
+            coverageState: ObservationCoverageState.confirmed,
+          ),
+      throwsStateError,
+    );
+    expect(await harness.observations.find('rollback-observation'), isNull);
+  });
+
+  test('activity feedback saves and replaces one frozen active row', () async {
+    clock.value = DateTime(2026, 7, 26, 12);
+    final activity = (await harness.activityUseCases().create(
+      ActivityDraft(
+        operationId: 'feedback-activity',
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.homework,
+        duration: DurationSlot.minutes30,
+        completedAt: DateTime(2026, 7, 26, 10),
+      ),
+    )).activity;
+    final useCases = harness.activityFeedbackUseCases();
+    final first = await useCases.save(
+      feedbackId: 'feedback-first',
+      activityId: activity.id,
+      expectedActivityUpdatedAt: activity.updatedAt,
+      direction: ActivityFeedbackDirection.strongerImpact,
+    );
+    clock.value = DateTime(2026, 7, 26, 12, 5);
+    final second = await useCases.save(
+      feedbackId: 'feedback-ignored',
+      activityId: activity.id,
+      expectedActivityUpdatedAt: activity.updatedAt,
+      direction: ActivityFeedbackDirection.aboutRight,
+    );
+
+    expect(first.wasUpdated, isFalse);
+    expect(second.wasUpdated, isTrue);
+    expect(second.feedback.id, 'feedback-first');
+    expect(second.feedback.lifeDay, activity.lifeDay);
+    expect(second.feedback.subcategorySnapshot, activity.subcategory);
+    expect(second.feedback.durationSnapshot, activity.duration);
+    expect(second.feedback.theoreticalDeltaSnapshot, activity.theoreticalDelta);
+    expect(second.feedback.appliedDeltaSnapshot, activity.appliedDelta);
+    expect(second.feedback.impactSignSnapshot, ActivityImpactSign.consumption);
+    expect(second.feedback.ruleVersionSnapshot, activity.ruleVersion);
+    expect(second.feedback.activityUpdatedAtSnapshot, activity.updatedAt);
+    expect(second.feedback.status, ActivityFeedbackStatus.active);
+    expect(second.feedback.invalidationReason, isNull);
+    expect(await harness.feedback.listForActivity(activity.id), hasLength(1));
+  });
+
+  test('no-op edit preserves activity version and active feedback', () async {
+    clock.value = DateTime(2026, 7, 26, 12);
+    final activity = (await harness.activityUseCases().create(
+      ActivityDraft(
+        operationId: 'no-op-feedback',
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.homework,
+        duration: DurationSlot.minutes30,
+        completedAt: DateTime(2026, 7, 26, 10),
+      ),
+    )).activity;
+    await harness.activityFeedbackUseCases().save(
+      feedbackId: 'no-op-feedback-row',
+      activityId: activity.id,
+      expectedActivityUpdatedAt: activity.updatedAt,
+      direction: ActivityFeedbackDirection.aboutRight,
+    );
+    clock.value = DateTime(2026, 7, 26, 13);
+
+    final result = await harness.activityUseCases().edit(
+      activityId: activity.id,
+      category: activity.category,
+      subcategory: activity.subcategory,
+      duration: activity.duration,
+      completedAt: activity.completedAt,
+    );
+
+    expect(result.wasAlreadyApplied, isTrue);
+    expect(result.activity.updatedAt, activity.updatedAt);
+    expect(
+      await harness.feedback.findActiveForActivity(activity.id),
+      isNotNull,
+    );
+  });
+
+  test(
+    'subcategory duration and completion edits invalidate each active feedback',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 12);
+      var activity = (await harness.activityUseCases().create(
+        ActivityDraft(
+          operationId: 'edited-feedback',
+          category: ActivityCategory.study,
+          subcategory: ActivitySubcategory.homework,
+          duration: DurationSlot.minutes30,
+          completedAt: DateTime(2026, 7, 26, 10),
+        ),
+      )).activity;
+      final feedbackUseCases = harness.activityFeedbackUseCases();
+
+      await feedbackUseCases.save(
+        feedbackId: 'edited-feedback-subcategory',
+        activityId: activity.id,
+        expectedActivityUpdatedAt: activity.updatedAt,
+        direction: ActivityFeedbackDirection.aboutRight,
+      );
+      activity = (await harness.activityUseCases().edit(
+        activityId: activity.id,
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.selfStudyOrThesis,
+        duration: activity.duration,
+        completedAt: activity.completedAt,
+      )).activity;
+      await feedbackUseCases.save(
+        feedbackId: 'edited-feedback-duration',
+        activityId: activity.id,
+        expectedActivityUpdatedAt: activity.updatedAt,
+        direction: ActivityFeedbackDirection.weakerImpact,
+      );
+      activity = (await harness.activityUseCases().edit(
+        activityId: activity.id,
+        category: activity.category,
+        subcategory: activity.subcategory,
+        duration: DurationSlot.minutes45,
+        completedAt: activity.completedAt,
+      )).activity;
+      await feedbackUseCases.save(
+        feedbackId: 'edited-feedback-completion',
+        activityId: activity.id,
+        expectedActivityUpdatedAt: activity.updatedAt,
+        direction: ActivityFeedbackDirection.strongerImpact,
+      );
+      activity = (await harness.activityUseCases().edit(
+        activityId: activity.id,
+        category: activity.category,
+        subcategory: activity.subcategory,
+        duration: activity.duration,
+        completedAt: DateTime(2026, 7, 26, 10, 30),
+      )).activity;
+
+      final rows = await harness.feedback.listForActivity(activity.id);
+      expect(rows, hasLength(3));
+      expect(
+        rows.map((item) => item.status),
+        everyElement(ActivityFeedbackStatus.invalidated),
+      );
+      expect(
+        rows.map((item) => item.invalidationReason),
+        everyElement(ActivityFeedbackInvalidationReason.activityEdited),
+      );
+      expect(await harness.feedback.findActiveForActivity(activity.id), isNull);
+    },
+  );
+
+  test(
+    'another activity replay invalidates feedback and advances stale version',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 12);
+      final activities = harness.activityUseCases();
+      final consumption = (await activities.create(
+        ActivityDraft(
+          operationId: 'feedback-consumption',
+          category: ActivityCategory.study,
+          subcategory: ActivitySubcategory.classAttendance,
+          duration: DurationSlot.minutes60,
+          completedAt: DateTime(2026, 7, 26, 8),
+        ),
+      )).activity;
+      final recovery = (await activities.create(
+        ActivityDraft(
+          operationId: 'feedback-recovery',
+          category: ActivityCategory.recovery,
+          subcategory: ActivitySubcategory.nap,
+          duration: DurationSlot.minutes60,
+          completedAt: DateTime(2026, 7, 26, 9),
+        ),
+      )).activity;
+      await harness.activityFeedbackUseCases().save(
+        feedbackId: 'recovery-feedback',
+        activityId: recovery.id,
+        expectedActivityUpdatedAt: recovery.updatedAt,
+        direction: ActivityFeedbackDirection.aboutRight,
+      );
+      clock.value = DateTime(2026, 7, 26, 12, 30);
+
+      await activities.edit(
+        activityId: consumption.id,
+        category: consumption.category,
+        subcategory: consumption.subcategory,
+        duration: DurationSlot.minutes15,
+        completedAt: consumption.completedAt,
+      );
+      final changedRecovery = (await harness.activities.find(recovery.id))!;
+      final oldFeedback = (await harness.feedback.listForActivity(
+        recovery.id,
+      )).single;
+
+      expect(changedRecovery.appliedDelta, 5);
+      expect(changedRecovery.updatedAt.isAfter(recovery.updatedAt), isTrue);
+      expect(oldFeedback.status, ActivityFeedbackStatus.invalidated);
+      expect(
+        oldFeedback.invalidationReason,
+        ActivityFeedbackInvalidationReason.activityEdited,
+      );
+      await expectLater(
+        harness.activityFeedbackUseCases().save(
+          feedbackId: 'stale-recovery-feedback',
+          activityId: recovery.id,
+          expectedActivityUpdatedAt: recovery.updatedAt,
+          direction: ActivityFeedbackDirection.aboutRight,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'staleActivity',
+          ),
+        ),
+      );
+    },
+  );
+
+  test('delete invalidates feedback and restore never revives it', () async {
+    clock.value = DateTime(2026, 7, 26, 12);
+    final activity = (await harness.activityUseCases().create(
+      ActivityDraft(
+        operationId: 'deleted-feedback',
+        category: ActivityCategory.study,
+        subcategory: ActivitySubcategory.homework,
+        duration: DurationSlot.minutes30,
+        completedAt: DateTime(2026, 7, 26, 10),
+      ),
+    )).activity;
+    await harness.activityFeedbackUseCases().save(
+      feedbackId: 'deleted-feedback-row',
+      activityId: activity.id,
+      expectedActivityUpdatedAt: activity.updatedAt,
+      direction: ActivityFeedbackDirection.aboutRight,
+    );
+
+    await harness.activityUseCases().delete(activity.id);
+    await harness.activityUseCases().restore(activity.id);
+    final stored = (await harness.feedback.listForActivity(activity.id)).single;
+
+    expect(stored.status, ActivityFeedbackStatus.invalidated);
+    expect(
+      stored.invalidationReason,
+      ActivityFeedbackInvalidationReason.activityDeleted,
+    );
+    expect(await harness.feedback.findActiveForActivity(activity.id), isNull);
+  });
+
+  test(
+    'feedback insert failure rolls back and never changes activity',
+    () async {
+      clock.value = DateTime(2026, 7, 26, 12);
+      final activity = (await harness.activityUseCases().create(
+        ActivityDraft(
+          operationId: 'feedback-rollback',
+          category: ActivityCategory.study,
+          subcategory: ActivitySubcategory.homework,
+          duration: DurationSlot.minutes30,
+          completedAt: DateTime(2026, 7, 26, 10),
+        ),
+      )).activity;
+      final failing = _InsertThenFailFeedback(harness.feedback);
+
+      await expectLater(
+        harness
+            .activityFeedbackUseCases(feedbackOverride: failing)
+            .save(
+              feedbackId: 'feedback-rollback-row',
+              activityId: activity.id,
+              expectedActivityUpdatedAt: activity.updatedAt,
+              direction: ActivityFeedbackDirection.aboutRight,
+            ),
+        throwsStateError,
+      );
+
+      expect(await harness.feedback.find('feedback-rollback-row'), isNull);
+      final unchanged = (await harness.activities.find(activity.id))!;
+      expect(unchanged.updatedAt, activity.updatedAt);
+      expect(unchanged.subcategory, activity.subcategory);
+      expect(unchanged.duration, activity.duration);
+      expect(unchanged.appliedDelta, activity.appliedDelta);
+      expect(unchanged.status, ActivityRecordStatus.active);
     },
   );
 
@@ -574,22 +1056,14 @@ void main() {
     );
   });
 
-  test('difference descriptions do not invent an actual numeric value', () {
+  test('alignment descriptions do not invent an actual numeric value', () {
     expect(
-      describeDifference(
-        actual: AbsoluteEnergyState.exhausted,
-        estimate: 100,
-        initialEstimate: 100,
-      ),
-      contains('疲惫不少'),
+      describeAlignment(ObservationAlignmentDirection.lower),
+      contains('低于'),
     );
     expect(
-      describeDifference(
-        actual: AbsoluteEnergyState.full,
-        estimate: 100,
-        initialEstimate: 100,
-      ),
-      contains('大致一致'),
+      describeAlignment(ObservationAlignmentDirection.aligned),
+      contains('相同档位'),
     );
   });
 }
@@ -617,7 +1091,9 @@ final class _Harness {
        observations = DriftEnergyObservationsRepository(
          database.energyObservationsDao,
        ),
+       feedback = DriftActivityFeedbackRepository(database.activityFeedbackDao),
        receipts = DriftPromptReceiptsRepository(database.promptReceiptsDao),
+       writeCoordinator = SerialBusinessWriteCoordinator(),
        summaries =
            summaryOverride ??
            DriftDailySummariesRepository(database.dailySummariesDao);
@@ -629,8 +1105,13 @@ final class _Harness {
   final DriftMorningCheckInsRepository mornings;
   final DriftActivityRecordsRepository activities;
   final DriftEnergyObservationsRepository observations;
+  final DriftActivityFeedbackRepository feedback;
   final DriftPromptReceiptsRepository receipts;
   final DailySummariesRepository summaries;
+  final BusinessWriteCoordinator writeCoordinator;
+
+  ActivityFeedbackMaintenance get feedbackMaintenance =>
+      ActivityFeedbackMaintenance(feedback);
 
   _Harness withSummaries(DailySummariesRepository replacement) {
     return _Harness(database, clock, replacement);
@@ -679,18 +1160,21 @@ final class _Harness {
       projectionService: projection,
     );
     return ActivityUseCases(
-      clock: clock,
       lifeDayCalculator: LifeDayCalculator(),
+      writeCoordinator: writeCoordinator,
       transactionRunner: DriftTransactionRunner(database),
       preparer: preparer,
       activities: activities,
       rules: rules,
       summaries: summaries,
       projectionService: projection,
+      feedbackMaintenance: feedbackMaintenance,
     );
   }
 
-  WellbeingUseCases wellbeingUseCases() {
+  ActivityFeedbackUseCases activityFeedbackUseCases({
+    ActivityFeedbackRepository? feedbackOverride,
+  }) {
     final projection = CurrentDayProjectionService(
       morningCheckIns: mornings,
       activities: activities,
@@ -710,16 +1194,51 @@ final class _Harness {
       ),
       projectionService: projection,
     );
-    return WellbeingUseCases(
+    return ActivityFeedbackUseCases(
+      writeCoordinator: writeCoordinator,
+      transactionRunner: DriftTransactionRunner(database),
+      preparer: preparer,
+      activities: activities,
+      feedback: feedbackOverride ?? feedback,
+      rules: rules,
+      summaries: summaries,
+    );
+  }
+
+  WellbeingUseCases wellbeingUseCases({
+    EnergyObservationsRepository? observationsOverride,
+  }) {
+    final selectedObservations = observationsOverride ?? observations;
+    final projection = CurrentDayProjectionService(
+      morningCheckIns: mornings,
+      activities: activities,
+      summaries: summaries,
+    );
+    final preparer = OperationPreparationService(
       clock: clock,
+      lifeDayCalculator: LifeDayCalculator(),
+      transactionRunner: DriftTransactionRunner(database),
+      settings: settings,
+      settlementService: SettlementService(
+        morningCheckIns: mornings,
+        activities: activities,
+        observations: selectedObservations,
+        summaries: summaries,
+        projectionService: projection,
+      ),
+      projectionService: projection,
+    );
+    return WellbeingUseCases(
+      writeCoordinator: writeCoordinator,
       transactionRunner: DriftTransactionRunner(database),
       preparer: preparer,
       mornings: mornings,
       activities: activities,
-      observations: observations,
+      observations: selectedObservations,
       summaries: summaries,
       receipts: receipts,
       projectionService: projection,
+      feedbackMaintenance: feedbackMaintenance,
     );
   }
 }
@@ -746,6 +1265,62 @@ final class _FailOnSecondInsertSummaries implements DailySummariesRepository {
 
   @override
   Future<List<DailySummary>> list() => delegate.list();
+}
+
+final class _InsertThenFailObservations
+    implements EnergyObservationsRepository {
+  const _InsertThenFailObservations(this.delegate);
+
+  final EnergyObservationsRepository delegate;
+
+  @override
+  Future<void> insert(EnergyObservation observation) async {
+    await delegate.insert(observation);
+    throw StateError('simulated observation insert failure');
+  }
+
+  @override
+  Future<void> update(EnergyObservation observation) =>
+      delegate.update(observation);
+
+  @override
+  Future<EnergyObservation?> find(String id) => delegate.find(id);
+
+  @override
+  Future<List<EnergyObservation>> list() => delegate.list();
+
+  @override
+  Future<List<EnergyObservation>> listForLifeDay(LifeDay lifeDay) =>
+      delegate.listForLifeDay(lifeDay);
+}
+
+final class _InsertThenFailFeedback implements ActivityFeedbackRepository {
+  const _InsertThenFailFeedback(this.delegate);
+
+  final ActivityFeedbackRepository delegate;
+
+  @override
+  Future<void> insert(ActivityFeedback feedback) async {
+    await delegate.insert(feedback);
+    throw StateError('simulated feedback insert failure');
+  }
+
+  @override
+  Future<void> update(ActivityFeedback feedback) => delegate.update(feedback);
+
+  @override
+  Future<ActivityFeedback?> find(String id) => delegate.find(id);
+
+  @override
+  Future<ActivityFeedback?> findActiveForActivity(String activityRecordId) =>
+      delegate.findActiveForActivity(activityRecordId);
+
+  @override
+  Future<List<ActivityFeedback>> list() => delegate.list();
+
+  @override
+  Future<List<ActivityFeedback>> listForActivity(String activityRecordId) =>
+      delegate.listForActivity(activityRecordId);
 }
 
 MorningCheckIn _morning(LifeDay day) {

@@ -1,6 +1,7 @@
 import 'package:power_manager/data/export/power_manager_export_dto.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
+import 'package:power_manager/domain/energy/model_regime_key.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 
@@ -117,13 +118,21 @@ PowerManagerExportDto backupFixtureV2({int baseEnergy = 100}) {
         estimatedOrdinalAtObservation: 4,
         baseEnergyAtObservation: baseEnergy,
         ruleVersionAtObservation: config.ruleVersion,
-        comparisonBandVersion: 'estimate-actual-ordinal-v1',
-        personalizationVersionAtObservation: 'fixed-mvp-a',
-        effectiveModelFingerprintAtObservation: 'fixed-mvp-a',
-        modelRegimeEpochAtObservation: 'fixed-mvp-a-initial',
+        comparisonBandVersion: mvpBComparisonBandV1,
+        personalizationVersionAtObservation: fixedMvpAPersonalizationVersion,
+        effectiveModelFingerprintAtObservation:
+            fixedMvpAEffectiveModelFingerprint,
+        modelRegimeEpochAtObservation: fixedMvpAInitialModelRegimeEpoch,
         activeActivityCountAtObservation: 1,
         coverageState: ObservationCoverageState.confirmed,
-        modelRegimeKey: 'currentMoment|$baseEnergy|fixed-mvp-a-initial',
+        modelRegimeKey: const ModelRegimeKeyBuilder().build(
+          referenceType: ObservationReferenceType.currentMoment,
+          baseEnergy: baseEnergy,
+          ruleVersion: config.ruleVersion,
+          comparisonBandVersion: mvpBComparisonBandV1,
+          effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
+          modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+        ),
       ),
       EnergyObservation(
         id: 'observation-legacy-v2',

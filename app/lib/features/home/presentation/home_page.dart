@@ -16,8 +16,10 @@ import 'package:power_manager/application/wellbeing_use_cases.dart';
 import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/estimated_activity.dart';
+import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/features/activity/presentation/activity_record_sheet.dart';
+import 'package:power_manager/features/activity/presentation/activity_feedback_sheet.dart';
 import 'package:power_manager/features/activity/presentation/energy_gesture_surface.dart';
 import 'package:power_manager/features/activity/application/record_gesture_controller.dart';
 import 'package:power_manager/features/home/presentation/energy_orb/energy_orb.dart';
@@ -81,8 +83,10 @@ class _LoadedHome extends ConsumerWidget {
     };
     final canSupplementYesterday =
         ref.watch(canSupplementYesterdayProvider).value ?? false;
-    final hasCurrentActual =
-        ref.watch(currentDailyObservationProvider).value != null;
+    final currentActual = ref.watch(currentDailyObservationProvider).value;
+    final hasCurrentActual = currentActual != null;
+    final feedbackByActivity =
+        ref.watch(currentActivityFeedbackProvider).value ?? const {};
     final energyActivated = EnergyPalette.shouldActivate(
       morningHandled: morningStatus != MorningCompletionStatus.notAnswered,
       hasActivities: projection.activities.isNotEmpty,
@@ -177,6 +181,13 @@ class _LoadedHome extends ConsumerWidget {
               final activity = projection.activities[index];
               return _ActivityTile(
                 activity: activity,
+                hasFeedback: feedbackByActivity.containsKey(activity.record.id),
+                onFeedback: () => _feedback(
+                  context,
+                  ref,
+                  activity.record.id,
+                  feedbackByActivity[activity.record.id],
+                ),
                 onEdit: () => _edit(context, ref, activity.record),
                 onDelete: () => _delete(context, ref, activity.record),
               );
@@ -189,6 +200,7 @@ class _LoadedHome extends ConsumerWidget {
               onPressed: () => ActualStateSheet.show(
                 context,
                 lifeDay: result.current.lifeDay,
+                initialObservation: currentActual,
               ),
             ),
           ),
@@ -198,8 +210,11 @@ class _LoadedHome extends ConsumerWidget {
           child: _WellbeingTools(
             onOverview: () => _showOverview(context, viewModel),
             hasCurrentActual: hasCurrentActual,
-            onActual: () =>
-                ActualStateSheet.show(context, lifeDay: result.current.lifeDay),
+            onActual: () => ActualStateSheet.show(
+              context,
+              lifeDay: result.current.lifeDay,
+              initialObservation: currentActual,
+            ),
             onCorrection: () => RelativeCorrectionSheet.show(context),
             onSettings: () =>
                 Navigator.of(context).pushNamed(AppRoutes.settings),
@@ -259,7 +274,9 @@ class _LoadedHome extends ConsumerWidget {
           .read(activityUseCasesProvider)
           .create(
             ActivityDraft(
-              operationId: 'gesture-${now.microsecondsSinceEpoch}',
+              operationId: ref
+                  .read(recordIdGeneratorProvider)
+                  .next(prefix: 'gesture', now: now),
               category: selection.category,
               subcategory: selection.subcategory,
               duration: selection.duration,
@@ -277,6 +294,9 @@ class _LoadedHome extends ConsumerWidget {
     }
     if (result != null && context.mounted) {
       ref.invalidate(currentPreparationProvider);
+      ref.invalidate(currentActivityFeedbackProvider);
+      ref.invalidate(dataHealthReportProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
       unawaited(
         _showActivityUndo(
           context,
@@ -295,11 +315,42 @@ class _LoadedHome extends ConsumerWidget {
   ) async {
     final result = await ActivityRecordSheet.show(context, initial: activity);
     if (result != null) {
+      ref.invalidate(currentActivityFeedbackProvider);
+      ref.invalidate(dataHealthReportProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
       await _maybeShowReminder(
         ref,
         HomeViewModel.fromProjection(result.current),
         lifeDay: result.current.lifeDay,
       );
+    }
+  }
+
+  Future<void> _feedback(
+    BuildContext context,
+    WidgetRef ref,
+    String activityId,
+    ActivityFeedback? existingFeedback,
+  ) async {
+    try {
+      final activity = await ref
+          .read(activitiesRepositoryProvider)
+          .find(activityId);
+      if (activity == null || activity.status != ActivityRecordStatus.active) {
+        throw StateError('activityUnavailable');
+      }
+      if (!context.mounted) return;
+      await ActivityFeedbackSheet.show(
+        context,
+        activity: activity,
+        initialFeedback: existingFeedback,
+      );
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('活动已经变化，请刷新后重试。')));
+      }
     }
   }
 
@@ -313,6 +364,9 @@ class _LoadedHome extends ConsumerWidget {
           .read(activityUseCasesProvider)
           .delete(activity.id);
       ref.invalidate(currentPreparationProvider);
+      ref.invalidate(currentActivityFeedbackProvider);
+      ref.invalidate(dataHealthReportProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
       if (context.mounted) {
         unawaited(
           _showActivityUndo(
@@ -426,6 +480,9 @@ class _LoadedHome extends ConsumerWidget {
       }
       HapticFeedback.lightImpact();
       container.invalidate(currentPreparationProvider);
+      container.invalidate(currentActivityFeedbackProvider);
+      container.invalidate(dataHealthReportProvider);
+      container.invalidate(mvpBUpgradeReadinessProvider);
       return true;
     } catch (_) {
       if (messenger.mounted) {
@@ -508,7 +565,7 @@ class _HistoryTools extends StatelessWidget {
               FilledButton.tonal(
                 key: const Key('yesterday-actual-button'),
                 onPressed: onSupplementYesterday,
-                child: const Text('补充昨日实际状态'),
+                child: const Text('补充昨天结束时状态'),
               ),
             if (history.rolling.days.isNotEmpty)
               OutlinedButton(
@@ -713,11 +770,15 @@ String _correctionText(CorrectionCounts counts) {
 class _ActivityTile extends StatelessWidget {
   const _ActivityTile({
     required this.activity,
+    required this.hasFeedback,
+    required this.onFeedback,
     required this.onEdit,
     required this.onDelete,
   });
 
   final ProjectedEstimatedActivity activity;
+  final bool hasFeedback;
+  final VoidCallback onFeedback;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -726,29 +787,68 @@ class _ActivityTile extends StatelessWidget {
     final record = activity.record;
     final localTime = record.completedAt.toLocal();
     return Card(
-      child: ListTile(
-        title: Text(record.subcategory.label),
-        subtitle: Text(
-          '${record.category.label} · ${record.duration.minutes} 分钟'
-          ' · ${_twoDigits(localTime.hour)}:${_twoDigits(localTime.minute)}',
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              activity.appliedDelta > 0
-                  ? '+${activity.appliedDelta}'
-                  : '${activity.appliedDelta}',
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        record.subcategory.label,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${record.category.label} · '
+                        '${record.duration.minutes} 分钟 · '
+                        '${_twoDigits(localTime.hour)}:'
+                        '${_twoDigits(localTime.minute)}',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  activity.appliedDelta > 0
+                      ? '+${activity.appliedDelta}'
+                      : '${activity.appliedDelta}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: '编辑',
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined),
-            ),
-            IconButton(
-              tooltip: '删除',
-              onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline_rounded),
+            const SizedBox(height: 8),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                TextButton.icon(
+                  key: Key('activity-feedback-button-${record.id}'),
+                  onPressed: onFeedback,
+                  icon: Icon(
+                    hasFeedback
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.rate_review_outlined,
+                  ),
+                  label: Text(hasFeedback ? '已评价' : '评价影响'),
+                ),
+                IconButton(
+                  tooltip: '编辑',
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                IconButton(
+                  tooltip: '删除',
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                ),
+              ],
             ),
           ],
         ),
@@ -815,10 +915,7 @@ class _ActualStateNudge extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              '今天结束前，留一次实际感受',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('留一次现在的整体状态', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.x2),
             Text(
               '先按自己的感受选择，保存后才显示系统估计。',
@@ -828,7 +925,7 @@ class _ActualStateNudge extends StatelessWidget {
             FilledButton.tonal(
               key: const Key('current-actual-state-nudge-button'),
               onPressed: onPressed,
-              child: const Text('记录实际状态'),
+              child: const Text('记录现在的状态'),
             ),
           ],
         ),
@@ -870,7 +967,7 @@ class _WellbeingTools extends StatelessWidget {
             OutlinedButton(
               key: const Key('actual-state-button'),
               onPressed: onActual,
-              child: Text(hasCurrentActual ? '修改今日实际状态' : '记录今日实际状态'),
+              child: Text(hasCurrentActual ? '更新现在的整体状态' : '记录现在的整体状态'),
             ),
             OutlinedButton(
               key: const Key('relative-correction-button'),

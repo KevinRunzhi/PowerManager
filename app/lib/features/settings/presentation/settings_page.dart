@@ -390,6 +390,7 @@ class _SettingsContentState extends ConsumerState<_SettingsContent> {
     ref.invalidate(morningCompletionStatusProvider);
     ref.invalidate(currentMorningCheckInProvider);
     ref.invalidate(currentDailyObservationProvider);
+    ref.invalidate(currentActivityFeedbackProvider);
     ref.invalidate(canSupplementYesterdayProvider);
     ref.invalidate(historyReviewProvider);
     ref.invalidate(backupSafetyPathProvider);

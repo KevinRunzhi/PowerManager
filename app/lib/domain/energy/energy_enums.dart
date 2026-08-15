@@ -215,6 +215,11 @@ enum EnergyObservationType {
 }
 
 const mvpBObservationContractV1 = 'mvp-b-observation-v1';
+const mvpBComparisonBandV1 = 'estimate-actual-ordinal-v1';
+const fixedMvpAPersonalizationVersion = 'fixed-mvp-a';
+const fixedMvpAEffectiveModelFingerprint = 'fixed-mvp-a';
+const fixedMvpAInitialModelRegimeEpoch = 'fixed-mvp-a-initial';
+const mvpBModelRegimeKeyVersion = 'model-regime-sha256-v1';
 
 enum ObservationReferenceType {
   currentMoment('currentMoment'),

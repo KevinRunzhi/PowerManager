@@ -6,6 +6,10 @@
 activityRuleVersion = energy-rules-v2-mvp-a
 observationContractVersion = mvp-b-observation-v1
 comparisonBandVersion = estimate-actual-ordinal-v1
+fixedPersonalizationVersion = fixed-mvp-a
+fixedEffectiveModelFingerprint = fixed-mvp-a
+initialModelRegimeEpoch = fixed-mvp-a-initial
+modelRegimeKeyVersion = model-regime-sha256-v1
 shadowLearningVersion = evidence-shadow-v1
 evidenceHashVersion = canonical-evidence-sha256-v1
 

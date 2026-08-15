@@ -22,9 +22,9 @@
 
 上述 v2 文档是现有 MVP-A Flutter 实现与维护的唯一规则来源。
 
-当前用户功能仍以 MVP-A Stage 19 为基线。MVP-B 工程已完成 B0-2：数据库升级到 schema v2，
-具备新观测合同与活动反馈的存储 / 备份基础；B0-3 用户流程和全部自动学习尚未实现。MVP-A 文档
-继续作为现有 App 行为和历史数据的正式依据。
+当前固定估计与历史行为仍以 MVP-A Stage 19 为基线。MVP-B 工程已完成 B0-3：数据库保持
+schema v2，现已能采集同一参考时刻的新观测合同、活动覆盖确认和活动绑定反馈，并统一判断结算后
+的可学习资格；B1-0 自动影子学习器尚未实现。MVP-A 文档继续作为固定规则和历史数据的正式依据。
 
 ## 当前实施基线：v3 / MVP-B
 
@@ -40,6 +40,7 @@
 - `PowerManager_MVP-B_阶段B0-1_迁移准备版_Spec_v1.md`
 - `PowerManager_MVP-B_阶段B0-2_SchemaV2与备份兼容_Spec_v1.md`
 - `PowerManager_MVP-B_阶段B0-3_正确观测与活动反馈合同_Spec_v1.md`
+- `PowerManager_MVP-B_阶段B0-3_正确观测与活动反馈合同_实现与验收记录.md`
 - `PowerManager_MVP-B_阶段B1-0_自动影子学习器_Spec_v1.md`
 - `PowerManager_MVP-B_阶段B1-1_真实影子观察与生产决策_Spec_v1.md`
 - `PowerManager_MVP-B_阶段B2-0_SchemaV4与模型生命周期_Spec_v1.md`

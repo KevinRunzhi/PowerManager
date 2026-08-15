@@ -1,9 +1,10 @@
-import 'dart:async';
-
+import 'package:power_manager/application/activity_feedback_use_cases.dart';
+import 'package:power_manager/application/business_write_coordinator.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/operation_preparation_service.dart';
-import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
+import 'package:power_manager/domain/energy/model_regime_key.dart';
+import 'package:power_manager/domain/energy/observation_comparison_service.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
@@ -30,7 +31,9 @@ abstract interface class WellbeingMutator {
   Future<DailyObservationResult> saveDailyAbsolute({
     required String observationId,
     required LifeDay targetLifeDay,
+    required ObservationReferenceType referenceType,
     required AbsoluteEnergyState state,
+    required ObservationCoverageState coverageState,
   });
   Future<EnergyObservation> saveRelativeCorrection({
     required String observationId,
@@ -40,7 +43,7 @@ abstract interface class WellbeingMutator {
 
 final class WellbeingUseCases implements WellbeingMutator {
   WellbeingUseCases({
-    required this.clock,
+    required this.writeCoordinator,
     required this.transactionRunner,
     required this.preparer,
     required this.mornings,
@@ -49,9 +52,12 @@ final class WellbeingUseCases implements WellbeingMutator {
     required this.summaries,
     required this.receipts,
     required this.projectionService,
+    required this.feedbackMaintenance,
+    this.comparisonService = const ObservationComparisonService(),
+    this.regimeKeyBuilder = const ModelRegimeKeyBuilder(),
   });
 
-  final Clock clock;
+  final BusinessWriteCoordinator writeCoordinator;
   final TransactionRunner transactionRunner;
   final OperationPreparer preparer;
   final MorningCheckInsRepository mornings;
@@ -60,12 +66,13 @@ final class WellbeingUseCases implements WellbeingMutator {
   final DailySummariesRepository summaries;
   final PromptReceiptsRepository receipts;
   final CurrentDayProjectionService projectionService;
-
-  Future<void> _tail = Future.value();
+  final ActivityFeedbackMaintenance feedbackMaintenance;
+  final ObservationComparisonService comparisonService;
+  final ModelRegimeKeyBuilder regimeKeyBuilder;
 
   @override
   Future<CurrentDayProjection> saveMorningCheckIn(MorningCheckIn checkIn) {
-    return _serialized(() {
+    return writeCoordinator.run(() {
       return transactionRunner.run(() async {
         final prepared = await preparer.prepare(PreparationTrigger.beforeWrite);
         if (checkIn.lifeDay != prepared.current.lifeDay) {
@@ -82,7 +89,7 @@ final class WellbeingUseCases implements WellbeingMutator {
           pressureSource: checkIn.pressureSource,
           sleepRecovery: checkIn.sleepRecovery,
           morningAdjustment: checkIn.overallState.adjustment,
-          completedAt: clock.now().toUtc(),
+          completedAt: prepared.nowUtc,
         );
         final existing = await mornings.findByLifeDay(checkIn.lifeDay);
         if (existing == null) {
@@ -101,14 +108,14 @@ final class WellbeingUseCases implements WellbeingMutator {
             ),
           );
         }
-        return _replayAndPersist(prepared.current);
+        return _replayAndPersist(prepared.current, nowUtc: prepared.nowUtc);
       });
     });
   }
 
   @override
   Future<void> skipMorning(String receiptId) {
-    return _serialized(() {
+    return writeCoordinator.run(() {
       return transactionRunner.run(() async {
         final prepared = await preparer.prepare(PreparationTrigger.beforeWrite);
         if (await mornings.findByLifeDay(prepared.current.lifeDay) != null) {
@@ -126,7 +133,7 @@ final class WellbeingUseCases implements WellbeingMutator {
               type: PromptReceiptType.morning,
               scopeKey: prepared.current.lifeDay.toString(),
               action: PromptReceiptAction.skipped,
-              occurredAt: clock.now().toUtc(),
+              occurredAt: prepared.nowUtc,
             ),
           );
         }
@@ -138,55 +145,109 @@ final class WellbeingUseCases implements WellbeingMutator {
   Future<DailyObservationResult> saveDailyAbsolute({
     required String observationId,
     required LifeDay targetLifeDay,
+    required ObservationReferenceType referenceType,
     required AbsoluteEnergyState state,
+    required ObservationCoverageState coverageState,
   }) {
-    return _serialized(() {
+    return writeCoordinator.run(() {
       return transactionRunner.run(() async {
         final prepared = await preparer.prepare(PreparationTrigger.beforeWrite);
-        final isCurrent = targetLifeDay == prepared.current.lifeDay;
-        final isPrevious = targetLifeDay == prepared.current.lifeDay.previous;
-        if (!isCurrent && !isPrevious) {
-          throw StateError('Daily state can target only today or yesterday');
+        if (coverageState != ObservationCoverageState.confirmed &&
+            coverageState != ObservationCoverageState.uncertain) {
+          throw ArgumentError.value(
+            coverageState,
+            'coverageState',
+            'A new observation requires confirmed or uncertain coverage',
+          );
         }
-        final summary = isPrevious
-            ? await summaries.findByLifeDay(targetLifeDay)
-            : null;
-        if (isPrevious && summary == null) {
-          throw StateError('Yesterday has no settled estimate');
+        final isCurrent =
+            referenceType == ObservationReferenceType.currentMoment;
+        final expectedTarget = isCurrent
+            ? prepared.current.lifeDay
+            : prepared.current.lifeDay.previous;
+        if (targetLifeDay != expectedTarget) {
+          throw StateError('staleSheet');
+        }
+        final summary = isCurrent
+            ? null
+            : await summaries.findByLifeDay(targetLifeDay);
+        if (!isCurrent && summary == null) {
+          throw StateError('missingSettledSummary');
         }
         final existing = (await observations.listForLifeDay(targetLifeDay))
             .where((item) => item.type == EnergyObservationType.dailyAbsolute)
             .firstOrNull;
-        if (isPrevious && existing != null) {
-          throw StateError('Yesterday actual state is already read-only');
+        if (!isCurrent && existing != null) {
+          throw StateError('readOnlyObservation');
         }
+        if (isCurrent &&
+            existing?.referenceType ==
+                ObservationReferenceType.previousLifeDayEnd) {
+          throw StateError('readOnlyObservation');
+        }
+        final estimate = isCurrent
+            ? prepared.current.projection.currentEstimate
+            : summary!.finalEstimatedEnergy;
+        final initialEstimate = isCurrent
+            ? prepared.current.projection.initialEstimate
+            : summary!.initialEstimatedEnergy;
+        final baseEnergy = isCurrent
+            ? prepared.current.baseEstimatedEnergy
+            : summary!.baseEstimatedEnergy;
+        final ruleVersion = isCurrent
+            ? prepared.current.ruleVersion
+            : summary!.ruleVersion;
+        final comparison = comparisonService.compare(
+          actualState: state,
+          estimate: estimate,
+          initialEstimate: initialEstimate,
+        );
+        if (!comparison.isValid) {
+          throw StateError(comparison.failure!.code);
+        }
+        final activityCount = isCurrent
+            ? prepared.current.projection.activities.length
+            : (await activities.listActiveForLifeDay(targetLifeDay)).length;
+        final modelRegimeKey = regimeKeyBuilder.build(
+          referenceType: referenceType,
+          baseEnergy: baseEnergy,
+          ruleVersion: ruleVersion,
+          comparisonBandVersion: mvpBComparisonBandV1,
+          effectiveModelFingerprint: fixedMvpAEffectiveModelFingerprint,
+          modelRegimeEpoch: fixedMvpAInitialModelRegimeEpoch,
+        );
         final observation = EnergyObservation(
           id: existing?.id ?? observationId,
           lifeDay: targetLifeDay,
           type: EnergyObservationType.dailyAbsolute,
           absoluteState: state,
           relativeState: null,
-          estimateAtObservation: null,
-          observedAt: clock.now().toUtc(),
+          estimateAtObservation: estimate,
+          observedAt: prepared.nowUtc,
+          contractVersion: mvpBObservationContractV1,
+          referenceType: referenceType,
+          initialEstimateAtObservation: initialEstimate,
+          estimatedOrdinalAtObservation: comparison.estimatedOrdinal,
+          baseEnergyAtObservation: baseEnergy,
+          ruleVersionAtObservation: ruleVersion,
+          comparisonBandVersion: mvpBComparisonBandV1,
+          personalizationVersionAtObservation: fixedMvpAPersonalizationVersion,
+          effectiveModelFingerprintAtObservation:
+              fixedMvpAEffectiveModelFingerprint,
+          modelRegimeEpochAtObservation: fixedMvpAInitialModelRegimeEpoch,
+          activeActivityCountAtObservation: activityCount,
+          coverageState: coverageState,
+          modelRegimeKey: modelRegimeKey,
         );
         if (existing == null) {
           await observations.insert(observation);
         } else {
           await observations.update(observation);
         }
-        final estimate = isCurrent
-            ? prepared.current.projection.currentEstimate
-            : summary!.finalEstimatedEnergy;
         return DailyObservationResult(
           observation: observation,
           systemEstimate: estimate,
-          differenceDescription: describeDifference(
-            actual: state,
-            estimate: estimate,
-            initialEstimate: isCurrent
-                ? prepared.current.projection.initialEstimate
-                : summary!.initialEstimatedEnergy,
-          ),
+          differenceDescription: describeAlignment(comparison.direction!),
           wasUpdated: existing != null,
         );
       });
@@ -198,7 +259,7 @@ final class WellbeingUseCases implements WellbeingMutator {
     required String observationId,
     required RelativeCorrection correction,
   }) {
-    return _serialized(() {
+    return writeCoordinator.run(() {
       return transactionRunner.run(() async {
         final prepared = await preparer.prepare(PreparationTrigger.beforeWrite);
         final observation = EnergyObservation(
@@ -208,7 +269,7 @@ final class WellbeingUseCases implements WellbeingMutator {
           absoluteState: null,
           relativeState: correction,
           estimateAtObservation: prepared.current.projection.currentEstimate,
-          observedAt: clock.now().toUtc(),
+          observedAt: prepared.nowUtc,
         );
         await observations.insert(observation);
         return observation;
@@ -216,21 +277,10 @@ final class WellbeingUseCases implements WellbeingMutator {
     });
   }
 
-  Future<T> _serialized<T>(Future<T> Function() action) {
-    final completer = Completer<T>();
-    _tail = _tail.then((_) async {
-      try {
-        completer.complete(await action());
-      } catch (error, stackTrace) {
-        completer.completeError(error, stackTrace);
-      }
-    });
-    return completer.future;
-  }
-
   Future<CurrentDayProjection> _replayAndPersist(
-    CurrentDayProjection context,
-  ) async {
+    CurrentDayProjection context, {
+    required DateTime nowUtc,
+  }) async {
     final replayed = await projectionService.project(
       lifeDay: context.lifeDay,
       baseEstimatedEnergy: context.baseEstimatedEnergy,
@@ -245,54 +295,38 @@ final class WellbeingUseCases implements WellbeingMutator {
     )) {
       final appliedDelta = appliedById[activity.id]!;
       if (activity.appliedDelta != appliedDelta) {
-        await activities.update(
-          StoredEstimatedActivity(
-            id: activity.id,
-            lifeDay: activity.lifeDay,
-            completedAt: activity.completedAt,
-            createdAt: activity.createdAt,
-            updatedAt: activity.updatedAt,
-            category: activity.category,
-            subcategory: activity.subcategory,
-            duration: activity.duration,
-            theoreticalDelta: activity.theoreticalDelta,
-            appliedDelta: appliedDelta,
-            ruleVersion: activity.ruleVersion,
-            status: activity.status,
-            deletedAt: activity.deletedAt,
+        final changed = StoredEstimatedActivity(
+          id: activity.id,
+          lifeDay: activity.lifeDay,
+          completedAt: activity.completedAt,
+          createdAt: activity.createdAt,
+          updatedAt: nextActivityUpdatedAt(
+            previous: activity.updatedAt,
+            nowUtc: nowUtc,
           ),
+          category: activity.category,
+          subcategory: activity.subcategory,
+          duration: activity.duration,
+          theoreticalDelta: activity.theoreticalDelta,
+          appliedDelta: appliedDelta,
+          ruleVersion: activity.ruleVersion,
+          status: activity.status,
+          deletedAt: activity.deletedAt,
         );
+        await feedbackMaintenance.invalidateForSnapshotChange(
+          before: activity,
+          after: changed,
+        );
+        await activities.update(changed);
       }
     }
     return replayed;
   }
 }
 
-String describeDifference({
-  required AbsoluteEnergyState actual,
-  required int estimate,
-  required int initialEstimate,
-}) {
-  final estimatedLevel = switch (estimate) {
-    < 0 => 0,
-    _ when estimate * 4 < initialEstimate => 1,
-    _ when estimate * 2 < initialEstimate => 2,
-    _ when estimate * 5 < initialEstimate * 4 => 3,
-    _ => 4,
-  };
-  final actualLevel = AbsoluteEnergyState.values.indexOf(actual);
-  final difference = actualLevel - estimatedLevel;
-  if (difference <= -2) {
-    return '你的感受比系统估计疲惫不少。';
-  }
-  if (difference == -1) {
-    return '你的感受比系统估计更疲惫一些。';
-  }
-  if (difference == 0) {
-    return '你的感受与系统估计大致一致。';
-  }
-  if (difference == 1) {
-    return '你的感受比系统估计更有余力一些。';
-  }
-  return '你的感受比系统估计更有余力不少。';
-}
+String describeAlignment(ObservationAlignmentDirection direction) =>
+    switch (direction) {
+      ObservationAlignmentDirection.lower => '你选择的整体状态低于系统在同一参考时刻的对应档位。',
+      ObservationAlignmentDirection.aligned => '你选择的整体状态与系统在同一参考时刻属于相同档位。',
+      ObservationAlignmentDirection.higher => '你选择的整体状态高于系统在同一参考时刻的对应档位。',
+    };

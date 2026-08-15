@@ -317,11 +317,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('actual-state-selection')), findsOneWidget);
     expect(find.byKey(const Key('revealed-system-estimate')), findsNothing);
-    expect(find.text('系统当时的估计'), findsNothing);
+    expect(find.text('系统在保存时的估计'), findsNothing);
 
     await tester.tap(find.byKey(const Key('actual-low')));
     await tester.pumpAndSettle();
+    expect(wellbeing.savedActual, isNull);
+    expect(find.byKey(const Key('actual-state-reveal')), findsNothing);
+    final coverage = find.byKey(const Key('coverage-confirmed'));
+    await tester.ensureVisible(coverage);
+    await tester.tap(coverage);
+    await tester.pump();
+    final save = find.byKey(const Key('save-actual-state-button'));
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
     expect(wellbeing.savedActual, AbsoluteEnergyState.low);
+    expect(wellbeing.savedCoverage, ObservationCoverageState.confirmed);
+    expect(
+      wellbeing.savedReferenceType,
+      ObservationReferenceType.currentMoment,
+    );
     expect(find.byKey(const Key('actual-state-reveal')), findsOneWidget);
     expect(find.byKey(const Key('revealed-system-estimate')), findsOneWidget);
     expect(find.text('88'), findsOneWidget);
@@ -396,7 +411,42 @@ void main() {
 
     expect(find.byKey(const Key('actual-exhausted')), findsOneWidget);
     expect(find.byKey(const Key('actual-full')), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('save-actual-state-button')),
+      250,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('actual-state failure preserves state and coverage for retry', (
+    tester,
+  ) async {
+    final wellbeing = _FakeWellbeingMutator()..failActual = true;
+    await tester.pumpWidget(_testApp(wellbeing: wellbeing));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('actual-state-button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('actual-full')));
+    final uncertain = find.byKey(const Key('coverage-uncertain'));
+    await tester.ensureVisible(uncertain);
+    await tester.tap(uncertain);
+    await tester.pump();
+    final save = find.byKey(const Key('save-actual-state-button'));
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('actual-state-error')), findsOneWidget);
+    expect(find.byKey(const Key('actual-state-selection')), findsOneWidget);
+    expect(wellbeing.savedActual, AbsoluteEnergyState.full);
+    expect(wellbeing.savedCoverage, ObservationCoverageState.uncertain);
+
+    wellbeing.failActual = false;
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('actual-state-reveal')), findsOneWidget);
   });
 
   testWidgets(
@@ -458,7 +508,7 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('今天结束前，留一次实际感受'), findsOneWidget);
+    expect(find.text('留一次现在的整体状态'), findsOneWidget);
     final action = find.byKey(const Key('current-actual-state-nudge-button'));
     await tester.ensureVisible(action);
     await tester.pumpAndSettle();
@@ -505,6 +555,29 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
 
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('activity feedback action survives 200 percent text scaling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        preparer: _ActivityPreparer(),
+        textScaler: const TextScaler.linear(2),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final action = find.byKey(
+      const Key('activity-feedback-button-existing-activity'),
+    );
+    await tester.scrollUntilVisible(
+      action,
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(action, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -573,6 +646,7 @@ void main() {
   testWidgets('yesterday supplement action lives inside the history card', (
     tester,
   ) async {
+    final wellbeing = _FakeWellbeingMutator();
     final day = LifeDay(2026, 7, 25);
     final summary = _dailySummary(day);
     final review = HistoricalDayReview(
@@ -582,6 +656,7 @@ void main() {
     );
     await tester.pumpWidget(
       _testApp(
+        wellbeing: wellbeing,
         canSupplementYesterday: true,
         history: HistoryReview(
           latest: review,
@@ -608,8 +683,22 @@ void main() {
     expect(find.descendant(of: historyCard, matching: action), findsOneWidget);
     await tester.tap(action);
     await tester.pumpAndSettle();
-    expect(find.text('补充昨日实际状态'), findsWidgets);
+    expect(find.text('昨天结束时的整体状态'), findsOneWidget);
     expect(find.byKey(const Key('actual-state-selection')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('actual-okay')));
+    final coverage = find.byKey(const Key('coverage-confirmed'));
+    await tester.ensureVisible(coverage);
+    await tester.tap(coverage);
+    await tester.pump();
+    final save = find.byKey(const Key('save-actual-state-button'));
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(
+      wellbeing.savedReferenceType,
+      ObservationReferenceType.previousLifeDayEnd,
+    );
+    expect(wellbeing.savedTargetLifeDay, day);
   });
 
   testWidgets('settings validates base range and schedules valid boundary', (
@@ -767,7 +856,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(DataHealthPage.pageKey), findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('local-backup-health-card')),
+      500,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('local-backup-health-card')), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -1047,6 +1140,7 @@ Widget _testApp({
   AppSettings? appSettings,
   SettingsMutator? settingsMutator,
   EnergyObservation? currentActual,
+  Map<String, ActivityFeedback> currentActivityFeedback = const {},
   bool canSupplementYesterday = false,
   LocalBackupSaver? localBackupSaver,
   LocalBackupMetadata? localBackupMetadata,
@@ -1067,6 +1161,9 @@ Widget _testApp({
       currentMorningCheckInProvider.overrideWith((ref) async => null),
       currentDailyObservationProvider.overrideWith(
         (ref) async => currentActual,
+      ),
+      currentActivityFeedbackProvider.overrideWith(
+        (ref) async => currentActivityFeedback,
       ),
       canSupplementYesterdayProvider.overrideWith(
         (ref) async => canSupplementYesterday,
@@ -1324,9 +1421,13 @@ final class _FakeActivityMutator implements ActivityMutator {
 final class _FakeWellbeingMutator implements WellbeingMutator {
   MorningCheckIn? savedMorning;
   AbsoluteEnergyState? savedActual;
+  ObservationCoverageState? savedCoverage;
+  ObservationReferenceType? savedReferenceType;
+  LifeDay? savedTargetLifeDay;
   RelativeCorrection? savedCorrection;
   Completer<void>? actualGate;
   var failRelative = false;
+  var failActual = false;
 
   @override
   Future<CurrentDayProjection> saveMorningCheckIn(
@@ -1343,10 +1444,18 @@ final class _FakeWellbeingMutator implements WellbeingMutator {
   Future<DailyObservationResult> saveDailyAbsolute({
     required String observationId,
     required LifeDay targetLifeDay,
+    required ObservationReferenceType referenceType,
     required AbsoluteEnergyState state,
+    required ObservationCoverageState coverageState,
   }) async {
     savedActual = state;
+    savedCoverage = coverageState;
+    savedReferenceType = referenceType;
+    savedTargetLifeDay = targetLifeDay;
     await actualGate?.future;
+    if (failActual) {
+      throw StateError('simulated actual failure');
+    }
     final observation = EnergyObservation(
       id: observationId,
       lifeDay: targetLifeDay,
@@ -1355,6 +1464,9 @@ final class _FakeWellbeingMutator implements WellbeingMutator {
       relativeState: null,
       estimateAtObservation: null,
       observedAt: DateTime.utc(2026, 7, 26, 12),
+      contractVersion: mvpBObservationContractV1,
+      referenceType: referenceType,
+      coverageState: coverageState,
     );
     return DailyObservationResult(
       observation: observation,

@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:power_manager/application/activity_feedback_use_cases.dart';
 import 'package:power_manager/application/activity_impact_preview_service.dart';
 import 'package:power_manager/application/activity_use_cases.dart';
 import 'package:power_manager/application/backup_content_digest.dart';
+import 'package:power_manager/application/business_write_coordinator.dart';
 import 'package:power_manager/application/current_day_projection_service.dart';
 import 'package:power_manager/application/data_health_service.dart';
 import 'package:power_manager/application/energy_reminder_service.dart';
@@ -18,6 +21,7 @@ import 'package:power_manager/application/operation_preparation_service.dart';
 import 'package:power_manager/application/settlement_service.dart';
 import 'package:power_manager/application/settings_service.dart';
 import 'package:power_manager/application/wellbeing_use_cases.dart';
+import 'package:power_manager/core/ids/record_id_generator.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/data/db/app_database.dart';
 import 'package:power_manager/data/db/app_database_connection.dart';
@@ -34,7 +38,14 @@ import 'package:power_manager/domain/repositories/repositories.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
-final clockProvider = Provider<Clock>((ref) => const SystemClock());
+final clockProvider = Provider<Clock>((ref) {
+  const fixedNow = String.fromEnvironment('POWER_MANAGER_FIXED_NOW');
+  return createAppClock(allowFixedOverride: !kReleaseMode, fixedNow: fixedNow);
+});
+
+final recordIdGeneratorProvider = Provider<RecordIdGenerator>((ref) {
+  return RecordIdGenerator();
+});
 
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
   final database = openAppDatabase(clock: ref.watch(clockProvider));
@@ -81,6 +92,19 @@ final activityFeedbackRepositoryProvider = Provider<ActivityFeedbackRepository>(
     );
   },
 );
+
+final businessWriteCoordinatorProvider = Provider<BusinessWriteCoordinator>((
+  ref,
+) {
+  return SerialBusinessWriteCoordinator();
+});
+
+final activityFeedbackMaintenanceProvider =
+    Provider<ActivityFeedbackMaintenance>((ref) {
+      return ActivityFeedbackMaintenance(
+        ref.watch(activityFeedbackRepositoryProvider),
+      );
+    });
 
 final summariesRepositoryProvider = Provider<DailySummariesRepository>((ref) {
   return DriftDailySummariesRepository(
@@ -169,14 +193,29 @@ final currentPreparationProvider = FutureProvider<OperationPreparationResult>((
 final activityUseCasesProvider = Provider<ActivityMutator>((ref) {
   final database = ref.watch(appDatabaseProvider);
   return ActivityUseCases(
-    clock: ref.watch(clockProvider),
     lifeDayCalculator: LifeDayCalculator(),
+    writeCoordinator: ref.watch(businessWriteCoordinatorProvider),
     transactionRunner: DriftTransactionRunner(database),
     preparer: ref.watch(operationPreparerProvider),
     activities: ref.watch(activitiesRepositoryProvider),
     rules: ref.watch(rulesRepositoryProvider),
     summaries: ref.watch(summariesRepositoryProvider),
     projectionService: ref.watch(projectionServiceProvider),
+    feedbackMaintenance: ref.watch(activityFeedbackMaintenanceProvider),
+  );
+});
+
+final activityFeedbackUseCasesProvider = Provider<ActivityFeedbackMutator>((
+  ref,
+) {
+  return ActivityFeedbackUseCases(
+    writeCoordinator: ref.watch(businessWriteCoordinatorProvider),
+    transactionRunner: DriftTransactionRunner(ref.watch(appDatabaseProvider)),
+    preparer: ref.watch(operationPreparerProvider),
+    activities: ref.watch(activitiesRepositoryProvider),
+    feedback: ref.watch(activityFeedbackRepositoryProvider),
+    rules: ref.watch(rulesRepositoryProvider),
+    summaries: ref.watch(summariesRepositoryProvider),
   );
 });
 
@@ -203,7 +242,7 @@ final currentActivityImpactCatalogProvider =
 final wellbeingUseCasesProvider = Provider<WellbeingMutator>((ref) {
   final database = ref.watch(appDatabaseProvider);
   return WellbeingUseCases(
-    clock: ref.watch(clockProvider),
+    writeCoordinator: ref.watch(businessWriteCoordinatorProvider),
     transactionRunner: DriftTransactionRunner(database),
     preparer: ref.watch(operationPreparerProvider),
     mornings: ref.watch(morningsRepositoryProvider),
@@ -212,6 +251,7 @@ final wellbeingUseCasesProvider = Provider<WellbeingMutator>((ref) {
     summaries: ref.watch(summariesRepositoryProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
     projectionService: ref.watch(projectionServiceProvider),
+    feedbackMaintenance: ref.watch(activityFeedbackMaintenanceProvider),
   );
 });
 
@@ -254,6 +294,18 @@ final currentDailyObservationProvider = FutureProvider<EnergyObservation?>((
       .firstOrNull;
 });
 
+final currentActivityFeedbackProvider =
+    FutureProvider<Map<String, ActivityFeedback>>((ref) async {
+      final prepared = await ref.watch(currentPreparationProvider.future);
+      final items = await ref.watch(activityFeedbackRepositoryProvider).list();
+      return {
+        for (final item in items)
+          if (item.lifeDay == prepared.current.lifeDay &&
+              item.status == ActivityFeedbackStatus.active)
+            item.activityRecordId: item,
+      };
+    });
+
 final canSupplementYesterdayProvider = FutureProvider<bool>((ref) async {
   final prepared = await ref.watch(currentPreparationProvider.future);
   final yesterday = prepared.current.lifeDay.previous;
@@ -274,6 +326,7 @@ final canSupplementYesterdayProvider = FutureProvider<bool>((ref) async {
 final energyReminderServiceProvider = Provider<EnergyReminderService>((ref) {
   return EnergyReminderService(
     clock: ref.watch(clockProvider),
+    recordIdGenerator: ref.watch(recordIdGeneratorProvider),
     receipts: ref.watch(receiptsRepositoryProvider),
   );
 });
@@ -381,6 +434,7 @@ final dataHealthServiceProvider = Provider<DataHealthService>((ref) {
     exportService: ref.watch(jsonExportServiceProvider),
     codec: const JsonBackupCodec(),
     clock: ref.watch(clockProvider),
+    settings: ref.watch(settingsRepositoryProvider),
     mornings: ref.watch(morningsRepositoryProvider),
     activities: ref.watch(activitiesRepositoryProvider),
     observations: ref.watch(observationsRepositoryProvider),

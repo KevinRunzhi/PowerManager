@@ -2,9 +2,9 @@
 
 ## 0. 文档状态
 
-- 版本：1.1
+- 版本：1.3
 - 日期：2026-08-15
-- 状态：待 B0-2 通过后实现
+- 状态：已实现并通过自动化与 Pixel_7 模拟器工程验收
 - 数据库版本：保持 schema v2
 - 下一阶段：B1-0 自动影子学习器
 
@@ -25,6 +25,9 @@
 6. 写入成功后才揭示“低于 / 相符 / 高于”；
 7. 同一生活日再次填写时更新同一业务记录并整组替换快照。
 
+调用方必须显式传入 `referenceType = currentMoment`。事务内若 targetLifeDay 已不再等于当前生活日，
+即使它刚好变成“昨日”，也必须以稳定的 staleSheet 错误拒绝，不能静默改写语义。
+
 ### 2.2 previousLifeDayEnd
 
 1. 只在昨日已结算且没有 dailyAbsolute 时提供；
@@ -33,6 +36,10 @@
 4. capturedAt 保存当前提交时间，lifeDay 保存昨日；
 5. 保存后只读，不允许普通编辑；
 6. 没有 summary 或完整模型上下文时不造伪配对。
+
+调用方必须显式传入 `referenceType = previousLifeDayEnd`。targetLifeDay 必须精确等于事务内当前
+生活日的 previous；同一生活日已有任意 dailyAbsolute 时只读拒绝。coverage 问题使用“截至昨天
+结束时”的文案，`observedAt` 只表示本次提交时间，不冒充参考时刻。
 
 ### 2.3 活动绑定主动反馈
 
@@ -44,6 +51,9 @@
 6. 恢复活动不恢复旧反馈资格；
 7. 保存反馈不触发参数变化。
 
+反馈 Sheet 必须携带打开时的 activityUpdatedAt。保存事务重新读取活动；若 updatedAt 已变化则以
+staleActivity 拒绝，要求用户重新查看。重复评价更新同一 active feedback ID 并替换完整快照。
+
 ## 3. Domain 合同
 
 ### 3.1 ObservationComparisonService
@@ -53,6 +63,9 @@
 - initialEstimate 小于等于 0 返回完整性失败；
 - 只返回 alignmentDelta 和方向，不返回建议点数；
 - 所有整数运算避免浮点边界漂移。
+
+结果方向精确为 `lower / aligned / higher`。非法 initialEstimate 返回
+`invalidInitialEstimate`，保存用例不得捕获后降级为近似档位。
 
 ### 3.2 LearningEligibilityService
 
@@ -68,14 +81,27 @@
 missingMorningCheckIn、invalidInitialEstimate、unsettledLifeDay、
 modelRegimeMismatch 和 integrityFailure。Data Health、B1 影子和后续生产学习必须注入同一实现。
 
+reasonCodes 去重并严格按上述顺序输出，不能依赖 Set / Map 遍历顺序。合同字段缺失记
+missingEstimateSnapshot；ordinal 与 estimate 重算不一致、dailyAbsolute 形状损坏或不支持的
+comparison band 记 integrityFailure；已保存 key 与快照重算不一致，或与调用方要求的当前 regime
+不同，记 modelRegimeMismatch。只有 reasonCodes 为空时 eligible 才为 true。
+
+`activeActivityCountAtObservation = 0` 本身不排除：coverage confirmed 明确表示截至参考时刻没有
+遗漏的主要活动；uncertain 仍以 coverageUncertain 排除。当前日没有 summary 时必须返回
+unsettledLifeDay，结算后使用同一 observation 重新评估即可变为 eligible。
+
 ### 3.3 模型哨兵
 
 B0 与 B1 在个人模型表出现前统一使用：
 
 - personalizationVersionAtObservation = fixed-mvp-a；
 - effectiveModelFingerprintAtObservation = fixed-mvp-a；
-- 稳定初始 modelRegimeEpoch；
+- modelRegimeEpochAtObservation = fixed-mvp-a-initial；
 - modelRegimeKey 同时包含 referenceType、base、rule、comparison band、fingerprint 和 epoch。
+
+modelRegimeKey 使用规则配置的 `model-regime-sha256-v1`：对算法文档规定的六字段 canonical JSON
+做 SHA-256，格式为 `model-regime-sha256-v1:<lowercase hex>`。不得包含 observation ID、lifeDay、
+capturedAt 或 personalization version ID。
 
 不得因为记录 ID 或 capturedAt 不同切换 regime。
 
@@ -92,8 +118,20 @@ SaveDailyObservationV2 的顺序固定为：
 7. insert 或 update；
 8. 提交后返回揭示 DTO。
 
-活动反馈保存、活动编辑、逻辑删除与恢复也进入同一业务写入串行边界。任何失败不得留下半条
-observation、孤儿 feedback 或 active feedback 指向已变化活动。
+Wellbeing、Activity 和 ActivityFeedback 用例必须注入同一个进程内 BusinessWriteCoordinator，
+不能各自维护互不相干的 tail。数据库事务仍是最终原子边界；共享队列负责按调用顺序进入 prepare
+与事务，并在单次失败后继续处理后续操作。
+
+活动反馈保存、活动编辑、逻辑删除与恢复也进入该边界。以下任一快照字段变化都必须在同一事务
+把 active feedback 置为 invalidated：lifeDay、subcategory、duration、theoreticalDelta、
+appliedDelta、ruleVersion 或 activityUpdatedAt。逻辑删除使用 activityDeleted；编辑、完成时间变化、
+晨间重放或其他活动导致的 appliedDelta 重算使用 activityEdited。字段完全相同的编辑是 no-op，
+保留 updatedAt 和 active feedback；恢复活动不得恢复旧反馈。任何失败不得留下半条 observation、
+孤儿 feedback 或 active feedback 指向已变化活动。
+
+所有持久化记录 ID 不得把墙钟时间当作唯一性来源；冻结时钟、时钟回拨、同刻并发和进程重启均
+不能产生重复 ID。工程时钟覆盖只允许非 release 构建显式启用，非法时间立即失败，release 必须
+忽略覆盖值。
 
 ## 5. UI 与可访问性
 
@@ -117,6 +155,10 @@ observation、孤儿 feedback 或 active feedback 指向已变化活动。
 - 明确文案“达到最低数量只表示可以进入影子审计”。
 
 页面不得展示活动标题、备注、记录 ID 或证据哈希。
+
+Data Health 的排除计数必须直接聚合 LearningEligibilityService 的 reasonCodes；不得复制另一套
+资格判断。新合同数只统计 dailyAbsolute，currentMoment 与 previousLifeDayEnd 分开；日期跨度展示
+最早 / 最晚 eligible lifeDay，没有证据时显示 0 和“暂无”。
 
 ## 7. 自动化测试
 

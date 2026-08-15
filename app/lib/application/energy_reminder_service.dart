@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:power_manager/core/ids/record_id_generator.dart';
 import 'package:power_manager/core/time/clock.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
@@ -7,10 +8,15 @@ import 'package:power_manager/domain/life_day/life_day.dart';
 import 'package:power_manager/domain/repositories/repositories.dart';
 
 final class EnergyReminderService {
-  EnergyReminderService({required this.clock, required this.receipts});
+  EnergyReminderService({
+    required this.clock,
+    required this.receipts,
+    RecordIdGenerator? recordIdGenerator,
+  }) : recordIdGenerator = recordIdGenerator ?? RecordIdGenerator();
 
   final Clock clock;
   final PromptReceiptsRepository receipts;
+  final RecordIdGenerator recordIdGenerator;
   Future<void> _tail = Future.value();
 
   Future<String?> createOnce({
@@ -48,7 +54,7 @@ final class EnergyReminderService {
     if (exists) return null;
     await receipts.insert(
       PromptReceipt(
-        id: 'energy-band-${clock.now().toUtc().microsecondsSinceEpoch}',
+        id: recordIdGenerator.next(prefix: 'energy-band', now: clock.now()),
         type: PromptReceiptType.energyBand,
         scopeKey: scopeKey,
         action: PromptReceiptAction.shown,

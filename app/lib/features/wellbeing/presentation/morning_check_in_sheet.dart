@@ -267,8 +267,12 @@ class _MorningCheckInSheetState extends ConsumerState<MorningCheckInSheet> {
     ref.invalidate(currentPreparationProvider);
     ref.invalidate(morningCompletionStatusProvider);
     ref.invalidate(currentMorningCheckInProvider);
+    ref.invalidate(currentActivityFeedbackProvider);
+    ref.invalidate(dataHealthReportProvider);
+    ref.invalidate(mvpBUpgradeReadinessProvider);
   }
 
-  String _id(String prefix) =>
-      '$prefix-${DateTime.now().toUtc().microsecondsSinceEpoch}';
+  String _id(String prefix) => ref
+      .read(recordIdGeneratorProvider)
+      .next(prefix: prefix, now: ref.read(clockProvider).now());
 }

@@ -33,7 +33,6 @@ class ActivityRecordSheet extends ConsumerStatefulWidget {
 }
 
 class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
-  static var _idSequence = 0;
   final _completionTimeResolver = CompletionTimeResolver();
 
   late final String _operationId;
@@ -58,7 +57,7 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
     final now = ref.read(clockProvider).now();
     _operationId =
         initial?.id ??
-        'activity-${now.toUtc().microsecondsSinceEpoch}-${_idSequence++}';
+        ref.read(recordIdGeneratorProvider).next(prefix: 'activity', now: now);
     _category = initial?.category;
     _subcategory = initial?.subcategory;
     _duration = initial?.duration;
@@ -418,6 +417,9 @@ class _ActivityRecordSheetState extends ConsumerState<ActivityRecordSheet> {
               ),
             );
       ref.invalidate(currentPreparationProvider);
+      ref.invalidate(currentActivityFeedbackProvider);
+      ref.invalidate(dataHealthReportProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
       if (mounted) {
         HapticFeedback.mediumImpact();
         Navigator.pop(context, result);

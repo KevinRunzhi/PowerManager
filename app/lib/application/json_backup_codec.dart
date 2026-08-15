@@ -6,6 +6,8 @@ import 'package:power_manager/domain/energy/current_day_projector.dart';
 import 'package:power_manager/domain/energy/energy_calculator.dart';
 import 'package:power_manager/domain/energy/energy_enums.dart';
 import 'package:power_manager/domain/energy/energy_rule_config.dart';
+import 'package:power_manager/domain/energy/model_regime_key.dart';
+import 'package:power_manager/domain/energy/observation_comparison_service.dart';
 import 'package:power_manager/domain/entities/persisted_entities.dart';
 import 'package:power_manager/domain/life_day/life_day.dart';
 
@@ -741,6 +743,29 @@ void _validateObservation(
   _nonEmpty(observation.effectiveModelFingerprintAtObservation!, '观测模型指纹');
   _nonEmpty(observation.modelRegimeEpochAtObservation!, '观测模型窗口');
   _nonEmpty(observation.modelRegimeKey!, '观测模型分组键');
+  if (observation.comparisonBandVersion != mvpBComparisonBandV1) {
+    throw const BackupFormatException('观测比较档位版本不受支持。');
+  }
+  final comparison = const ObservationComparisonService().compare(
+    actualState: observation.absoluteState!,
+    estimate: observation.estimateAtObservation!,
+    initialEstimate: initial,
+  );
+  if (!comparison.isValid || comparison.estimatedOrdinal != ordinal) {
+    throw const BackupFormatException('观测估计档位快照不一致。');
+  }
+  final expectedModelRegimeKey = const ModelRegimeKeyBuilder().build(
+    referenceType: observation.referenceType!,
+    baseEnergy: base,
+    ruleVersion: ruleVersion,
+    comparisonBandVersion: observation.comparisonBandVersion!,
+    effectiveModelFingerprint:
+        observation.effectiveModelFingerprintAtObservation!,
+    modelRegimeEpoch: observation.modelRegimeEpochAtObservation!,
+  );
+  if (observation.modelRegimeKey != expectedModelRegimeKey) {
+    throw const BackupFormatException('观测模型分组键与快照不一致。');
+  }
 }
 
 void _validateFeedback(

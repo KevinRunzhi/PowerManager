@@ -5,6 +5,7 @@ import 'package:power_manager/app/theme/app_spacing.dart';
 import 'package:power_manager/application/data_health_service.dart';
 import 'package:power_manager/application/mvp_b_upgrade_readiness_service.dart';
 import 'package:power_manager/application/providers.dart';
+import 'package:power_manager/domain/energy/learning_eligibility_service.dart';
 import 'package:share_plus/share_plus.dart';
 
 class DataHealthPage extends ConsumerWidget {
@@ -73,6 +74,50 @@ class _HealthContent extends StatelessWidget {
               '检查时间：${_dateTime(report.checkedAt)}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.x4),
+        _HealthCard(
+          key: const Key('mvp-b-learning-evidence-card'),
+          icon: Icons.science_outlined,
+          title: 'MVP-B 学习证据',
+          children: [
+            _MetricLine(
+              label: '现在的整体状态',
+              value: '${report.currentMomentContractObservations}',
+            ),
+            _MetricLine(
+              label: '昨天结束时',
+              value: '${report.previousLifeDayEndContractObservations}',
+            ),
+            _MetricLine(
+              label: '当前模型口径可用',
+              value: '${report.eligibleCurrentRegimeObservations}',
+            ),
+            _MetricLine(
+              label: '可用日期跨度',
+              value: report.earliestEligibleLifeDay == null
+                  ? '暂无'
+                  : '${report.earliestEligibleLifeDay} 至 '
+                        '${report.latestEligibleLifeDay}',
+            ),
+            _MetricLine(
+              label: '尚未结算',
+              value: '${report.unsettledContractObservations}',
+            ),
+            if (report.learningExclusionCounts.isNotEmpty) ...[
+              const Divider(height: AppSpacing.x6),
+              Text('排除原因', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: AppSpacing.x2),
+              for (final reason in LearningIneligibilityReason.values)
+                if (report.exclusionCount(reason) > 0)
+                  _MetricLine(
+                    label: _learningReasonLabel(reason),
+                    value: '${report.exclusionCount(reason)}',
+                  ),
+            ],
+            const Divider(height: AppSpacing.x6),
+            const Text('达到最低数量只表示可以进入影子审计；当前不会训练、激活或调整任何参数。'),
           ],
         ),
         const SizedBox(height: AppSpacing.x4),
@@ -348,3 +393,15 @@ String _readinessStatusText(MvpBUpgradeReadinessStatus status) {
     MvpBUpgradeReadinessStatus.checkFailed => '暂时无法完成升级准备检查。',
   };
 }
+
+String _learningReasonLabel(LearningIneligibilityReason reason) =>
+    switch (reason) {
+      LearningIneligibilityReason.legacyContract => '旧合同',
+      LearningIneligibilityReason.missingEstimateSnapshot => '缺少估计快照',
+      LearningIneligibilityReason.coverageUncertain => '活动覆盖不确定',
+      LearningIneligibilityReason.missingMorningCheckIn => '缺少晨间确认',
+      LearningIneligibilityReason.invalidInitialEstimate => '初始估计无效',
+      LearningIneligibilityReason.unsettledLifeDay => '生活日尚未结算',
+      LearningIneligibilityReason.modelRegimeMismatch => '模型口径不一致',
+      LearningIneligibilityReason.integrityFailure => '记录完整性异常',
+    };

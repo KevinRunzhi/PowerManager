@@ -130,6 +130,24 @@ integrityFailure
 数据库换了版本 ID 就切断证据。`effectiveModelFingerprint` 必须由实际参与计算的参数确定；
 schema v4 创建的初始模型与 `fixed-mvp-a` 参数完全相同时沿用同一指纹。
 
+`model-regime-sha256-v1` 固定对下列 UTF-8 canonical JSON 做 SHA-256，并保存为
+`model-regime-sha256-v1:<lowercase hex>`：
+
+```text
+{
+  "referenceType": <code>,
+  "baseEnergy": <integer>,
+  "ruleVersion": <string>,
+  "comparisonBandVersion": <string>,
+  "effectiveModelFingerprint": <string>,
+  "modelRegimeEpoch": <string>
+}
+```
+
+字段顺序、名称和字符串值必须精确一致；不得加入 observation ID、lifeDay、capturedAt 或
+personalization version ID。原始组成字段仍分别保存在 observation 中供审计，哈希键只用于稳定
+分组和比较。
+
 最小样本数和日期跨度必须在同一个 `modelRegimeKey` 内满足。手动或自动变化真正改变有效
 参数后，才从新模型分组重新积累基准线证据。`modelRegimeEpoch` 在每次真实模型激活时更新，
 包括撤回到数值相同的旧参数；因此撤回后不会立即复用旧窗口再次提出同一变化。纯 schema
