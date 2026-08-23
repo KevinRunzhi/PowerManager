@@ -11,8 +11,8 @@
 
 本组文档定义 MVP-B 的产品方向、数据合同、自动学习边界、工程门禁和开发顺序。项目作者
 已明确确认自动学习目标并授权按独立阶段 Spec 开发；每一阶段仍必须通过测试与 Pixel_7 模拟器
-门后才能进入下一阶段。最终 APK 和物理手机安装统一延期到全部 MVP-B 工程阶段完成后。当前
-不启用生产自动学习。
+门后才能进入下一阶段。最终 APK 和物理手机安装此前统一延期到全部 MVP-B 工程阶段完成后；
+2026-08-23 已进入总验收并完成首次 V2359A 覆盖升级。当前仍不启用生产自动学习。
 
 ## 1. 权威来源
 
@@ -42,14 +42,14 @@
 | B0-2 | `PowerManager_MVP-B_阶段B0-2_SchemaV2与备份兼容_Spec_v1.md` | 自动化与模拟器已通过 |
 | B0-3 | `PowerManager_MVP-B_阶段B0-3_正确观测与活动反馈合同_Spec_v1.md` | 自动化与模拟器已通过 |
 | B1-0 | `PowerManager_MVP-B_阶段B1-0_自动影子学习器_Spec_v1.md` | 自动化与模拟器已通过 |
-| B1-1 | `PowerManager_MVP-B_阶段B1-1_真实影子观察与生产决策_Spec_v1.md` | 工程轨已通过；产品轨 inconclusive、最终安装后 |
+| B1-1 | `PowerManager_MVP-B_阶段B1-1_真实影子观察与生产决策_Spec_v1.md` | 工程轨已通过；产品轨 inconclusive、真机自然观察进行中 |
 | B2-0 | `PowerManager_MVP-B_阶段B2-0_SchemaV4与模型生命周期_Spec_v1.md` | 自动化、模拟器和文档验收已通过 |
 | B2-1 | `PowerManager_MVP-B_阶段B2-1_基准线自动学习与安全激活_Spec_v1.md` | 工程、隔离预生产自动化与模拟器正式 gate 回归已通过 |
-| B2-2 | `PowerManager_MVP-B_阶段B2-2_基准线调整后监测_Spec_v1.md` | 工程、隔离预生产自动化与模拟器 gate 已通过；产品轨最终安装后 |
-| B3-0 | `PowerManager_MVP-B_阶段B3-0_活动影响生产参数门_Spec_v1.md` | 工程合同与纯领域测试已通过；产品轨最终安装后 |
+| B2-2 | `PowerManager_MVP-B_阶段B2-2_基准线调整后监测_Spec_v1.md` | 工程、隔离预生产自动化与模拟器 gate 已通过；产品轨真机观察中 |
+| B3-0 | `PowerManager_MVP-B_阶段B3-0_活动影响生产参数门_Spec_v1.md` | 工程合同与纯领域测试已通过；产品轨真机观察中 |
 | B3-1 | `PowerManager_MVP-B_阶段B3-1_SchemaV5与活动影响学习器_Spec_v1.md` | 工程、自动化与模拟器 gate 已通过；产品轨 inconclusive |
-| B3-2 | `PowerManager_MVP-B_阶段B3-2_活动影响安全激活与监测_Spec_v1.md` | 工程实现已完成，待总体验收；真机复验延期 |
-| 总验收 | `PowerManager_MVP-B_总体验收_Spec_v1.md`、`PowerManager_MVP-B_总体验收_实现与验收记录.md` | 工程自动化与模拟器已记录；实体手机和交付构建按用户要求延期 |
+| B3-2 | `PowerManager_MVP-B_阶段B3-2_活动影响安全激活与监测_Spec_v1.md` | 工程实现与首次真机迁移已通过；剩余总验收继续 |
+| 总验收 | `PowerManager_MVP-B_总体验收_Spec_v1.md`、`PowerManager_MVP-B_总体验收_实现与验收记录.md` | 最终 Debug 构建和 V2359A 首次 v1→v5 覆盖升级已通过；其余真机矩阵与自然观察继续 |
 
 两个参数族的产品状态统一记录在 `PowerManager_MVP-B_产品验证状态报告_v1.md`；当前均为
 `inconclusive`，不把工程 fixture 或模拟器行为写成真实效果。

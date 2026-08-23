@@ -2,17 +2,20 @@
 
 ## 1. 记录状态
 
-- 日期：2026-08-15
-- 对象：MVP-B B0-0 至 B3-2 工程能力与 Pixel_7 模拟器门
-- 当前结论：工程实现与自动化/模拟器证据已完成，最终总验收仍等待用户授权后的实体手机矩阵与交付构建
+- 初始日期：2026-08-15
+- 最近更新：2026-08-23
+- 对象：MVP-B B0-0 至 B3-2 工程能力、Pixel_7 模拟器门与 V2359A 首次真机覆盖升级
+- 当前结论：工程实现、自动化、模拟器、最终 Debug 构建和真实 schema v1 → v5 首次覆盖升级已通过；
+  总验收仍需完成多生活日自然使用及其余真机矩阵
 - baseline 产品状态：inconclusive
 - activityImpact 产品状态：inconclusive
 - 独立产品状态报告：`PowerManager_MVP-B_产品验证状态报告_v1.md`
 - P0 直接证据审计：`PowerManager_MVP-B_P0直接证据审计_v1.md`
 - 正式生产学习、baseline 自动应用、activityImpact 自动应用：均保持关闭
 
-本记录不把隔离 fixture、预生产水印或模拟器行为写成真实产品效果。按照用户当前要求，本次不生成
-交付 APK、不覆盖安装实体手机；`flutter run` 产生的 Debug APK 只作为模拟器启动载体，不是交付物。
+本记录不把隔离 fixture、预生产水印、模拟器行为或一次成功迁移写成真实产品效果。用户于
+2026-08-23 授权进入最终 APK 和实体手机阶段；覆盖安装前已保存旧 APK、schema v1 数据库和匿名聚合，
+没有清除应用数据。
 
 ## 2. 阶段与代码基线
 
@@ -47,6 +50,7 @@ B3-0、B3-1、B3-2。当前代码基线为 B3-2，最近安全修订提交为 `0
 | `dart format --output=none --set-exit-if-changed lib test` | 通过；同时修正 5 个既有未格式化文件 |
 | `flutter analyze` | 通过，No issues found |
 | `flutter test --coverage` | 通过，525 tests passed；覆盖率文件已生成（含活动协调器闸门、零证据与幂等回归） |
+| `flutter build apk --debug` | 通过；`app/build/app/outputs/flutter-apk/app-debug.apk`，版本 `0.1.4+10012`，SHA-256 `027B760DED14C317756590D6435167693F77AE353AE1698B9A62B1CB15DB245C` |
 | `git diff --check` | 通过 |
 
 2026-08-16 CST 追加复核：`flutter analyze` 通过；`flutter test --coverage` 仍为 525 项全通过；
@@ -78,20 +82,40 @@ foreign key/integrity/index/trigger、current/yesterday 隔离、结算与当前
 - 本次尝试通过 AVD 系统旋转切换横屏未生效，因此不把它记录为横屏人工设备通过；横屏结论仅来自已有
   Widget 回归，待后续 AVD 能切换时再补人工矩阵。
 
-## 5. 尚未执行的总验收项
+## 5. V2359A 首次真机覆盖升级证据
 
-以下项目按用户“整个 MVP 完成后再装手机”的要求保留，不在本轮假装通过：
+- 设备：V2359A，Android 16 / API 36，序列号仅在本地执行记录中使用。
+- 覆盖前版本：`0.1.0+2002`；覆盖后版本：`0.1.4+10012`；包名均为
+  `com.kevin.powermanager`，首次安装时间保持不变。
+- 覆盖前旧 APK 与 schema v1 数据库保存到电脑外部目录
+  `E:\PowerManagerBackups\20260823-104009`；数据库 SHA-256 为
+  `CBB3DBDFAAF98E1AD9D1A7AFAAEBEB719AD576CC573E20829F63BE3F1478ABA1`，`integrity_check=ok`。
+- 覆盖前匿名聚合：规则 1、晨间确认 9、活动 31、观测 2、日总结 10、提醒回执 5、设置 1。
+- 新旧 APK 的签名证书 SHA-256 均为
+  `506d87805d0ba8f1c1b8d173b0a92005638c85fd047984f9b180c21afd4fe8b1`。
+- 流式安装因 Vivo 设备授权返回 `INSTALL_FAILED_ABORTED`，没有修改应用；用户解锁并授权后，标准
+  `adb install --no-streaming -r -d` 覆盖安装成功，没有卸载或清数据。
+- 首次冷启动后数据库 `user_version=5`，`integrity_check=ok`，`foreign_key_check` 无输出；原七表聚合
+  与覆盖前完全一致。
+- v5 新表初始化结果：1 个 `active` personalization version，learning run、notice、consent、activity
+  factor/sample 均为 0，符合 legacy 数据不得自动获得学习资格的合同。
+- 冷启动、迁移后再次拉起均成功；logcat 未发现应用 FATAL、Flutter 未处理异常、ANR 或数据库错误。
+- 迁移后数据库快照已保存在同一外部备份目录，SHA-256 为
+  `33D83B51445621A20D76BC09B45CA0AFAE5ACCC3FDD8A8EC4645B571289CBBAC`。
 
-1. `flutter build apk --debug` 的最终交付构建与 APK 路径签收；
-2. 实体手机安装前版本/匿名聚合记录与外部备份；
-3. 实体手机 schema v1 → v5 覆盖迁移、历史/模型/规则对比、自然记录和跨生活日观察；
-4. 实体手机 v5 备份恢复、通知权限关闭、后台/重启、真实 sampled feedback 和两个参数族产品状态。
+## 6. 尚未执行的总验收项
+
+以下项目仍不在本轮假装通过：
+
+1. 应用内 v5 JSON 备份、预览、恢复和恢复后再次启动；
+2. 通知权限关闭、后台/恢复、系统重启、跨 04:00 生活日、TalkBack 和横屏人工矩阵；
+3. 连续自然记录、真实 sampled feedback、抽样负担和两个参数族的产品状态；
+4. 最终已知限制复核和总验收签收。
 
 因此当前工程状态不能写成“自动学习已经证明有效”。真实产品结论仍为 inconclusive，生产门继续关闭；
-在用户授权最终总验收前，不生成交付 APK、不安装或更新实体手机。
+一次成功覆盖迁移只证明升级安全路径，不证明学习算法改善了真实用户结果。
 
-## 6. 后续入口
+## 7. 后续入口
 
-当用户确认 MVP-B 工程范围已冻结并允许最终总验收时，按
-`PowerManager_MVP-B_总体验收_Spec_v1.md` 第 6～10 节先执行正式构建，再在手机外部备份和覆盖安装后
-完成真机矩阵。若真实证据不足，仍保持 inconclusive，不为制造变化而打开生产门。
+继续按 `PowerManager_MVP-B_总体验收_Spec_v1.md` 第 8～10 节完成剩余真机矩阵和自然观察。若真实
+证据不足，仍保持 inconclusive，不为制造变化而打开生产门。
