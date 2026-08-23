@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>PowerManager 动效小样</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-base:#0D1017; --bg-raised:#151A24; --bg-overlay:#1C2230;
+  --tx-1:#E8ECF4; --tx-2:#8A93A6; --line:rgba(255,255,255,.08);
+  --sp-gentle:cubic-bezier(.30,1.15,.42,1);
+  --sp-snappy:cubic-bezier(.34,1.45,.5,1);
+  --sp-bouncy:cubic-bezier(.34,1.7,.55,1);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{
+  background:var(--bg-base);color:var(--tx-1);
+  font-family:Manrope,'PingFang SC','Noto Sans SC','Microsoft YaHei',sans-serif;
+  font-feature-settings:'tnum';user-select:none;-webkit-user-select:none;touch-action:none;
+}
+#app{position:fixed;inset:0;overflow:hidden}
+
+/* ---------- 顶部晨间暗示 ---------- */
+#pullHint{position:absolute;top:calc(env(safe-area-inset-top,0px) + 14px);left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--tx-2);font-size:12px;
+  opacity:.85;transition:opacity .5s;z-index:5;pointer-events:auto}
+#pullHint .bar{width:34px;height:3px;border-radius:2px;background:rgba(255,255,255,.22);animation:hintDrop 2.6s ease-in-out infinite}
+@keyframes hintDrop{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(5px);opacity:1}}
+#pullHint.hidden{opacity:0;pointer-events:none}
+
+/* ---------- 能量球 ---------- */
+#ballWrap{position:absolute;inset:0;z-index:1}
+#ballCanvas{position:absolute;inset:0;width:100%;height:100%}
+#numWrap{position:absolute;left:0;right:0;text-align:center;z-index:2;pointer-events:none}
+#numLabel{font-size:13px;letter-spacing:.18em;color:var(--tx-2);margin-bottom:2px}
+#numVal{font-size:64px;font-weight:600;line-height:1.05;letter-spacing:-.01em}
+#numVal.dim{font-size:30px;color:var(--tx-2);animation:dimBreath 3.4s ease-in-out infinite}
+@keyframes dimBreath{0%,100%{opacity:.35}50%{opacity:.8}}
+#odTag{display:inline-block;margin-top:6px;font-size:12px;color:#9B8AB8;border:1px solid rgba(155,138,184,.4);
+  border-radius:999px;padding:2px 10px;opacity:0;transition:opacity .6s}
+#odTag.on{opacity:1}
+
+/* ---------- 提醒条 ---------- */
+#reminderSlot{position:absolute;left:20px;right:20px;z-index:4}
+.reminder{overflow:hidden;border-radius:14px;margin-top:10px;
+  display:flex;align-items:center;gap:10px;padding:0 14px;height:0;opacity:0;
+  transition:height .55s var(--sp-gentle),opacity .4s .05s;font-size:13.5px;color:var(--tx-1)}
+.reminder.show{height:46px;opacity:1}
+.reminder .x{margin-left:auto;color:var(--tx-2);font-size:16px;padding:8px;cursor:pointer}
+
+/* ---------- 记录入口 + 与底部工具带 ---------- */
+#plusBtn{position:absolute;left:50%;transform:translateX(-50%);z-index:5;
+  width:46px;height:46px;border-radius:50%;background:var(--bg-overlay);border:1px solid var(--line);
+  color:var(--tx-2);font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:transform .35s var(--sp-snappy),background .3s}
+#plusBtn:active{transform:translateX(-50%) scale(.9)}
+#toolbar{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
+  display:flex;justify-content:center;gap:26px;z-index:5;font-size:12.5px;color:var(--tx-2)}
+#toolbar span{padding:8px 4px;cursor:pointer;transition:color .3s}
+#toolbar span:active{color:var(--tx-1)}
+#swipeHint{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 44px);
+  color:rgba(138,147,166,.55);font-size:11px;z-index:4;pointer-events:none}
+
+/* ---------- 径向菜单 ---------- */
+#radial{position:absolute;inset:0;z-index:8;pointer-events:none}
+.rnode{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;
+  border-radius:50%;background:var(--bg-overlay);border:1px solid var(--line);color:var(--tx-1);
+  font-size:13px;line-height:1.15;padding:4px;transform:translate(-50%,-50%) scale(.6);opacity:0;
+  transition:transform .4s var(--sp-snappy),opacity .3s,border-color .2s,background .2s,filter .25s;
+  will-change:transform;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+.rnode.in{transform:translate(-50%,-50%) scale(1);opacity:1}
+.rnode.hot{transform:translate(-50%,-50%) scale(1.12);border-color:var(--hotc,#7DD3FC);
+  background:#232B3C;box-shadow:0 0 22px -4px var(--hotc,#7DD3FC)}
+.rnode.faded{filter:brightness(.55);opacity:.75}
+.rnode.out{transform:translate(-50%,-50%) scale(.4);opacity:0}
+.rnode .dwell{position:absolute;inset:-3px;border-radius:50%;pointer-events:none}
+#crumb{position:absolute;border-radius:50%;border:1.5px solid rgba(255,255,255,.14);
+  transform:translate(-50%,-50%);opacity:0;transition:all .45s var(--sp-gentle);pointer-events:none}
+#stageTip{position:absolute;left:0;right:0;text-align:center;color:var(--tx-2);font-size:12.5px;
+  opacity:0;transition:opacity .3s;z-index:8;pointer-events:none}
+
+/* ---------- 光点 ---------- */
+.flyDot{position:absolute;width:14px;height:14px;border-radius:50%;z-index:9;pointer-events:none;
+  transform:translate(-50%,-50%);transition:transform .55s var(--sp-bouncy),left .5s cubic-bezier(.5,0,.3,1),top .5s cubic-bezier(.5,0,.3,1),opacity .2s .45s}
+
+/* ---------- 撤销条 ---------- */
+#undoBar{position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 78px);
+  z-index:10;border-radius:16px;background:var(--bg-raised);border:1px solid var(--line);
+  overflow:hidden;display:flex;align-items:center;padding:0 6px 0 16px;height:52px;
+  transform:translateY(90px);opacity:0;transition:transform .5s var(--sp-snappy),opacity .35s}
+#undoBar.show{transform:translateY(0);opacity:1}
+#undoFade{position:absolute;inset:0;background:rgba(255,255,255,.055);transform-origin:right center;pointer-events:none}
+#undoTxt{font-size:13.5px;color:var(--tx-1);position:relative}
+#undoBtn{margin-left:auto;position:relative;border:0;background:transparent;color:#7DD3FC;
+  font-size:14px;font-weight:600;padding:14px 16px;cursor:pointer;font-family:inherit}
+
+/* ---------- 通用 sheet ---------- */
+.sheet{position:absolute;left:0;right:0;z-index:20;background:var(--bg-raised);
+  border:1px solid var(--line);transition:transform .6s var(--sp-gentle)}
+.sheet.bottom{bottom:0;border-radius:28px 28px 0 0;transform:translateY(105%);
+  padding:10px 20px calc(env(safe-area-inset-bottom,0px) + 20px)}
+.sheet.top{top:0;border-radius:0 0 28px 28px;transform:translateY(-105%);
+  padding:calc(env(safe-area-inset-top,0px) + 18px) 20px 22px}
+.sheet.open{transform:translateY(0)}
+.grip{width:34px;height:4px;border-radius:2px;background:rgba(255,255,255,.18);margin:2px auto 14px}
+.sheetTitle{font-size:15px;font-weight:600;margin-bottom:14px;color:var(--tx-1)}
+.sheetSub{font-size:12px;color:var(--tx-2);font-weight:400;margin-left:8px}
+
+/* ---------- 今日概览 ---------- */
+.ovRow{display:flex;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line);font-size:14.5px}
+.ovRow:last-child{border-bottom:0}
+.ovRow .cat{font-weight:600}
+.ovRow .min{color:var(--tx-2);font-size:12.5px;margin-left:10px}
+.ovRow .net{margin-left:auto;font-weight:600;font-size:15px}
+#ovEmpty{color:var(--tx-2);font-size:13.5px;padding:22px 4px;text-align:center}
+
+/* ---------- 晨间问卷 ---------- */
+.mq{overflow:hidden;transition:max-height .55s var(--sp-gentle),opacity .4s;max-height:150px}
+.mq.done{max-height:34px}
+.mq .q{font-size:13px;color:var(--tx-2);margin:10px 0 8px;display:flex;align-items:center;gap:8px}
+.mq .q .ck{display:none;color:#5EEAD4;font-size:13px}
+.mq.done .q .ck{display:inline}
+.mq .opts{display:flex;gap:8px;flex-wrap:wrap;transition:opacity .3s}
+.mq.done .opts{opacity:0;pointer-events:none;height:0}
+.chip{border:1px solid var(--line);background:var(--bg-overlay);color:var(--tx-1);
+  border-radius:12px;padding:10px 16px;font-size:13.5px;cursor:pointer;font-family:inherit;
+  transition:transform .25s var(--sp-snappy),border-color .2s,background .2s}
+.chip:active{transform:scale(.94)}
+.chip.sel{border-color:#7DD3FC;background:#20293B}
+#mSkip{margin-top:14px;text-align:center;color:var(--tx-2);font-size:13px;cursor:pointer;padding:6px}
+
+/* ---------- 点击式记录 ---------- */
+#clickGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:6px}
+#clickGrid .chip{text-align:center;padding:13px 6px}
+#clickBack{color:var(--tx-2);font-size:13px;cursor:pointer;padding:6px 0;margin-bottom:4px;display:inline-block}
+
+/* ---------- 揭示仪式 ---------- */
+#reveal{position:absolute;inset:0;z-index:30;background:var(--bg-base);display:none;flex-direction:column;
+  padding:calc(env(safe-area-inset-top,0px) + 26px) 24px 30px}
+#reveal.on{display:flex}
+#rvTitle{font-size:15px;color:var(--tx-2);text-align:center;margin-bottom:8px;transition:opacity .4s}
+#rvOpts{display:flex;flex-direction:column;gap:12px;margin:auto 0}
+.rvOpt{border:1px solid var(--line);background:var(--bg-raised);border-radius:18px;padding:17px;
+  font-size:16px;font-weight:600;color:var(--tx-1);text-align:center;cursor:pointer;font-family:inherit;
+  transition:transform .6s var(--sp-gentle),opacity .45s,border-color .3s;position:relative;overflow:hidden}
+.rvOpt i{position:absolute;inset:0;opacity:.10;font-style:normal}
+.rvOpt span{position:relative}
+.rvOpt.sunk{opacity:0;transform:translateY(26px)}
+.rvOpt.chosen{border-color:rgba(255,255,255,.25)}
+#rvEst{opacity:0;transform:translateY(24px) rotateX(35deg);transform-origin:top center;
+  transition:opacity .55s,transform .6s var(--sp-gentle);text-align:center;margin-top:26px}
+#rvEst.on{opacity:1;transform:none}
+#rvLine{width:1px;background:linear-gradient(rgba(255,255,255,.35),rgba(255,255,255,.05));
+  height:0;margin:0 auto;transition:height .6s var(--sp-gentle)}
+#rvEst .lb{font-size:12px;letter-spacing:.15em;color:var(--tx-2);margin:14px 0 4px}
+#rvEst .v{font-size:44px;font-weight:600}
+#rvDiff{font-size:14px;color:var(--tx-2);margin-top:14px;line-height:1.6}
+#rvClose{margin-top:auto;text-align:center;color:var(--tx-2);font-size:14px;padding:12px;cursor:pointer;
+  opacity:0;transition:opacity .5s .4s}
+#rvClose.on{opacity:1}
+
+/* ---------- 帮助 ---------- */
+#helpBtn{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);right:14px;z-index:6;
+  width:30px;height:30px;border-radius:50%;border:1px solid var(--line);color:var(--tx-2);
+  display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer}
+#help{position:absolute;inset:0;z-index:40;background:rgba(13,16,23,.92);backdrop-filter:blur(6px);
+  display:none;flex-direction:column;justify-content:center;padding:0 34px;line-height:2.05;font-size:14px;color:var(--tx-1)}
+#help.on{display:flex}
+#help b{color:#7DD3FC;font-weight:600}
+#help .t{font-size:16px;font-weight:700;margin-bottom:10px}
+#help .c{margin-top:18px;color:var(--tx-2);font-size:13px;text-align:center}
+@media (prefers-reduced-motion:reduce){
+  #pullHint .bar,#numVal.dim{animation:none}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="ballCanvas"></canvas>
+
+  <div id="pullHint"><div class="bar"></div><div>下拉完成早间确认</div></div>
+  <div id="helpBtn">?</div>
+
+  <div id="numWrap">
+    <div id="numLabel">估计精力</div>
+    <div id="numVal" class="dim">·</div>
+    <div><span id="odTag">估计透支</span></div>
+  </div>
+
+  <div id="reminderSlot"></div>
+  <div id="radial"><div id="crumb"></div></div>
+  <div id="stageTip"></div>
+
+  <button id="plusBtn">+</button>
+  <div id="swipeHint">上滑查看今日概览</div>
+  <div id="toolbar">
+    <span id="tbOverview">今日概览</span>
+    <span id="tbReveal">实际状态</span>
+    <span style="opacity:.5">设置</span>
+  </div>
+
+  <div id="undoBar">
+    <div id="undoFade"></div>
+    <div id="undoTxt"></div>
+    <button id="undoBtn">撤销</button>
+  </div>
+
+  <!-- 晨间确认 -->
+  <div class="sheet top" id="morningSheet">
+    <div class="sheetTitle">早间确认<span class="sheetSub">可跳过，不影响记录</span></div>
+    <div id="mqList"></div>
+    <div id="mSkip">先跳过</div>
+    <div class="grip" style="margin-top:12px"></div>
+  </div>
+
+  <!-- 今日概览 -->
+  <div class="sheet bottom" id="ovSheet">
+    <div class="grip"></div>
+    <div class="sheetTitle">今日概览<span class="sheetSub">按活动量排序 · 显示净变化</span></div>
+    <div id="ovList"></div>
+  </div>
+
+  <!-- 点击式记录 -->
+  <div class="sheet bottom" id="clickSheet">
+    <div class="grip"></div>
+    <div class="sheetTitle" id="clickTitle">记录活动</div>
+    <span id="clickBack" style="display:none">‹ 返回</span>
+    <div id="clickGrid"></div>
+  </div>
+
+  <!-- 揭示仪式 -->
+  <div id="reveal">
+    <div id="rvTitle">今天的实际状态更接近——</div>
+    <div id="rvOpts"></div>
+    <div id="rvLine"></div>
+    <div id="rvEst">
+      <div class="lb">系统估计</div><div class="v"></div><div id="rvDiff"></div>
+    </div>
+    <div id="rvClose">完成</div>
+  </div>
+
+  <div id="help">
+    <div class="t">动效小样 · 玩法</div>
+    <div><b>下拉顶部</b> 完成早间确认，看球体点亮</div>
+    <div><b>按住能量球</b> 滑向大类 → 子类 → 时长，松手完成记录</div>
+    <div><b>中途松手 / 滑回球心</b> 取消或回退一层</div>
+    <div><b>上滑</b> 查看今日概览；<b>+</b> 是点击式入口</div>
+    <div><b>实际状态</b> 体验先选后揭示仪式</div>
+    <div class="c">数值为演示占位，真实规则以配置表为准 · 点按任意处关闭</div>
+  </div>
+</div>
+<script>
+/* ================= 状态 ================= */
+const S={
+  initial:null, energy:null, dispEnergy:0,
+  records:[],            // {cat,sub,dur,theo}
+  shownBands:new Set(),  // 提醒去重
+  morningDone:false, morningAdj:0,
+  mode:'idle',           // idle | pull | radial | swipe
+};
+const $=q=>document.querySelector(q);
+const vib=p=>{try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}};
+const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ================= 色温轴 ================= */
+const STOPS=[ // [ratio, cA, cB]
+  [1.00,'#5EEAD4','#A7F3D0'],
+  [0.80,'#5EEAD4','#A7F3D0'],
+  [0.65,'#7DD3FC','#5EEAD4'],
+  [0.50,'#7DD3FC','#5EEAD4'],
+  [0.37,'#FCD34D','#7DD3FC'],
+  [0.25,'#FCD34D','#7DD3FC'],
+  [0.12,'#F0A868','#B08968'],
+  [0.00,'#F0A868','#B08968'],
+  [-0.3,'#9B8AB8','#6E6284'],
+];
+const hex=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+const mix=(a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*t));
+const rgb=(c,a=1)=>`rgba(${c[0]},${c[1]},${c[2]},${a})`;
+function palette(ratio){
+  if(ratio==null) return {a:hex('#3A4152'),b:hex('#262C3A')};
+  const st=STOPS;
+  if(ratio>=st[0][0]) return {a:hex(st[0][1]),b:hex(st[0][2])};
+  for(let i=0;i<st.length-1;i++){
+    const [r1,a1,b1]=st[i],[r2,a2,b2]=st[i+1];
+    if(ratio<=r1&&ratio>=r2){
+      const t=(r1-ratio)/(r1-r2||1);
+      return {a:mix(hex(a1),hex(a2),t),b:mix(hex(b1),hex(b2),t)};
+    }
+  }
+  const L=st[st.length-1];return {a:hex(L[1]),b:hex(L[2])};
+}
+const ratio=()=>S.initial?S.energy/S.initial:null;
+
+/* ================= 画布：流体球 ================= */
+const cv=$('#ballCanvas'),ctx=cv.getContext('2d');
+let W,H,DPR,CX,CY,BR;
+function layout(){
+  DPR=Math.min(devicePixelRatio||1,2);
+  W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
+  CX=W/2;CY=H*0.42;BR=Math.min(W*0.29,H*0.21);
+  const nw=$('#numWrap');nw.style.top=(CY-52)+'px';
+  $('#reminderSlot').style.top=(CY+BR+26)+'px';
+  $('#plusBtn').style.top=(CY+BR+86)+'px';
+  $('#stageTip').style.top=(CY+BR+40)+'px';
+}
+addEventListener('resize',layout);layout();
+
+let pulse=0,lightT=S.morningDone?1:0,lighting=false,glowKick=0;
+function draw(now){
+  const t=now/1000;
+  ctx.clearRect(0,0,W,H);
+  const r0=ratio();
+  const live=palette(r0),dim=palette(null);
+  const L=lightT;
+  const A=mix(dim.a,live.a,L),B=mix(dim.b,live.b,L);
+  const over=r0!=null&&r0<0;
+  const mist=over?0.45:1;
+  const flow=r0==null?0.18:(0.35+0.65*Math.max(0,Math.min(1,r0)));
+  const breathP=over?8:5.5, breathA=reduceMotion?0:(over?0.008:0.018);
+  const glowA=(r0==null?0.10:0.12+0.23*Math.max(0,Math.min(1,r0)))*(0.4+0.6*L)+glowKick*0.3;
+
+  pulse*=0.90; glowKick*=0.94;
+  const R=BR*(1+breathA*Math.sin(t*Math.PI*2/breathP))*(1+0.035*pulse);
+
+  // 外光晕
+  let g=ctx.createRadialGradient(CX,CY,R*0.25,CX,CY,R*1.65*(1+glowKick*0.35));
+  g.addColorStop(0,rgb(A,glowA));g.addColorStop(1,rgb(A,0));
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+
+  // 球体内部
+  ctx.save();
+  ctx.beginPath();ctx.arc(CX,CY,R,0,7);ctx.clip();
+  ctx.fillStyle=rgb(mix(hex('#0D1017'),A,0.16*mist),1);
+  ctx.fillRect(CX-R,CY-R,R*2,R*2);
+  ctx.globalCompositeOperation='lighter';
+  const blob=(cx,cy,rr,c,a)=>{
+    const gg=ctx.createRadialGradient(cx,cy,0,cx,cy,rr);
+    gg.addColorStop(0,rgb(c,a));gg.addColorStop(1,rgb(c,0));
+    ctx.fillStyle=gg;ctx.beginPath();ctx.arc(cx,cy,rr,0,7);ctx.fill();
+  };
+  const f=t*flow;
+  blob(CX+R*0.38*Math.cos(f*0.9), CY+R*0.30*Math.sin(f*1.25), R*(over?1.1:0.95), A, 0.50*mist*(0.3+0.7*L));
+  blob(CX-R*0.32*Math.cos(f*0.7+2), CY-R*0.36*Math.sin(f*0.95+1), R*(over?1.05:0.9), B, 0.42*mist*(0.3+0.7*L));
+  blob(CX+R*0.15*Math.sin(f*0.5), CY+R*0.42*Math.cos(f*0.62), R*0.7, B, 0.25*mist*(0.3+0.7*L));
+  ctx.restore();
+
+  // 边缘细描
+  ctx.beginPath();ctx.arc(CX,CY,R,0,7);
+  ctx.strokeStyle=rgb(A,0.22*(0.4+0.6*L)*mist+0.05);ctx.lineWidth=1;ctx.stroke();
+
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+/* ================= 数字滚动 ================= */
+function rollNumber(to){
+  const from=S.dispEnergy,el=$('#numVal'),t0=performance.now(),D=620;
+  el.classList.remove('dim');
+  (function step(n){
+    const p=Math.min(1,(n-t0)/D),e=1-Math.pow(1-p,3);
+    S.dispEnergy=from+(to-from)*e;
+    el.textContent=Math.round(S.dispEnergy);
+    if(p<1)requestAnimationFrame(step);
+  })(t0);
+  $('#odTag').classList.toggle('on',to<0);
+}
+
+/* ================= 早间确认 ================= */
+const MQ=[
+  {q:'综合状态',opts:['差','一般','好'],adj:[-6,0,6]},
+  {q:'可自由安排时间',opts:['少','中','多']},
+  {q:'主要压力来源',opts:['学习','实践事务','都有','压力不大']},
+  {q:'睡眠恢复感',opts:['差','一般','好']},
+];
+const mqAns=new Array(MQ.length).fill(null);
+$('#mqList').innerHTML=MQ.map((m,i)=>`
+  <div class="mq" id="mq${i}">
+    <div class="q">${m.q}<span class="ck">✓ <b id="mqa${i}"></b></span></div>
+    <div class="opts">${m.opts.map((o,j)=>`<button class="chip" data-i="${i}" data-j="${j}">${o}</button>`).join('')}</div>
+  </div>`).join('');
+$('#mqList').addEventListener('click',e=>{
+  const b=e.target.closest('.chip');if(!b)return;
+  const i=+b.dataset.i,j=+b.dataset.j;
+  mqAns[i]=j;vib(8);
+  b.classList.add('sel');
+  document.getElementById('mqa'+i).textContent=MQ[i].opts[j];
+  setTimeout(()=>document.getElementById('mq'+i).classList.add('done'),240);
+  if(mqAns.every(a=>a!=null)) setTimeout(finishMorning,650);
+});
+$('#mSkip').addEventListener('click',()=>{closeMorning();lightUp(0);});
+function finishMorning(){closeMorning();lightUp(MQ[0].adj[mqAns[0]]);}
+function closeMorning(){$('#morningSheet').classList.remove('open');}
+function openMorning(){if(S.morningDone)return;$('#morningSheet').classList.add('open');}
+function lightUp(adj){
+  if(S.morningDone)return;
+  S.morningDone=true;S.morningAdj=adj;
+  S.initial=100+adj;S.energy=S.initial;
+  $('#pullHint').classList.add('hidden');
+  // 点亮：光晕扩张 + 色温注入 + 数字 0 → 初始
+  lighting=true;glowKick=1;vib([12,80,12]);
+  const t0=performance.now(),D=820;
+  (function st(n){const p=Math.min(1,(n-t0)/D);lightT=p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+    if(p<1)requestAnimationFrame(st);else{lightT=1;lighting=false;}})(t0);
+  setTimeout(()=>rollNumber(S.energy),220);
+}
+
+/* ================= 活动规则（演示占位值 / 每30分钟） ================= */
+const CATS=[
+  {name:'学习',subs:{'上课':-7,'自学 / 论文':-10,'写作业':-8,'复习 / 备考':-9,'整理 / 总结':-5,'其他学习':-8}},
+  {name:'实践 / 事务',subs:{'实现 / 开发':-10,'做实验':-9,'项目推进':-8,'调试 / 修改':-11,'组织 / 事务':-6,'其他事务':-8}},
+  {name:'休息恢复',subs:{'午睡 / 小睡':9,'轻活动':5,'放空 / 调整':6,'运动恢复':7,'生活休整':5,'其他恢复':5}},
+  {name:'娱乐消遣',subs:{'打游戏':-4,'刷视频 / 短内容':-3,'看剧 / 观影':-2,'聊天 / 社交':-1,'兴趣娱乐':2,'其他娱乐':-2}},
+];
+const DURS=[15,30,45,60,90,120];
+const theoDelta=(ci,sub,dur)=>Math.round(CATS[ci].subs[sub]*dur/30);
+function replay(){ // 与真实算法同构：恢复上限重放
+  let e=S.initial;
+  for(const r of S.records){
+    r.applied=r.theo>0?Math.min(r.theo,S.initial-e):r.theo;
+    e+=r.applied;
+  }
+  return e;
+}
+
+/* ================= 记录提交（手势与点击共用） ================= */
+const BANDS=[
+  {k:'overdraft',test:r=>r<0,txt:'当前负荷已超过今日储备',c:'#9B8AB8',v:[30]},
+  {k:'low',test:r=>r<0.25,txt:'估计已不足今日初始的四分之一',c:'#F0A868',v:[30]},
+  {k:'mediumLow',test:r=>r<0.5,txt:'估计已低于今日初始的一半',c:'#FCD34D',v:[30]},
+];
+let undoTimer=null;
+function commitRecord(ci,sub,dur,fromX,fromY){
+  if(!S.morningDone){lightUp(0);} // 未确认也可记录：以基准 100 点亮
+  const theo=theoDelta(ci,sub,dur);
+  S.records.push({cat:CATS[ci].name,sub,dur,theo});
+  const prev=S.energy;S.energy=replay();
+  vib(20);
+  // 光点飞入
+  const applied=S.records[S.records.length-1].applied;
+  const dot=document.createElement('div');dot.className='flyDot';
+  const c=palette(ratio());
+  dot.style.background=rgb(applied>=0?c.a:hex('#8A93A6'),1);
+  dot.style.boxShadow=`0 0 14px ${rgb(applied>=0?c.a:hex('#8A93A6'),.8)}`;
+  dot.style.left=fromX+'px';dot.style.top=fromY+'px';
+  document.getElementById('app').appendChild(dot);
+  requestAnimationFrame(()=>{dot.style.left=CX+'px';dot.style.top=CY+'px';dot.style.opacity=0;});
+  setTimeout(()=>{dot.remove();pulse=1;glowKick=.5;rollNumber(S.energy);},480);
+  // 撤销条
+  showUndo(sub,dur,applied,prev);
+}
+function showUndo(sub,dur,applied,prevEnergy){
+  clearTimeout(undoTimer);
+  $('#undoTxt').textContent=`${sub} ${dur} 分钟 · 估计 ${applied>0?'+':''}${applied}`;
+  const f=$('#undoFade');f.style.transition='none';f.style.transform='scaleX(1)';
+  const bar=$('#undoBar');bar.classList.add('show');
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    f.style.transition='transform 5s linear';f.style.transform='scaleX(0)';
+  }));
+  const myIndex=S.records.length-1;
+  $('#undoBtn').onclick=()=>{
+    clearTimeout(undoTimer);
+    S.records.splice(myIndex,1);
+    S.energy=S.records.length?replay():S.initial;
+    rollNumber(S.energy);vib(10);
+    bar.classList.remove('show');
+  };
+  undoTimer=setTimeout(()=>{bar.classList.remove('show');maybeRemind();},5000);
+}
+function maybeRemind(){ // 撤销窗口结束后才展示提醒（同日同档一次）
+  const r=ratio();if(r==null)return;
+  for(const b of BANDS){
+    if(b.test(r)){
+      if(!S.shownBands.has(b.k)){
+        S.shownBands.add(b.k);
+        const el=document.createElement('div');el.className='reminder';
+        el.style.background=rgb(hex(b.c),.12);el.style.border=`1px solid ${rgb(hex(b.c),.25)}`;
+        el.innerHTML=`<span>${b.txt}</span><span class="x">✕</span>`;
+        $('#reminderSlot').appendChild(el);
+        requestAnimationFrame(()=>requestAnimationFrame(()=>el.classList.add('show')));
+        el.querySelector('.x').onclick=()=>{el.classList.remove('show');setTimeout(()=>el.remove(),600)};
+        vib(35);
+      }
+      break; // 只报最高严重档
+    }
+  }
+}
+
+/* ================= 径向手势 ================= */
+const radial=$('#radial'),crumb=$('#crumb'),tip=$('#stageTip');
+let R_stage=null,R_nodes=[],R_sel={cat:null,sub:null},R_hot=null,dwellT=null,layerTimer=null,holdT=null;
+const NODE_R={cat:66,sub:58,dur:54};
+function nodeAngles(n,spread=160){ // 上弧均布
+  const a0=-90-spread/2,arr=[];
+  for(let i=0;i<n;i++)arr.push((a0+spread*(n===1?0.5:i/(n-1)))*Math.PI/180);
+  return arr;
+}
+function buildNodes(items,stage){
+  R_nodes.forEach(n=>n.el.remove());R_nodes=[];
+  const rad=BR+(stage==='cat'?78:stage==='sub'?92:96);
+  const angs=nodeAngles(items.length,stage==='cat'?150:172);
+  const c=palette(ratio()??0.7);
+  items.forEach((label,i)=>{
+    const el=document.createElement('div');el.className='rnode';
+    const sz=NODE_R[stage];el.style.width=el.style.height=sz+'px';
+    el.style.setProperty('--hotc',rgb(c.a,1));
+    el.textContent=label;
+    let x=CX+rad*Math.cos(angs[i]),y=CY+rad*Math.sin(angs[i]);
+    x=Math.max(sz/2+8,Math.min(W-sz/2-8,x));y=Math.max(sz/2+10,y);
+    el.style.left=x+'px';el.style.top=y+'px';
+    radial.appendChild(el);
+    setTimeout(()=>el.classList.add('in'),30*i);
+    R_nodes.push({el,x,y,label,i});
+  });
+  tip.textContent=stage==='cat'?'滑向大类':stage==='sub'?'滑向子类':'滑向时长 · 松手完成';
+  tip.style.opacity=1;
+  clearTimeout(layerTimer);layerTimer=setTimeout(cancelRadial,10000);
+}
+function setStage(st){
+  R_stage=st;R_hot=null;clearTimeout(dwellT);dwellT=null;
+  if(st==='cat')buildNodes(CATS.map(c=>c.name),'cat');
+  else if(st==='sub')buildNodes(Object.keys(CATS[R_sel.cat].subs),'sub');
+  else if(st==='dur')buildNodes(DURS.map(d=>d+'′'),'dur');
+  // 面包屑环
+  if(st==='sub'||st==='dur'){
+    const rr=BR+(st==='sub'?36:52);
+    crumb.style.left=CX+'px';crumb.style.top=CY+'px';
+    crumb.style.width=crumb.style.height=rr*2+'px';crumb.style.opacity=.6;
+  } else {crumb.style.opacity=0;crumb.style.width=crumb.style.height=BR*2+'px';crumb.style.left=CX+'px';crumb.style.top=CY+'px';}
+}
+function openRadial(){S.mode='radial';R_sel={cat:null,sub:null};setStage('cat');vib(10);}
+function collapseRadial(){
+  R_nodes.forEach(n=>{n.el.classList.remove('in','hot');n.el.classList.add('out')});
+  const old=[...R_nodes];setTimeout(()=>old.forEach(n=>n.el.remove()),350);
+  R_nodes=[];crumb.style.opacity=0;tip.style.opacity=0;clearTimeout(layerTimer);clearTimeout(dwellT);
+}
+function cancelRadial(){collapseRadial();S.mode='idle';R_stage=null;}
+function radialMove(x,y){
+  const dC=Math.hypot(x-CX,y-CY);
+  // 回滑：退回球心附近回退一层
+  if(dC<BR*0.55){
+    if(R_stage==='sub'){collapseRadial();R_sel.cat=null;setStage('cat');vib(6);}
+    else if(R_stage==='dur'){collapseRadial();R_sel.sub=null;setStage('sub');vib(6);}
+    return;
+  }
+  let hot=null;
+  for(const n of R_nodes){if(Math.hypot(x-n.x,y-n.y)<NODE_R[R_stage]/2+14){hot=n;break}}
+  if(hot!==R_hot){
+    clearTimeout(dwellT);dwellT=null;
+    R_nodes.forEach(n=>{n.el.classList.toggle('hot',n===hot);n.el.classList.toggle('faded',hot&&n!==hot)});
+    if(hot){
+      vib(6);
+      if(R_stage!=='dur'){ // 停驻 280ms 进下一层
+        dwellT=setTimeout(()=>{
+          if(R_stage==='cat'){R_sel.cat=hot.i;collapseRadial();setStage('sub');}
+          else if(R_stage==='sub'){R_sel.sub=hot.label;collapseRadial();setStage('dur');}
+        },280);
+      }
+    }
+    R_hot=hot;
+  }
+}
+function radialUp(x,y){
+  clearTimeout(dwellT);
+  if(R_stage==='dur'&&R_hot){
+    const dur=DURS[R_hot.i],sub=R_sel.sub,ci=R_sel.cat;
+    const fx=R_hot.x,fy=R_hot.y;
+    collapseRadial();S.mode='idle';R_stage=null;
+    commitRecord(ci,sub,dur,fx,fy);
+  } else cancelRadial();
+}
+
+/* ================= 全局指针 ================= */
+let p0=null;
+const app=$('#app');
+app.addEventListener('pointerdown',e=>{
+  if($('#help').classList.contains('on')||$('#reveal').classList.contains('on'))return;
+  if(e.target.closest('.sheet,#undoBar,#toolbar,#plusBtn,#helpBtn,.reminder'))return;
+  p0={x:e.clientX,y:e.clientY,t:Date.now()};
+  const dBall=Math.hypot(e.clientX-CX,e.clientY-CY);
+  if(dBall<BR&&S.mode==='idle'){
+    holdT=setTimeout(openRadial,120);S.mode='holding';
+  } else if(e.clientY<H*0.22&&!S.morningDone){S.mode='pull';}
+  else if(e.clientY>H*0.66){S.mode='swipe';}
+});
+app.addEventListener('pointermove',e=>{
+  if(!p0)return;
+  const dy=e.clientY-p0.y;
+  if(S.mode==='holding'&&Math.hypot(e.clientX-p0.x,dy)>14){clearTimeout(holdT);openRadial();}
+  if(S.mode==='radial')radialMove(e.clientX,e.clientY);
+  else if(S.mode==='pull'&&dy>70){openMorning();S.mode='idle';p0=null;}
+  else if(S.mode==='swipe'&&dy<-60){openOverview();S.mode='idle';p0=null;}
+});
+const endPtr=e=>{
+  clearTimeout(holdT);
+  if(S.mode==='radial')radialUp(e.clientX,e.clientY);
+  else if(S.mode==='holding'){cancelRadial();}
+  if(S.mode!=='radial')S.mode='idle';
+  p0=null;
+};
+app.addEventListener('pointerup',endPtr);
+app.addEventListener('pointercancel',endPtr);
+$('#pullHint').addEventListener('click',openMorning);
+
+/* ================= 今日概览 ================= */
+function openOverview(){
+  const map={};
+  for(const r of S.records){
+    map[r.cat]=map[r.cat]||{min:0,net:0,gross:0};
+    map[r.cat].min+=r.dur;map[r.cat].net+=r.applied;map[r.cat].gross+=Math.abs(r.applied);
+  }
+  const rows=Object.entries(map).sort((a,b)=>b[1].gross-a[1].gross);
+  $('#ovList').innerHTML=rows.length?rows.map(([k,v])=>{
+    const c=v.net>=0?'#5EEAD4':'#8A93A6';
+    return `<div class="ovRow"><span class="cat">${k}</span><span class="min">${v.min} 分钟</span>
+      <span class="net" style="color:${c}">${v.net>0?'+':''}${v.net}</span></div>`;
+  }).join(''):'<div id="ovEmpty">今天还没有记录 · 按住能量球试试</div>';
+  $('#ovSheet').classList.add('open');
+}
+$('#tbOverview').onclick=openOverview;
+$('#ovSheet').addEventListener('click',e=>{if(e.target.closest('.grip,.sheetTitle')||e.target.id==='ovSheet')$('#ovSheet').classList.remove('open')});
+
+/* ================= 点击式入口 ================= */
+let ckStage=0,ckSel={};
+$('#plusBtn').onclick=()=>{ckStage=0;ckSel={};renderClick();$('#clickSheet').classList.add('open');vib(8)};
+function renderClick(){
+  const g=$('#clickGrid'),back=$('#clickBack'),tt=$('#clickTitle');
+  back.style.display=ckStage?'inline-block':'none';
+  if(ckStage===0){tt.textContent='记录活动 · 选择大类';
+    g.innerHTML=CATS.map((c,i)=>`<button class="chip" data-v="${i}">${c.name}</button>`).join('');}
+  else if(ckStage===1){tt.textContent=CATS[ckSel.ci].name+' · 选择子类';
+    g.innerHTML=Object.keys(CATS[ckSel.ci].subs).map(s=>`<button class="chip" data-v="${s}">${s}</button>`).join('');}
+  else{tt.textContent=ckSel.sub+' · 选择时长';
+    g.innerHTML=DURS.map(d=>`<button class="chip" data-v="${d}">${d} 分钟</button>`).join('');}
+}
+$('#clickBack').onclick=()=>{ckStage--;renderClick()};
+$('#clickGrid').addEventListener('click',e=>{
+  const b=e.target.closest('.chip');if(!b)return;vib(8);
+  if(ckStage===0){ckSel.ci=+b.dataset.v;ckStage=1;renderClick();}
+  else if(ckStage===1){ckSel.sub=b.dataset.v;ckStage=2;renderClick();}
+  else{
+    $('#clickSheet').classList.remove('open');
+    const r=b.getBoundingClientRect();
+    commitRecord(ckSel.ci,ckSel.sub,+b.dataset.v,r.left+r.width/2,r.top);
+  }
+});
+
+/* ================= 揭示仪式 ================= */
+const RV=[['充足',.95],['良好',.7],['尚可',.4],['偏低',0],['耗尽',-1]];
+$('#tbReveal').onclick=()=>{
+  if(!S.morningDone){openMorning();return;}
+  const box=$('#rvOpts');
+  box.innerHTML=RV.map(([n],i)=>{
+    const c=palette(RV[i][1]<0?-0.2:RV[i][1]);
+    return `<button class="rvOpt" data-i="${i}"><i style="background:${rgb(c.a,1)}"></i><span>${n}</span></button>`;
+  }).join('');
+  $('#rvTitle').style.opacity=1;$('#rvEst').classList.remove('on');
+  $('#rvLine').style.height=0;$('#rvClose').classList.remove('on');
+  $('#reveal').classList.add('on');
+};
+$('#rvOpts').addEventListener('click',e=>{
+  const b=e.target.closest('.rvOpt');if(!b||$('#rvEst').classList.contains('on'))return;
+  vib(10);
+  [...document.querySelectorAll('.rvOpt')].forEach(o=>{if(o!==b)o.classList.add('sunk')});
+  b.classList.add('chosen');$('#rvTitle').style.opacity=0;
+  setTimeout(()=>{ // 停顿后揭示
+    $('#rvLine').style.height='34px';
+    const est=$('#rvEst');est.querySelector('.v').textContent=Math.round(S.energy);
+    const i=+b.dataset.i,r=ratio();
+    const userMid=i===4?-0.2:(RV[i][1]+(i===0?1.1:RV[i-1][1]))/2;
+    const d=r-userMid;
+    est.querySelector('#rvDiff').textContent=
+      Math.abs(d)<0.14?'你的感受和系统估计基本一致':
+      d>0?'你的感受比系统估计更疲惫一些':'你的感受比系统估计更充足一些';
+    est.classList.add('on');vib(10);
+    $('#rvClose').classList.add('on');
+  },520);
+});
+$('#rvClose').onclick=()=>$('#reveal').classList.remove('on');
+
+/* ================= 帮助 ================= */
+$('#helpBtn').onclick=()=>$('#help').classList.add('on');
+$('#help').onclick=()=>$('#help').classList.remove('on');
+setTimeout(()=>{if(!S.morningDone&&!$('#help').classList.contains('on'))$('#help').classList.add('on')},600);
+</script>
+</body>
+</html>

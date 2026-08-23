@@ -1,0 +1,508 @@
+enum ActivityCategory {
+  study(code: 'study', label: '学习'),
+  practice(code: 'practice', label: '实践 / 事务'),
+  recovery(code: 'recovery', label: '休息恢复'),
+  leisure(code: 'leisure', label: '娱乐消遣');
+
+  const ActivityCategory({required this.code, required this.label});
+
+  final String code;
+  final String label;
+}
+
+enum ActivitySubcategory {
+  classAttendance(
+    code: 'classAttendance',
+    label: '上课',
+    category: ActivityCategory.study,
+  ),
+  selfStudyOrThesis(
+    code: 'selfStudyOrThesis',
+    label: '自学 / 论文',
+    category: ActivityCategory.study,
+  ),
+  homework(code: 'homework', label: '写作业', category: ActivityCategory.study),
+  reviewOrExamPrep(
+    code: 'reviewOrExamPrep',
+    label: '复习 / 备考',
+    category: ActivityCategory.study,
+  ),
+  organizeOrSummarize(
+    code: 'organizeOrSummarize',
+    label: '整理 / 总结',
+    category: ActivityCategory.study,
+  ),
+  otherStudy(
+    code: 'otherStudy',
+    label: '其他学习',
+    category: ActivityCategory.study,
+  ),
+  implementationOrDevelopment(
+    code: 'implementationOrDevelopment',
+    label: '实现 / 开发',
+    category: ActivityCategory.practice,
+  ),
+  experiment(
+    code: 'experiment',
+    label: '做实验',
+    category: ActivityCategory.practice,
+  ),
+  projectProgress(
+    code: 'projectProgress',
+    label: '项目推进',
+    category: ActivityCategory.practice,
+  ),
+  debuggingOrRevision(
+    code: 'debuggingOrRevision',
+    label: '调试 / 修改',
+    category: ActivityCategory.practice,
+  ),
+  organizationOrAdministration(
+    code: 'organizationOrAdministration',
+    label: '组织 / 事务',
+    category: ActivityCategory.practice,
+  ),
+  otherPractice(
+    code: 'otherPractice',
+    label: '其他事务',
+    category: ActivityCategory.practice,
+  ),
+  nap(code: 'nap', label: '午睡 / 小睡', category: ActivityCategory.recovery),
+  lightActivity(
+    code: 'lightActivity',
+    label: '轻活动',
+    category: ActivityCategory.recovery,
+  ),
+  mentalReset(
+    code: 'mentalReset',
+    label: '放空 / 调整',
+    category: ActivityCategory.recovery,
+  ),
+  exerciseRecovery(
+    code: 'exerciseRecovery',
+    label: '运动恢复',
+    category: ActivityCategory.recovery,
+  ),
+  lifeMaintenance(
+    code: 'lifeMaintenance',
+    label: '生活休整',
+    category: ActivityCategory.recovery,
+  ),
+  otherRecovery(
+    code: 'otherRecovery',
+    label: '其他恢复',
+    category: ActivityCategory.recovery,
+  ),
+  gaming(code: 'gaming', label: '打游戏', category: ActivityCategory.leisure),
+  shortVideo(
+    code: 'shortVideo',
+    label: '刷视频 / 短内容',
+    category: ActivityCategory.leisure,
+  ),
+  seriesOrMovie(
+    code: 'seriesOrMovie',
+    label: '看剧 / 观影',
+    category: ActivityCategory.leisure,
+  ),
+  chatOrSocial(
+    code: 'chatOrSocial',
+    label: '聊天 / 社交',
+    category: ActivityCategory.leisure,
+  ),
+  hobbyEntertainment(
+    code: 'hobbyEntertainment',
+    label: '兴趣娱乐',
+    category: ActivityCategory.leisure,
+  ),
+  otherLeisure(
+    code: 'otherLeisure',
+    label: '其他娱乐',
+    category: ActivityCategory.leisure,
+  );
+
+  const ActivitySubcategory({
+    required this.code,
+    required this.label,
+    required this.category,
+  });
+
+  final String code;
+  final String label;
+  final ActivityCategory category;
+}
+
+enum DurationSlot {
+  minutes15(15),
+  minutes30(30),
+  minutes45(45),
+  minutes60(60),
+  minutes90(90),
+  minutes120(120);
+
+  const DurationSlot(this.minutes);
+
+  final int minutes;
+
+  static DurationSlot fromMinutes(int minutes) {
+    return values.firstWhere(
+      (slot) => slot.minutes == minutes,
+      orElse: () => throw ArgumentError.value(
+        minutes,
+        'minutes',
+        'Unsupported duration slot',
+      ),
+    );
+  }
+}
+
+enum MorningOverallState {
+  bad(code: 'bad', adjustment: -6),
+  normal(code: 'normal', adjustment: 0),
+  good(code: 'good', adjustment: 6),
+  skipped(code: 'skipped', adjustment: 0);
+
+  const MorningOverallState({required this.code, required this.adjustment});
+
+  final String code;
+  final int adjustment;
+}
+
+enum SleepRecovery {
+  bad('bad'),
+  normal('normal'),
+  good('good');
+
+  const SleepRecovery(this.code);
+  final String code;
+}
+
+enum FreeTimeLevel {
+  low('low'),
+  medium('medium'),
+  high('high');
+
+  const FreeTimeLevel(this.code);
+  final String code;
+}
+
+enum PressureSource {
+  study('study'),
+  practice('practice'),
+  both('both'),
+  low('low');
+
+  const PressureSource(this.code);
+  final String code;
+}
+
+enum AbsoluteEnergyState {
+  exhausted('exhausted'),
+  low('low'),
+  okay('okay'),
+  good('good'),
+  full('full');
+
+  const AbsoluteEnergyState(this.code);
+  final String code;
+}
+
+enum EnergyObservationType {
+  dailyAbsolute('dailyAbsolute'),
+  relativeCorrection('relativeCorrection');
+
+  const EnergyObservationType(this.code);
+  final String code;
+}
+
+const mvpBObservationContractV1 = 'mvp-b-observation-v1';
+const mvpBComparisonBandV1 = 'estimate-actual-ordinal-v1';
+const fixedMvpAPersonalizationVersion = 'fixed-mvp-a';
+const fixedMvpAEffectiveModelFingerprint = 'fixed-mvp-a';
+const fixedMvpAInitialModelRegimeEpoch = 'fixed-mvp-a-initial';
+const mvpBModelRegimeKeyVersion = 'model-regime-sha256-v1';
+const shadowLearningAlgorithmV1 = 'evidence-shadow-v1';
+const shadowLearningConfigV1 = 'evidence-readiness-14x21-v1';
+const canonicalEvidenceHashV1 = 'canonical-evidence-sha256-v1';
+const deterministicLearningRunIdV1 = 'learning-run-sha256-v1';
+const deterministicPersonalizationVersionIdV1 =
+    'personalization-version-sha256-v1';
+const deterministicLearningNoticeIdV1 = 'learning-notice-sha256-v1';
+const effectiveModelFingerprintV1 = 'effective-model-sha256-v1';
+const modelRegimeEpochV1 = 'model-regime-epoch-sha256-v1';
+const initialPersonalizationAlgorithmV1 = 'initial-fixed-mvp-a-v1';
+const initialPersonalizationConfigV1 = 'initial-fixed-mvp-a-v1';
+const legacyStage19PendingVersionV1 = 'legacy-stage19-pending-v1';
+const manualBaselineVersionV1 = 'manual-baseline-v1';
+const revertPersonalizationVersionV1 = 'revert-personalization-v1';
+const baselineLearningDisclosureV1 = 'baseline-learning-disclosure-v1';
+const activityImpactLearningDisclosureV1 =
+    'activity-impact-learning-disclosure-v1';
+const activityImpactLearningAlgorithmV1 = 'activity-impact-learning-v1';
+const activityImpactLearningConfigV1 = 'activity-impact-learning-policy-v1';
+const activityImpactMonitoringAlgorithmV1 = 'activity-impact-monitoring-v1';
+const activityImpactMonitoringConfigV1 = 'activity-impact-monitoring-policy-v1';
+
+enum ObservationReferenceType {
+  currentMoment('currentMoment'),
+  previousLifeDayEnd('previousLifeDayEnd');
+
+  const ObservationReferenceType(this.code);
+  final String code;
+}
+
+enum ObservationCoverageState {
+  confirmed('confirmed'),
+  uncertain('uncertain'),
+  legacyUnknown('legacyUnknown');
+
+  const ObservationCoverageState(this.code);
+  final String code;
+}
+
+enum ActivityImpactSign {
+  consumption('consumption'),
+  recovery('recovery'),
+  zero('zero');
+
+  const ActivityImpactSign(this.code);
+  final String code;
+}
+
+enum ActivityFeedbackDirection {
+  strongerImpact('strongerImpact'),
+  aboutRight('aboutRight'),
+  weakerImpact('weakerImpact'),
+  directionMismatch('directionMismatch');
+
+  const ActivityFeedbackDirection(this.code);
+  final String code;
+}
+
+enum ActivityFeedbackStatus {
+  active('active'),
+  invalidated('invalidated');
+
+  const ActivityFeedbackStatus(this.code);
+  final String code;
+}
+
+enum ActivityFeedbackInvalidationReason {
+  activityDeleted('activityDeleted'),
+  activityEdited('activityEdited'),
+  integrityFailure('integrityFailure');
+
+  const ActivityFeedbackInvalidationReason(this.code);
+  final String code;
+}
+
+enum ActivityFeedbackCollectionSource {
+  userInitiated('userInitiated'),
+  sampledPrompt('sampledPrompt');
+
+  const ActivityFeedbackCollectionSource(this.code);
+
+  final String code;
+}
+
+enum ActivityFeedbackSampleStatus {
+  selected('selected'),
+  prompted('prompted'),
+  responded('responded'),
+  skipped('skipped'),
+  expired('expired'),
+  invalidated('invalidated');
+
+  const ActivityFeedbackSampleStatus(this.code);
+
+  final String code;
+}
+
+enum LearningParameterFamily {
+  baseline('baseline'),
+  activityImpact('activityImpact');
+
+  const LearningParameterFamily(this.code);
+  final String code;
+}
+
+enum LearningRunStatus {
+  pending('pending'),
+  running('running'),
+  completed('completed'),
+  retryableFailure('retryableFailure'),
+  terminalFailure('terminalFailure');
+
+  const LearningRunStatus(this.code);
+  final String code;
+}
+
+enum LearningRunResult {
+  insufficientEvidence('insufficientEvidence'),
+  readyForAudit('readyForAudit'),
+  unstable('unstable'),
+  noChange('noChange'),
+  candidate('candidate'),
+  configurationBlocked('configurationBlocked'),
+  improved('improved'),
+  worsened('worsened');
+
+  const LearningRunResult(this.code);
+  final String code;
+}
+
+enum LearningMode {
+  off('off'),
+  review('review'),
+  automatic('automatic');
+
+  const LearningMode(this.code);
+  final String code;
+}
+
+enum PersonalizationCreationSource {
+  initial('initial'),
+  learningRun('learningRun'),
+  manual('manual'),
+  legacyManualPending('legacyManualPending'),
+  revert('revert');
+
+  const PersonalizationCreationSource(this.code);
+  final String code;
+}
+
+enum PersonalizationScheduleSource {
+  automatic('automatic'),
+  reviewAccepted('reviewAccepted'),
+  manual('manual'),
+  legacyManualPending('legacyManualPending'),
+  revert('revert');
+
+  const PersonalizationScheduleSource(this.code);
+  final String code;
+}
+
+enum PersonalizationChangedParameterFamily {
+  none('none'),
+  baseline('baseline'),
+  activityImpact('activityImpact');
+
+  const PersonalizationChangedParameterFamily(this.code);
+  final String code;
+
+  LearningParameterFamily? get parameterFamily => switch (this) {
+    PersonalizationChangedParameterFamily.none => null,
+    PersonalizationChangedParameterFamily.baseline =>
+      LearningParameterFamily.baseline,
+    PersonalizationChangedParameterFamily.activityImpact =>
+      LearningParameterFamily.activityImpact,
+  };
+}
+
+enum PersonalizationVersionStatus {
+  candidate('candidate'),
+  awaitingReview('awaitingReview'),
+  deferred('deferred'),
+  scheduled('scheduled'),
+  active('active'),
+  superseded('superseded'),
+  rejected('rejected'),
+  reverted('reverted'),
+  canceled('canceled'),
+  invalidated('invalidated');
+
+  const PersonalizationVersionStatus(this.code);
+  final String code;
+
+  bool get isPending => switch (this) {
+    PersonalizationVersionStatus.candidate ||
+    PersonalizationVersionStatus.awaitingReview ||
+    PersonalizationVersionStatus.deferred ||
+    PersonalizationVersionStatus.scheduled => true,
+    _ => false,
+  };
+
+  bool get isTerminal => switch (this) {
+    PersonalizationVersionStatus.superseded ||
+    PersonalizationVersionStatus.rejected ||
+    PersonalizationVersionStatus.reverted ||
+    PersonalizationVersionStatus.canceled ||
+    PersonalizationVersionStatus.invalidated => true,
+    _ => false,
+  };
+}
+
+enum LearningNoticeType {
+  candidateAvailable('candidateAvailable'),
+  changeScheduled('changeScheduled'),
+  changeActivated('changeActivated'),
+  learningSuspended('learningSuspended'),
+  changeCanceled('changeCanceled'),
+  changeReverted('changeReverted');
+
+  const LearningNoticeType(this.code);
+  final String code;
+}
+
+enum LearningNoticeStatus {
+  unseen('unseen'),
+  seen('seen'),
+  dismissed('dismissed');
+
+  const LearningNoticeStatus(this.code);
+  final String code;
+}
+
+enum DailySummaryModelSnapshotSource {
+  legacyInline('legacyInline'),
+  personalizationVersion('personalizationVersion');
+
+  const DailySummaryModelSnapshotSource(this.code);
+  final String code;
+}
+
+enum RelativeCorrection {
+  lowerThanEstimate('lower'),
+  aboutRight('aboutRight'),
+  higherThanEstimate('higher');
+
+  const RelativeCorrection(this.code);
+  final String code;
+}
+
+enum PromptReceiptType {
+  onboarding('onboarding'),
+  morning('morning'),
+  dailyObservation('dailyObservation'),
+  yesterday('yesterday'),
+  energyBand('energyBand');
+
+  const PromptReceiptType(this.code);
+  final String code;
+}
+
+enum PromptReceiptAction {
+  shown('shown'),
+  skipped('skipped'),
+  dismissed('dismissed');
+
+  const PromptReceiptAction(this.code);
+  final String code;
+}
+
+enum EstimatedEnergyBand {
+  estimatedOverdraft('estimatedOverdraft'),
+  estimatedLow('estimatedLow'),
+  estimatedMediumLow('estimatedMediumLow'),
+  estimatedNormal('estimatedNormal');
+
+  const EstimatedEnergyBand(this.code);
+  final String code;
+}
+
+enum ActivityRecordStatus {
+  active('active'),
+  deleted('deleted');
+
+  const ActivityRecordStatus(this.code);
+  final String code;
+}

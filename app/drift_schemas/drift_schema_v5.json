@@ -1,0 +1,3062 @@
+{
+  "_meta": {
+    "description": "This file contains a serialized version of schema entities for drift.",
+    "version": "1.3.0"
+  },
+  "options": {
+    "store_date_time_values_as_text": false
+  },
+  "entities": [
+    {
+      "id": 0,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "rule_config_versions",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "version",
+            "getter_name": "version",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "values_json",
+            "getter_name": "valuesJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(version)) > 0)",
+          "CHECK (json_valid(values_json))"
+        ],
+        "explicit_pk": [
+          "version"
+        ]
+      }
+    },
+    {
+      "id": 1,
+      "references": [
+        0
+      ],
+      "type": "table",
+      "data": {
+        "name": "app_settings",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant(1)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "active_rule_version",
+            "getter_name": "activeRuleVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "pending_rule_version",
+            "getter_name": "pendingRuleVersion",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "pending_rule_effective_life_day",
+            "getter_name": "pendingRuleEffectiveLifeDay",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "onboarding_completed",
+            "getter_name": "onboardingCompleted",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"onboarding_completed\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"onboarding_completed\" IN (0, 1))"
+            },
+            "default_dart": "const Constant(false)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "baseline_learning_mode",
+            "getter_name": "baselineLearningMode",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant('off')",
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LearningModeConverter()",
+              "dart_type_name": "LearningMode"
+            }
+          },
+          {
+            "name": "activity_impact_learning_mode",
+            "getter_name": "activityImpactLearningMode",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant('off')",
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LearningModeConverter()",
+              "dart_type_name": "LearningMode"
+            }
+          },
+          {
+            "name": "baseline_learning_suspended",
+            "getter_name": "baselineLearningSuspended",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"baseline_learning_suspended\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"baseline_learning_suspended\" IN (0, 1))"
+            },
+            "default_dart": "const Constant(false)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "baseline_learning_suspended_at",
+            "getter_name": "baselineLearningSuspendedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "baseline_learning_suspension_reason",
+            "getter_name": "baselineLearningSuspensionReason",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "activity_impact_learning_suspended",
+            "getter_name": "activityImpactLearningSuspended",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"activity_impact_learning_suspended\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"activity_impact_learning_suspended\" IN (0, 1))"
+            },
+            "default_dart": "const Constant(false)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "activity_impact_learning_suspended_at",
+            "getter_name": "activityImpactLearningSuspendedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "activity_impact_learning_suspension_reason",
+            "getter_name": "activityImpactLearningSuspensionReason",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "baseline_learning_cooldown_until",
+            "getter_name": "baselineLearningCooldownUntil",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "activity_impact_learning_cooldown_until",
+            "getter_name": "activityImpactLearningCooldownUntil",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (id = 1)",
+          "CHECK (baseline_learning_mode IN ('off', 'review', 'automatic'))",
+          "CHECK (activity_impact_learning_mode IN ('off', 'review', 'automatic'))",
+          "CHECK ((baseline_learning_suspended = 0 AND baseline_learning_suspended_at IS NULL AND baseline_learning_suspension_reason IS NULL) OR (baseline_learning_suspended = 1 AND baseline_learning_suspended_at IS NOT NULL AND length(trim(baseline_learning_suspension_reason)) > 0))",
+          "CHECK ((activity_impact_learning_suspended = 0 AND activity_impact_learning_suspended_at IS NULL AND activity_impact_learning_suspension_reason IS NULL) OR (activity_impact_learning_suspended = 1 AND activity_impact_learning_suspended_at IS NOT NULL AND length(trim(activity_impact_learning_suspension_reason)) > 0))",
+          "CHECK ((pending_rule_version IS NULL AND pending_rule_effective_life_day IS NULL) OR (pending_rule_version IS NOT NULL AND pending_rule_effective_life_day IS NOT NULL))",
+          "FOREIGN KEY (active_rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "FOREIGN KEY (pending_rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "morning_check_ins",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "life_day",
+            "getter_name": "lifeDay",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "UNIQUE",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "UNIQUE"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "unique"
+            ],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "overall_state",
+            "getter_name": "overallState",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const MorningOverallStateConverter()",
+              "dart_type_name": "MorningOverallState"
+            }
+          },
+          {
+            "name": "free_time_level",
+            "getter_name": "freeTimeLevel",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const FreeTimeLevelConverter()",
+              "dart_type_name": "FreeTimeLevel"
+            }
+          },
+          {
+            "name": "pressure_source",
+            "getter_name": "pressureSource",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const PressureSourceConverter()",
+              "dart_type_name": "PressureSource"
+            }
+          },
+          {
+            "name": "sleep_recovery",
+            "getter_name": "sleepRecovery",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const SleepRecoveryConverter()",
+              "dart_type_name": "SleepRecovery"
+            }
+          },
+          {
+            "name": "morning_adjustment",
+            "getter_name": "morningAdjustment",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "completed_at",
+            "getter_name": "completedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(id)) > 0)",
+          "CHECK (overall_state IN ('bad', 'normal', 'good'))",
+          "CHECK (free_time_level IN ('low', 'medium', 'high'))",
+          "CHECK (pressure_source IN ('study', 'practice', 'both', 'low'))",
+          "CHECK (sleep_recovery IN ('bad', 'normal', 'good'))",
+          "CHECK ((overall_state = 'bad' AND morning_adjustment = -6) OR (overall_state = 'normal' AND morning_adjustment = 0) OR (overall_state = 'good' AND morning_adjustment = 6))"
+        ],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "references": [
+        0
+      ],
+      "type": "table",
+      "data": {
+        "name": "activity_records",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "life_day",
+            "getter_name": "lifeDay",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "completed_at",
+            "getter_name": "completedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "category",
+            "getter_name": "category",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityCategoryConverter()",
+              "dart_type_name": "ActivityCategory"
+            }
+          },
+          {
+            "name": "subcategory",
+            "getter_name": "subcategory",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivitySubcategoryConverter()",
+              "dart_type_name": "ActivitySubcategory"
+            }
+          },
+          {
+            "name": "duration_minutes",
+            "getter_name": "duration",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const DurationSlotConverter()",
+              "dart_type_name": "DurationSlot"
+            }
+          },
+          {
+            "name": "theoretical_delta",
+            "getter_name": "theoreticalDelta",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "applied_delta",
+            "getter_name": "appliedDelta",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "default_theoretical_delta",
+            "getter_name": "defaultTheoreticalDelta",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant(0)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "activity_factor",
+            "getter_name": "factor",
+            "moor_type": "double",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant(1.0)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "personalized_theoretical_delta",
+            "getter_name": "personalizedTheoreticalDelta",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant(0)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "personalization_version_id",
+            "getter_name": "personalizationVersionId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "factor_regime_started_life_day",
+            "getter_name": "factorRegimeStartedLifeDay",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "rule_version",
+            "getter_name": "ruleVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "status",
+            "getter_name": "status",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityRecordStatusConverter()",
+              "dart_type_name": "ActivityRecordStatus"
+            }
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(id)) > 0)",
+          "CHECK (duration_minutes IN (15, 30, 45, 60, 90, 120))",
+          "CHECK (status IN ('active', 'deleted'))",
+          "CHECK (activity_factor > 0)",
+          "CHECK ((status = 'active' AND deleted_at IS NULL) OR (status = 'deleted' AND deleted_at IS NOT NULL))",
+          "CHECK ((category = 'study' AND subcategory IN ('classAttendance', 'selfStudyOrThesis', 'homework', 'reviewOrExamPrep', 'organizeOrSummarize', 'otherStudy')) OR (category = 'practice' AND subcategory IN ('implementationOrDevelopment', 'experiment', 'projectProgress', 'debuggingOrRevision', 'organizationOrAdministration', 'otherPractice')) OR (category = 'recovery' AND subcategory IN ('nap', 'lightActivity', 'mentalReset', 'exerciseRecovery', 'lifeMaintenance', 'otherRecovery')) OR (category = 'leisure' AND subcategory IN ('gaming', 'shortVideo', 'seriesOrMovie', 'chatOrSocial', 'hobbyEntertainment', 'otherLeisure')))",
+          "FOREIGN KEY (rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "references": [
+        0
+      ],
+      "type": "table",
+      "data": {
+        "name": "energy_observations",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "life_day",
+            "getter_name": "lifeDay",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "type",
+            "getter_name": "type",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const EnergyObservationTypeConverter()",
+              "dart_type_name": "EnergyObservationType"
+            }
+          },
+          {
+            "name": "absolute_state",
+            "getter_name": "absoluteState",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const AbsoluteEnergyStateConverter()",
+              "dart_type_name": "AbsoluteEnergyState"
+            }
+          },
+          {
+            "name": "relative_state",
+            "getter_name": "relativeState",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const RelativeCorrectionConverter()",
+              "dart_type_name": "RelativeCorrection"
+            }
+          },
+          {
+            "name": "estimate_at_observation",
+            "getter_name": "estimateAtObservation",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "contract_version",
+            "getter_name": "contractVersion",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "reference_type",
+            "getter_name": "referenceType",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ObservationReferenceTypeConverter()",
+              "dart_type_name": "ObservationReferenceType"
+            }
+          },
+          {
+            "name": "initial_estimate_at_observation",
+            "getter_name": "initialEstimateAtObservation",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "estimated_ordinal_at_observation",
+            "getter_name": "estimatedOrdinalAtObservation",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "base_energy_at_observation",
+            "getter_name": "baseEnergyAtObservation",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "rule_version_at_observation",
+            "getter_name": "ruleVersionAtObservation",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "comparison_band_version",
+            "getter_name": "comparisonBandVersion",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "personalization_version_at_observation",
+            "getter_name": "personalizationVersionAtObservation",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "effective_model_fingerprint_at_observation",
+            "getter_name": "effectiveModelFingerprintAtObservation",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "model_regime_epoch_at_observation",
+            "getter_name": "modelRegimeEpochAtObservation",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "active_activity_count_at_observation",
+            "getter_name": "activeActivityCountAtObservation",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "coverage_state",
+            "getter_name": "coverageState",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ObservationCoverageStateConverter()",
+              "dart_type_name": "ObservationCoverageState"
+            }
+          },
+          {
+            "name": "model_regime_key",
+            "getter_name": "modelRegimeKey",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "observed_at",
+            "getter_name": "observedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(id)) > 0)",
+          "CHECK (type IN ('dailyAbsolute', 'relativeCorrection'))",
+          "CHECK (absolute_state IS NULL OR absolute_state IN ('exhausted', 'low', 'okay', 'good', 'full'))",
+          "CHECK (relative_state IS NULL OR relative_state IN ('lower', 'aboutRight', 'higher'))",
+          "CHECK (contract_version IS NULL OR contract_version = 'mvp-b-observation-v1')",
+          "CHECK (reference_type IS NULL OR reference_type IN ('currentMoment', 'previousLifeDayEnd'))",
+          "CHECK (initial_estimate_at_observation IS NULL OR initial_estimate_at_observation > 0)",
+          "CHECK (estimated_ordinal_at_observation IS NULL OR estimated_ordinal_at_observation BETWEEN 0 AND 4)",
+          "CHECK (base_energy_at_observation IS NULL OR base_energy_at_observation BETWEEN 60 AND 140)",
+          "CHECK (active_activity_count_at_observation IS NULL OR active_activity_count_at_observation >= 0)",
+          "CHECK (coverage_state IS NULL OR coverage_state IN ('confirmed', 'uncertain', 'legacyUnknown'))",
+          "CHECK (rule_version_at_observation IS NULL OR length(trim(rule_version_at_observation)) > 0)",
+          "CHECK (comparison_band_version IS NULL OR length(trim(comparison_band_version)) > 0)",
+          "CHECK (personalization_version_at_observation IS NULL OR length(trim(personalization_version_at_observation)) > 0)",
+          "CHECK (effective_model_fingerprint_at_observation IS NULL OR length(trim(effective_model_fingerprint_at_observation)) > 0)",
+          "CHECK (model_regime_epoch_at_observation IS NULL OR length(trim(model_regime_epoch_at_observation)) > 0)",
+          "CHECK (model_regime_key IS NULL OR length(trim(model_regime_key)) > 0)",
+          "CHECK ((type = 'dailyAbsolute' AND absolute_state IS NOT NULL AND relative_state IS NULL AND (((contract_version IS NULL) AND reference_type IS NULL AND initial_estimate_at_observation IS NULL AND estimated_ordinal_at_observation IS NULL AND base_energy_at_observation IS NULL AND rule_version_at_observation IS NULL AND comparison_band_version IS NULL AND personalization_version_at_observation IS NULL AND effective_model_fingerprint_at_observation IS NULL AND model_regime_epoch_at_observation IS NULL AND active_activity_count_at_observation IS NULL AND (coverage_state IS NULL OR coverage_state = 'legacyUnknown') AND model_regime_key IS NULL) OR (contract_version = 'mvp-b-observation-v1' AND estimate_at_observation IS NOT NULL AND reference_type IS NOT NULL AND initial_estimate_at_observation IS NOT NULL AND estimated_ordinal_at_observation IS NOT NULL AND base_energy_at_observation IS NOT NULL AND rule_version_at_observation IS NOT NULL AND comparison_band_version IS NOT NULL AND personalization_version_at_observation IS NOT NULL AND effective_model_fingerprint_at_observation IS NOT NULL AND model_regime_epoch_at_observation IS NOT NULL AND active_activity_count_at_observation IS NOT NULL AND coverage_state IN ('confirmed', 'uncertain') AND model_regime_key IS NOT NULL))) OR (type = 'relativeCorrection' AND absolute_state IS NULL AND relative_state IS NOT NULL AND estimate_at_observation IS NOT NULL AND contract_version IS NULL AND reference_type IS NULL AND initial_estimate_at_observation IS NULL AND estimated_ordinal_at_observation IS NULL AND base_energy_at_observation IS NULL AND rule_version_at_observation IS NULL AND comparison_band_version IS NULL AND personalization_version_at_observation IS NULL AND effective_model_fingerprint_at_observation IS NULL AND model_regime_epoch_at_observation IS NULL AND active_activity_count_at_observation IS NULL AND (coverage_state IS NULL OR coverage_state = 'legacyUnknown') AND model_regime_key IS NULL))",
+          "FOREIGN KEY (rule_version_at_observation) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "references": [
+        3,
+        0
+      ],
+      "type": "table",
+      "data": {
+        "name": "activity_feedback",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "activity_record_id",
+            "getter_name": "activityRecordId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "life_day",
+            "getter_name": "lifeDay",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "subcategory_snapshot",
+            "getter_name": "subcategorySnapshot",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivitySubcategoryConverter()",
+              "dart_type_name": "ActivitySubcategory"
+            }
+          },
+          {
+            "name": "duration_minutes_snapshot",
+            "getter_name": "durationSnapshot",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const DurationSlotConverter()",
+              "dart_type_name": "DurationSlot"
+            }
+          },
+          {
+            "name": "theoretical_delta_snapshot",
+            "getter_name": "theoreticalDeltaSnapshot",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "applied_delta_snapshot",
+            "getter_name": "appliedDeltaSnapshot",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "default_theoretical_delta_snapshot",
+            "getter_name": "defaultTheoreticalDeltaSnapshot",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant(0)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "factor_snapshot",
+            "getter_name": "factorSnapshot",
+            "moor_type": "double",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant(1.0)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "personalized_theoretical_delta_snapshot",
+            "getter_name": "personalizedTheoreticalDeltaSnapshot",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant(0)",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "personalization_version_id",
+            "getter_name": "personalizationVersionId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "factor_regime_started_life_day",
+            "getter_name": "factorRegimeStartedLifeDay",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "impact_sign_snapshot",
+            "getter_name": "impactSignSnapshot",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityImpactSignConverter()",
+              "dart_type_name": "ActivityImpactSign"
+            }
+          },
+          {
+            "name": "rule_version_snapshot",
+            "getter_name": "ruleVersionSnapshot",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "activity_updated_at_snapshot",
+            "getter_name": "activityUpdatedAtSnapshot",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "direction",
+            "getter_name": "direction",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityFeedbackDirectionConverter()",
+              "dart_type_name": "ActivityFeedbackDirection"
+            }
+          },
+          {
+            "name": "collection_source",
+            "getter_name": "collectionSource",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const Constant('userInitiated')",
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityFeedbackCollectionSourceConverter()",
+              "dart_type_name": "ActivityFeedbackCollectionSource"
+            }
+          },
+          {
+            "name": "sampling_policy_version",
+            "getter_name": "samplingPolicyVersion",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "sampled_at",
+            "getter_name": "sampledAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "sample_id",
+            "getter_name": "sampleId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "status",
+            "getter_name": "status",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityFeedbackStatusConverter()",
+              "dart_type_name": "ActivityFeedbackStatus"
+            }
+          },
+          {
+            "name": "invalidation_reason",
+            "getter_name": "invalidationReason",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityFeedbackInvalidationReasonConverter()",
+              "dart_type_name": "ActivityFeedbackInvalidationReason"
+            }
+          },
+          {
+            "name": "observed_at",
+            "getter_name": "observedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(id)) > 0)",
+          "CHECK (length(trim(activity_record_id)) > 0)",
+          "CHECK (subcategory_snapshot IN ('classAttendance', 'selfStudyOrThesis', 'homework', 'reviewOrExamPrep', 'organizeOrSummarize', 'otherStudy', 'implementationOrDevelopment', 'experiment', 'projectProgress', 'debuggingOrRevision', 'organizationOrAdministration', 'otherPractice', 'nap', 'lightActivity', 'mentalReset', 'exerciseRecovery', 'lifeMaintenance', 'otherRecovery', 'gaming', 'shortVideo', 'seriesOrMovie', 'chatOrSocial', 'hobbyEntertainment', 'otherLeisure'))",
+          "CHECK (duration_minutes_snapshot IN (15, 30, 45, 60, 90, 120))",
+          "CHECK (impact_sign_snapshot IN ('consumption', 'recovery', 'zero'))",
+          "CHECK ((impact_sign_snapshot = 'consumption' AND theoretical_delta_snapshot < 0) OR (impact_sign_snapshot = 'recovery' AND theoretical_delta_snapshot > 0) OR (impact_sign_snapshot = 'zero' AND theoretical_delta_snapshot = 0))",
+          "CHECK (length(trim(rule_version_snapshot)) > 0)",
+          "CHECK (direction IN ('strongerImpact', 'aboutRight', 'weakerImpact', 'directionMismatch'))",
+          "CHECK (collection_source IN ('userInitiated', 'sampledPrompt'))",
+          "CHECK (factor_snapshot > 0)",
+          "CHECK ((collection_source = 'userInitiated' AND sample_id IS NULL AND sampling_policy_version IS NULL AND sampled_at IS NULL) OR (collection_source = 'sampledPrompt' AND sample_id IS NOT NULL AND sampling_policy_version IS NOT NULL AND sampled_at IS NOT NULL AND personalization_version_id IS NOT NULL AND factor_regime_started_life_day IS NOT NULL))",
+          "CHECK (status IN ('active', 'invalidated'))",
+          "CHECK (invalidation_reason IS NULL OR invalidation_reason IN ('activityDeleted', 'activityEdited', 'integrityFailure'))",
+          "CHECK ((status = 'active' AND invalidation_reason IS NULL) OR (status = 'invalidated' AND invalidation_reason IS NOT NULL))",
+          "FOREIGN KEY (activity_record_id) REFERENCES activity_records(id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "FOREIGN KEY (rule_version_snapshot) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "learning_runs",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "parameter_family",
+            "getter_name": "parameterFamily",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LearningParameterFamilyConverter()",
+              "dart_type_name": "LearningParameterFamily"
+            }
+          },
+          {
+            "name": "source_model_identity",
+            "getter_name": "sourceModelIdentity",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "source_personalization_version_id",
+            "getter_name": "sourcePersonalizationVersionId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "status",
+            "getter_name": "status",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LearningRunStatusConverter()",
+              "dart_type_name": "LearningRunStatus"
+            }
+          },
+          {
+            "name": "result",
+            "getter_name": "result",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LearningRunResultConverter()",
+              "dart_type_name": "LearningRunResult"
+            }
+          },
+          {
+            "name": "evidence_snapshot_json",
+            "getter_name": "evidenceSnapshotJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "evidence_hash",
+            "getter_name": "evidenceHash",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "evidence_hash_version",
+            "getter_name": "evidenceHashVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "algorithm_version",
+            "getter_name": "algorithmVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "config_version",
+            "getter_name": "configVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "current_values_json",
+            "getter_name": "currentValuesJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "candidate_values_json",
+            "getter_name": "candidateValuesJson",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "reason_codes_json",
+            "getter_name": "reasonCodesJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "triggered_at",
+            "getter_name": "triggeredAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "completed_at",
+            "getter_name": "completedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(id)) > 0)",
+          "CHECK (parameter_family IN ('baseline', 'activityImpact'))",
+          "CHECK (length(trim(source_model_identity)) > 0)",
+          "CHECK (status IN ('pending', 'running', 'completed', 'retryableFailure', 'terminalFailure'))",
+          "CHECK (result IS NULL OR result IN ('insufficientEvidence', 'readyForAudit', 'unstable', 'noChange', 'candidate', 'configurationBlocked', 'improved', 'worsened'))",
+          "CHECK (json_valid(evidence_snapshot_json) AND json_type(evidence_snapshot_json) = 'object')",
+          "CHECK (length(evidence_hash) = 64 AND evidence_hash = lower(evidence_hash) AND evidence_hash NOT GLOB '*[^0-9a-f]*')",
+          "CHECK (length(trim(evidence_hash_version)) > 0)",
+          "CHECK (length(trim(algorithm_version)) > 0)",
+          "CHECK (length(trim(config_version)) > 0)",
+          "CHECK (json_valid(current_values_json) AND json_type(current_values_json) = 'object')",
+          "CHECK ((parameter_family = 'baseline' AND json_type(current_values_json, '$.baseEnergy') = 'integer' AND json_extract(current_values_json, '$.baseEnergy') BETWEEN 60 AND 140) OR (parameter_family = 'activityImpact' AND json_type(current_values_json, '$.factors') = 'object'))",
+          "CHECK ((parameter_family = 'baseline' AND current_values_json = json_object('baseEnergy', json_extract(current_values_json, '$.baseEnergy'))) OR (parameter_family = 'activityImpact' AND current_values_json = json_object('factors', json_extract(current_values_json, '$.factors'))))",
+          "CHECK ((result = 'candidate' AND status = 'completed' AND candidate_values_json IS NOT NULL AND json_valid(candidate_values_json) AND ((parameter_family = 'baseline' AND json_type(candidate_values_json, '$.baseEnergy') = 'integer' AND json_extract(candidate_values_json, '$.baseEnergy') BETWEEN 60 AND 140 AND candidate_values_json = json_object('baseEnergy', json_extract(candidate_values_json, '$.baseEnergy'))) OR (parameter_family = 'activityImpact' AND json_type(candidate_values_json, '$.factors') = 'object' AND candidate_values_json = json_object('factors', json_extract(candidate_values_json, '$.factors'))))) OR ((result IS NULL OR result != 'candidate') AND candidate_values_json IS NULL))",
+          "CHECK (json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array')",
+          "CHECK (((status IN ('pending', 'running')) AND result IS NULL AND completed_at IS NULL) OR (status = 'completed' AND result IS NOT NULL AND completed_at IS NOT NULL) OR (status IN ('retryableFailure', 'terminalFailure') AND result IS NULL AND completed_at IS NOT NULL))",
+          "CHECK ((algorithm_version = 'evidence-shadow-v1' AND source_personalization_version_id IS NULL AND candidate_values_json IS NULL) OR (algorithm_version != 'evidence-shadow-v1' AND source_personalization_version_id IS NOT NULL))",
+          "FOREIGN KEY (source_personalization_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "references": [
+        6
+      ],
+      "type": "table",
+      "data": {
+        "name": "personalization_versions",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "parent_version_id",
+            "getter_name": "parentVersionId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "effective_model_fingerprint",
+            "getter_name": "effectiveModelFingerprint",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "model_regime_epoch",
+            "getter_name": "modelRegimeEpoch",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "UNIQUE",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "UNIQUE"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "unique"
+            ]
+          },
+          {
+            "name": "creation_source",
+            "getter_name": "creationSource",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const PersonalizationCreationSourceConverter()",
+              "dart_type_name": "PersonalizationCreationSource"
+            }
+          },
+          {
+            "name": "schedule_source",
+            "getter_name": "scheduleSource",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const PersonalizationScheduleSourceConverter()",
+              "dart_type_name": "PersonalizationScheduleSource"
+            }
+          },
+          {
+            "name": "source_learning_run_id",
+            "getter_name": "sourceLearningRunId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "algorithm_version",
+            "getter_name": "algorithmVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "config_version",
+            "getter_name": "configVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "changed_parameter_family",
+            "getter_name": "changedParameterFamily",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const PersonalizationChangedParameterFamilyConverter()",
+              "dart_type_name": "PersonalizationChangedParameterFamily"
+            }
+          },
+          {
+            "name": "base_energy",
+            "getter_name": "baseEnergy",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "baseline_anchor_energy",
+            "getter_name": "baselineAnchorEnergy",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "status",
+            "getter_name": "status",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const PersonalizationVersionStatusConverter()",
+              "dart_type_name": "PersonalizationVersionStatus"
+            }
+          },
+          {
+            "name": "effective_life_day",
+            "getter_name": "effectiveLifeDay",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "activated_at",
+            "getter_name": "activatedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "ended_at",
+            "getter_name": "endedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "transition_reason",
+            "getter_name": "transitionReason",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(id)) > 0)",
+          "CHECK (parent_version_id IS NULL OR length(trim(parent_version_id)) > 0)",
+          "CHECK (length(trim(effective_model_fingerprint)) > 0)",
+          "CHECK (length(trim(model_regime_epoch)) > 0)",
+          "CHECK (creation_source IN ('initial', 'learningRun', 'manual', 'legacyManualPending', 'revert'))",
+          "CHECK (schedule_source IS NULL OR schedule_source IN ('automatic', 'reviewAccepted', 'manual', 'legacyManualPending', 'revert'))",
+          "CHECK (source_learning_run_id IS NULL OR length(trim(source_learning_run_id)) > 0)",
+          "CHECK (length(trim(algorithm_version)) > 0)",
+          "CHECK (length(trim(config_version)) > 0)",
+          "CHECK (changed_parameter_family IN ('none', 'baseline', 'activityImpact'))",
+          "CHECK (base_energy BETWEEN 60 AND 140)",
+          "CHECK (baseline_anchor_energy BETWEEN 60 AND 140)",
+          "CHECK (status IN ('candidate', 'awaitingReview', 'deferred', 'scheduled', 'active', 'superseded', 'rejected', 'reverted', 'canceled', 'invalidated'))",
+          "CHECK (length(trim(transition_reason)) > 0)",
+          "CHECK ((creation_source = 'initial' AND parent_version_id IS NULL AND schedule_source IS NULL AND source_learning_run_id IS NULL AND changed_parameter_family = 'none') OR (creation_source != 'initial' AND parent_version_id IS NOT NULL AND changed_parameter_family != 'none'))",
+          "CHECK ((creation_source = 'learningRun' AND source_learning_run_id IS NOT NULL) OR (creation_source != 'learningRun' AND source_learning_run_id IS NULL))",
+          "CHECK ((status IN ('candidate', 'awaitingReview', 'deferred') AND effective_life_day IS NULL AND activated_at IS NULL AND ended_at IS NULL) OR (status = 'scheduled' AND schedule_source IS NOT NULL AND effective_life_day IS NOT NULL AND activated_at IS NULL AND ended_at IS NULL) OR (status = 'active' AND activated_at IS NOT NULL AND ended_at IS NULL AND (creation_source = 'initial' OR effective_life_day IS NOT NULL)) OR (status IN ('superseded', 'reverted') AND activated_at IS NOT NULL AND ended_at IS NOT NULL AND (creation_source = 'initial' OR effective_life_day IS NOT NULL)) OR (status IN ('rejected', 'canceled', 'invalidated') AND activated_at IS NULL AND ended_at IS NOT NULL))",
+          "FOREIGN KEY (parent_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "FOREIGN KEY (source_learning_run_id) REFERENCES learning_runs(id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "id"
+        ],
+        "unique_keys": [
+          [
+            "source_learning_run_id"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "references": [
+        7,
+        6,
+        0
+      ],
+      "type": "table",
+      "data": {
+        "name": "personalization_activity_factors",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "personalization_version_id",
+            "getter_name": "personalizationVersionId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "subcategory",
+            "getter_name": "subcategory",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivitySubcategoryConverter()",
+              "dart_type_name": "ActivitySubcategory"
+            }
+          },
+          {
+            "name": "impact_sign",
+            "getter_name": "impactSign",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityImpactSignConverter()",
+              "dart_type_name": "ActivityImpactSign"
+            }
+          },
+          {
+            "name": "factor",
+            "getter_name": "factor",
+            "moor_type": "double",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "base_activity_rule_version",
+            "getter_name": "baseActivityRuleVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "source_learning_run_id",
+            "getter_name": "sourceLearningRunId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "factor_regime_started_life_day",
+            "getter_name": "factorRegimeStartedLifeDay",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (factor > 0 AND factor <= 2.0)",
+          "CHECK (impact_sign IN ('consumption', 'recovery'))",
+          "CHECK (length(trim(base_activity_rule_version)) > 0)",
+          "CHECK (source_learning_run_id IS NULL OR length(trim(source_learning_run_id)) > 0)",
+          "FOREIGN KEY (personalization_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "FOREIGN KEY (source_learning_run_id) REFERENCES learning_runs(id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "FOREIGN KEY (base_activity_rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "personalization_version_id",
+          "subcategory",
+          "impact_sign"
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "references": [
+        3
+      ],
+      "type": "table",
+      "data": {
+        "name": "activity_feedback_samples",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "activity_record_id",
+            "getter_name": "activityRecordId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "life_day",
+            "getter_name": "lifeDay",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "sampling_policy_version",
+            "getter_name": "samplingPolicyVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "status",
+            "getter_name": "status",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityFeedbackSampleStatusConverter()",
+              "dart_type_name": "ActivityFeedbackSampleStatus"
+            }
+          },
+          {
+            "name": "selected_at",
+            "getter_name": "selectedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "prompted_at",
+            "getter_name": "promptedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "responded_at",
+            "getter_name": "respondedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "feedback_id",
+            "getter_name": "feedbackId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "invalidated_at",
+            "getter_name": "invalidatedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "invalidation_reason",
+            "getter_name": "invalidationReason",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const ActivityFeedbackInvalidationReasonConverter()",
+              "dart_type_name": "ActivityFeedbackInvalidationReason"
+            }
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(id)) > 0)",
+          "CHECK (length(trim(activity_record_id)) > 0)",
+          "CHECK (length(trim(sampling_policy_version)) > 0)",
+          "CHECK (status IN ('selected', 'prompted', 'responded', 'skipped', 'expired', 'invalidated'))",
+          "CHECK ((status IN ('selected', 'prompted', 'responded', 'skipped', 'expired') AND invalidated_at IS NULL AND invalidation_reason IS NULL) OR (status = 'invalidated' AND invalidated_at IS NOT NULL AND invalidation_reason IS NOT NULL))",
+          "CHECK ((status = 'selected' AND prompted_at IS NULL AND responded_at IS NULL AND feedback_id IS NULL) OR (status = 'prompted' AND prompted_at IS NOT NULL AND responded_at IS NULL AND feedback_id IS NULL) OR (status = 'responded' AND prompted_at IS NOT NULL AND responded_at IS NOT NULL AND feedback_id IS NOT NULL) OR (status IN ('skipped', 'expired', 'invalidated')))",
+          "CHECK (invalidation_reason IS NULL OR invalidation_reason IN ('activityDeleted', 'activityEdited', 'integrityFailure'))",
+          "FOREIGN KEY (activity_record_id) REFERENCES activity_records(id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "learning_consents",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "parameter_family",
+            "getter_name": "parameterFamily",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LearningParameterFamilyConverter()",
+              "dart_type_name": "LearningParameterFamily"
+            }
+          },
+          {
+            "name": "disclosure_version",
+            "getter_name": "disclosureVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "accepted_at",
+            "getter_name": "acceptedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (parameter_family IN ('baseline', 'activityImpact'))",
+          "CHECK (length(trim(disclosure_version)) > 0)"
+        ],
+        "explicit_pk": [
+          "parameter_family",
+          "disclosure_version"
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "references": [
+        7,
+        6
+      ],
+      "type": "table",
+      "data": {
+        "name": "learning_notices",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "parameter_family",
+            "getter_name": "parameterFamily",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LearningParameterFamilyConverter()",
+              "dart_type_name": "LearningParameterFamily"
+            }
+          },
+          {
+            "name": "type",
+            "getter_name": "type",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LearningNoticeTypeConverter()",
+              "dart_type_name": "LearningNoticeType"
+            }
+          },
+          {
+            "name": "personalization_version_id",
+            "getter_name": "personalizationVersionId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "learning_run_id",
+            "getter_name": "learningRunId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "dedup_key",
+            "getter_name": "dedupKey",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "UNIQUE",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "UNIQUE"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "unique"
+            ]
+          },
+          {
+            "name": "status",
+            "getter_name": "status",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LearningNoticeStatusConverter()",
+              "dart_type_name": "LearningNoticeStatus"
+            }
+          },
+          {
+            "name": "reason_code",
+            "getter_name": "reasonCode",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "seen_at",
+            "getter_name": "seenAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "dismissed_at",
+            "getter_name": "dismissedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(id)) > 0)",
+          "CHECK (parameter_family IN ('baseline', 'activityImpact'))",
+          "CHECK (type IN ('candidateAvailable', 'changeScheduled', 'changeActivated', 'learningSuspended', 'changeCanceled', 'changeReverted'))",
+          "CHECK (length(trim(dedup_key)) > 0)",
+          "CHECK (status IN ('unseen', 'seen', 'dismissed'))",
+          "CHECK (length(trim(reason_code)) > 0)",
+          "CHECK ((status = 'unseen' AND seen_at IS NULL AND dismissed_at IS NULL) OR (status = 'seen' AND seen_at IS NOT NULL AND dismissed_at IS NULL) OR (status = 'dismissed' AND seen_at IS NOT NULL AND dismissed_at IS NOT NULL))",
+          "CHECK ((type IN ('candidateAvailable', 'changeScheduled', 'changeActivated', 'changeCanceled', 'changeReverted') AND personalization_version_id IS NOT NULL) OR type = 'learningSuspended')",
+          "FOREIGN KEY (personalization_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "FOREIGN KEY (learning_run_id) REFERENCES learning_runs(id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "references": [
+        0,
+        7
+      ],
+      "type": "table",
+      "data": {
+        "name": "daily_summaries",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "life_day",
+            "getter_name": "lifeDay",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const LifeDayConverter()",
+              "dart_type_name": "LifeDay"
+            }
+          },
+          {
+            "name": "base_energy",
+            "getter_name": "baseEstimatedEnergy",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "rule_version",
+            "getter_name": "ruleVersion",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "morning_adjustment",
+            "getter_name": "morningAdjustment",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "short_term_adjustment",
+            "getter_name": "shortTermAdjustment",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "initial_estimated_energy",
+            "getter_name": "initialEstimatedEnergy",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "final_estimated_energy",
+            "getter_name": "finalEstimatedEnergy",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "total_consumption",
+            "getter_name": "totalConsumption",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "total_recovery",
+            "getter_name": "totalRecovery",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "category_summary_json",
+            "getter_name": "categorySummaryJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "is_standard_effective_day",
+            "getter_name": "isStandardEffectiveDay",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"is_standard_effective_day\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"is_standard_effective_day\" IN (0, 1))"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "is_weak_effective_day",
+            "getter_name": "isWeakEffectiveDay",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"is_weak_effective_day\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"is_weak_effective_day\" IN (0, 1))"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "model_snapshot_source",
+            "getter_name": "modelSnapshotSource",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const DailySummaryModelSnapshotSourceConverter()",
+              "dart_type_name": "DailySummaryModelSnapshotSource"
+            }
+          },
+          {
+            "name": "personalization_version_id",
+            "getter_name": "personalizationVersionId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "settled_at",
+            "getter_name": "settledAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (base_energy BETWEEN 60 AND 140)",
+          "CHECK (morning_adjustment IN (-6, 0, 6))",
+          "CHECK (short_term_adjustment BETWEEN -4 AND 0)",
+          "CHECK (total_consumption >= 0)",
+          "CHECK (total_recovery >= 0)",
+          "CHECK (json_valid(category_summary_json))",
+          "CHECK (NOT (is_standard_effective_day = 1 AND is_weak_effective_day = 1))",
+          "CHECK ((model_snapshot_source = 'legacyInline' AND personalization_version_id IS NULL) OR (model_snapshot_source = 'personalizationVersion' AND personalization_version_id IS NOT NULL))",
+          "FOREIGN KEY (rule_version) REFERENCES rule_config_versions(version) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "FOREIGN KEY (personalization_version_id) REFERENCES personalization_versions(id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+        ],
+        "explicit_pk": [
+          "life_day"
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "prompt_receipts",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "type",
+            "getter_name": "type",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const PromptReceiptTypeConverter()",
+              "dart_type_name": "PromptReceiptType"
+            }
+          },
+          {
+            "name": "scope_key",
+            "getter_name": "scopeKey",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "action",
+            "getter_name": "action",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [],
+            "type_converter": {
+              "dart_expr": "const PromptReceiptActionConverter()",
+              "dart_type_name": "PromptReceiptAction"
+            }
+          },
+          {
+            "name": "occurred_at",
+            "getter_name": "occurredAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CHECK (length(trim(id)) > 0)",
+          "CHECK (length(trim(scope_key)) > 0)",
+          "CHECK (type IN ('onboarding', 'morning', 'dailyObservation', 'yesterday', 'energyBand'))",
+          "CHECK (\"action\" IN ('shown', 'skipped', 'dismissed'))"
+        ],
+        "explicit_pk": [
+          "id"
+        ],
+        "unique_keys": [
+          [
+            "type",
+            "scope_key",
+            "action"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "references": [
+        3
+      ],
+      "type": "index",
+      "data": {
+        "on": 3,
+        "name": "activity_records_life_day_order",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "life_day",
+            "order_by": null
+          },
+          {
+            "column": "completed_at",
+            "order_by": null
+          },
+          {
+            "column": "created_at",
+            "order_by": null
+          },
+          {
+            "column": "id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "references": [
+        4
+      ],
+      "type": "index",
+      "data": {
+        "on": 4,
+        "name": "energy_observations_life_day_time",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "life_day",
+            "order_by": null
+          },
+          {
+            "column": "observed_at",
+            "order_by": null
+          },
+          {
+            "column": "id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "references": [
+        4
+      ],
+      "type": "index",
+      "data": {
+        "on": 4,
+        "name": "energy_observations_contract_lookup",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "life_day",
+            "order_by": null
+          },
+          {
+            "column": "type",
+            "order_by": null
+          },
+          {
+            "column": "contract_version",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "references": [
+        5
+      ],
+      "type": "index",
+      "data": {
+        "on": 5,
+        "name": "activity_feedback_activity_order",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "activity_record_id",
+            "order_by": null
+          },
+          {
+            "column": "observed_at",
+            "order_by": null
+          },
+          {
+            "column": "id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "references": [
+        5
+      ],
+      "type": "index",
+      "data": {
+        "on": 5,
+        "name": "activity_feedback_life_day_status",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "life_day",
+            "order_by": null
+          },
+          {
+            "column": "status",
+            "order_by": null
+          },
+          {
+            "column": "observed_at",
+            "order_by": null
+          },
+          {
+            "column": "id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "references": [
+        8
+      ],
+      "type": "index",
+      "data": {
+        "on": 8,
+        "name": "personalization_activity_factors_source",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "source_learning_run_id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "references": [
+        9
+      ],
+      "type": "index",
+      "data": {
+        "on": 9,
+        "name": "activity_feedback_samples_activity_day",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "activity_record_id",
+            "order_by": null
+          },
+          {
+            "column": "life_day",
+            "order_by": null
+          },
+          {
+            "column": "selected_at",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "references": [
+        6
+      ],
+      "type": "index",
+      "data": {
+        "on": 6,
+        "name": "learning_runs_idempotency",
+        "sql": null,
+        "unique": true,
+        "columns": [
+          {
+            "column": "parameter_family",
+            "order_by": null
+          },
+          {
+            "column": "source_model_identity",
+            "order_by": null
+          },
+          {
+            "column": "algorithm_version",
+            "order_by": null
+          },
+          {
+            "column": "config_version",
+            "order_by": null
+          },
+          {
+            "column": "evidence_hash",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "references": [
+        6
+      ],
+      "type": "index",
+      "data": {
+        "on": 6,
+        "name": "learning_runs_source_time",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "parameter_family",
+            "order_by": null
+          },
+          {
+            "column": "source_model_identity",
+            "order_by": null
+          },
+          {
+            "column": "triggered_at",
+            "order_by": null
+          },
+          {
+            "column": "id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "references": [
+        6
+      ],
+      "type": "index",
+      "data": {
+        "on": 6,
+        "name": "learning_runs_status_time",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "status",
+            "order_by": null
+          },
+          {
+            "column": "triggered_at",
+            "order_by": null
+          },
+          {
+            "column": "id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "references": [
+        7
+      ],
+      "type": "index",
+      "data": {
+        "on": 7,
+        "name": "personalization_versions_parent",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "parent_version_id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "references": [
+        7
+      ],
+      "type": "index",
+      "data": {
+        "on": 7,
+        "name": "personalization_versions_status_time",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "status",
+            "order_by": null
+          },
+          {
+            "column": "created_at",
+            "order_by": null
+          },
+          {
+            "column": "id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "references": [
+        11
+      ],
+      "type": "index",
+      "data": {
+        "on": 11,
+        "name": "learning_notices_status_time",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "status",
+            "order_by": null
+          },
+          {
+            "column": "created_at",
+            "order_by": null
+          },
+          {
+            "column": "id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "references": [
+        4
+      ],
+      "type": "index",
+      "data": {
+        "on": 4,
+        "name": "energy_observations_one_daily_absolute",
+        "sql": "CREATE UNIQUE INDEX energy_observations_one_daily_absolute\n      ON energy_observations (life_day)\n      WHERE type = 'dailyAbsolute'\n    ;",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 28,
+      "references": [
+        5
+      ],
+      "type": "index",
+      "data": {
+        "on": 5,
+        "name": "activity_feedback_one_active_per_activity",
+        "sql": "CREATE UNIQUE INDEX activity_feedback_one_active_per_activity\n      ON activity_feedback (activity_record_id)\n      WHERE status = 'active'\n    ;",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 29,
+      "references": [
+        7
+      ],
+      "type": "index",
+      "data": {
+        "on": 7,
+        "name": "personalization_versions_one_active",
+        "sql": "CREATE UNIQUE INDEX personalization_versions_one_active\n      ON personalization_versions ((1))\n      WHERE status = 'active'\n    ;",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 30,
+      "references": [
+        7
+      ],
+      "type": "index",
+      "data": {
+        "on": 7,
+        "name": "personalization_versions_one_pending",
+        "sql": "CREATE UNIQUE INDEX personalization_versions_one_pending\n      ON personalization_versions ((1))\n      WHERE status IN ('candidate', 'awaitingReview', 'deferred', 'scheduled')\n    ;",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 31,
+      "references": [
+        12
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 12,
+        "references_in_body": [
+          12
+        ],
+        "name": "daily_summaries_reject_update",
+        "sql": "CREATE TRIGGER daily_summaries_reject_update\n      BEFORE UPDATE ON daily_summaries\n      BEGIN\n        SELECT RAISE(ABORT, 'daily summaries are immutable');\n      END;"
+      }
+    },
+    {
+      "id": 32,
+      "references": [
+        1
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 1,
+        "references_in_body": [
+          1
+        ],
+        "name": "app_settings_reject_delete",
+        "sql": "CREATE TRIGGER app_settings_reject_delete\n      BEFORE DELETE ON app_settings\n      BEGIN\n        SELECT RAISE(ABORT, 'app settings row must exist');\n      END;"
+      }
+    },
+    {
+      "id": 33,
+      "references": [
+        12
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 12,
+        "references_in_body": [
+          12
+        ],
+        "name": "daily_summaries_reject_delete",
+        "sql": "CREATE TRIGGER daily_summaries_reject_delete\n      BEFORE DELETE ON daily_summaries\n      BEGIN\n        SELECT RAISE(ABORT, 'daily summaries are immutable');\n      END;"
+      }
+    },
+    {
+      "id": 34,
+      "references": [
+        0
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 0,
+        "references_in_body": [
+          0
+        ],
+        "name": "referenced_rule_versions_reject_update",
+        "sql": "CREATE TRIGGER referenced_rule_versions_reject_update\n      BEFORE UPDATE ON rule_config_versions\n      WHEN\n        EXISTS (\n          SELECT 1 FROM app_settings\n          WHERE active_rule_version = OLD.version\n             OR pending_rule_version = OLD.version\n        )\n        OR EXISTS (\n          SELECT 1 FROM activity_records\n          WHERE rule_version = OLD.version\n        )\n        OR EXISTS (\n          SELECT 1 FROM daily_summaries\n          WHERE rule_version = OLD.version\n        )\n        OR EXISTS (\n          SELECT 1 FROM energy_observations\n          WHERE rule_version_at_observation = OLD.version\n        )\n        OR EXISTS (\n          SELECT 1 FROM activity_feedback\n          WHERE rule_version_snapshot = OLD.version\n        )\n      BEGIN\n        SELECT RAISE(ABORT, 'referenced rule versions are immutable');\n      END;"
+      }
+    },
+    {
+      "id": 35,
+      "references": [
+        6
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 6,
+        "references_in_body": [
+          6
+        ],
+        "name": "learning_runs_reject_final_update",
+        "sql": "CREATE TRIGGER learning_runs_reject_final_update\n      BEFORE UPDATE ON learning_runs\n      WHEN OLD.status IN ('completed', 'terminalFailure')\n      BEGIN\n        SELECT RAISE(ABORT, 'final learning runs are immutable');\n      END;"
+      }
+    },
+    {
+      "id": 36,
+      "references": [
+        7
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 7,
+        "references_in_body": [
+          7
+        ],
+        "name": "personalization_versions_reject_delete",
+        "sql": "CREATE TRIGGER personalization_versions_reject_delete\n      BEFORE DELETE ON personalization_versions\n      BEGIN\n        SELECT RAISE(ABORT, 'personalization versions are immutable history');\n      END;"
+      }
+    },
+    {
+      "id": 37,
+      "references": [
+        7
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 7,
+        "references_in_body": [
+          7
+        ],
+        "name": "personalization_versions_reject_identity_update",
+        "sql": "CREATE TRIGGER personalization_versions_reject_identity_update\n      BEFORE UPDATE ON personalization_versions\n      WHEN\n        NEW.id IS NOT OLD.id\n        OR NEW.parent_version_id IS NOT OLD.parent_version_id\n        OR NEW.effective_model_fingerprint IS NOT OLD.effective_model_fingerprint\n        OR NEW.model_regime_epoch IS NOT OLD.model_regime_epoch\n        OR NEW.creation_source IS NOT OLD.creation_source\n        OR NEW.source_learning_run_id IS NOT OLD.source_learning_run_id\n        OR NEW.algorithm_version IS NOT OLD.algorithm_version\n        OR NEW.config_version IS NOT OLD.config_version\n        OR NEW.changed_parameter_family IS NOT OLD.changed_parameter_family\n        OR NEW.base_energy IS NOT OLD.base_energy\n        OR NEW.baseline_anchor_energy IS NOT OLD.baseline_anchor_energy\n        OR NEW.created_at IS NOT OLD.created_at\n      BEGIN\n        SELECT RAISE(ABORT, 'personalization version identity is immutable');\n      END;"
+      }
+    },
+    {
+      "id": 38,
+      "references": [
+        7
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 7,
+        "references_in_body": [
+          7
+        ],
+        "name": "personalization_versions_reject_terminal_update",
+        "sql": "CREATE TRIGGER personalization_versions_reject_terminal_update\n      BEFORE UPDATE ON personalization_versions\n      WHEN OLD.status IN ('superseded', 'rejected', 'reverted', 'canceled', 'invalidated')\n      BEGIN\n        SELECT RAISE(ABORT, 'terminal personalization versions are immutable');\n      END;"
+      }
+    },
+    {
+      "id": 39,
+      "references": [
+        10
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 10,
+        "references_in_body": [
+          10
+        ],
+        "name": "learning_consents_reject_update",
+        "sql": "CREATE TRIGGER learning_consents_reject_update\n      BEFORE UPDATE ON learning_consents\n      BEGIN\n        SELECT RAISE(ABORT, 'learning consents are immutable');\n      END;"
+      }
+    },
+    {
+      "id": 40,
+      "references": [
+        10
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 10,
+        "references_in_body": [
+          10
+        ],
+        "name": "learning_consents_reject_delete",
+        "sql": "CREATE TRIGGER learning_consents_reject_delete\n      BEFORE DELETE ON learning_consents\n      BEGIN\n        SELECT RAISE(ABORT, 'learning consents are immutable');\n      END;"
+      }
+    },
+    {
+      "id": 41,
+      "references": [
+        11
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 11,
+        "references_in_body": [
+          11
+        ],
+        "name": "learning_notices_reject_identity_update",
+        "sql": "CREATE TRIGGER learning_notices_reject_identity_update\n      BEFORE UPDATE ON learning_notices\n      WHEN\n        NEW.id IS NOT OLD.id\n        OR NEW.parameter_family IS NOT OLD.parameter_family\n        OR NEW.type IS NOT OLD.type\n        OR NEW.personalization_version_id IS NOT OLD.personalization_version_id\n        OR NEW.learning_run_id IS NOT OLD.learning_run_id\n        OR NEW.dedup_key IS NOT OLD.dedup_key\n        OR NEW.reason_code IS NOT OLD.reason_code\n        OR NEW.created_at IS NOT OLD.created_at\n      BEGIN\n        SELECT RAISE(ABORT, 'learning notice identity is immutable');\n      END;"
+      }
+    },
+    {
+      "id": 42,
+      "references": [
+        9
+      ],
+      "type": "index",
+      "data": {
+        "on": 9,
+        "name": "activity_feedback_samples_one_active_policy",
+        "sql": "CREATE UNIQUE INDEX activity_feedback_samples_one_active_policy ON activity_feedback_samples (activity_record_id, sampling_policy_version) WHERE status != 'invalidated'",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 43,
+      "references": [
+        9
+      ],
+      "type": "index",
+      "data": {
+        "on": 9,
+        "name": "activity_feedback_samples_one_feedback",
+        "sql": "CREATE UNIQUE INDEX activity_feedback_samples_one_feedback ON activity_feedback_samples (feedback_id) WHERE feedback_id IS NOT NULL",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 44,
+      "references": [
+        5
+      ],
+      "type": "index",
+      "data": {
+        "on": 5,
+        "name": "activity_feedback_one_sample",
+        "sql": "CREATE UNIQUE INDEX activity_feedback_one_sample ON activity_feedback (sample_id) WHERE sample_id IS NOT NULL",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 45,
+      "references": [
+        0
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 0,
+        "references_in_body": [
+          0
+        ],
+        "name": "referenced_rule_versions_reject_update_v5",
+        "sql": "CREATE TRIGGER referenced_rule_versions_reject_update_v5 BEFORE UPDATE ON rule_config_versions WHEN EXISTS (SELECT 1 FROM personalization_activity_factors WHERE base_activity_rule_version = OLD.version) BEGIN SELECT RAISE(ABORT, 'referenced activity factor rule versions are immutable'); END"
+      }
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 .vscode/
+.idea/
 docs_review/
 /*.md
 !/README.md

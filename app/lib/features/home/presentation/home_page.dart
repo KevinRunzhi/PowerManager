@@ -1,0 +1,1139 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:power_manager/app/theme/app_colors.dart';
+import 'package:power_manager/app/theme/app_spacing.dart';
+import 'package:power_manager/app/theme/energy_palette.dart';
+import 'package:power_manager/app/app_routes.dart';
+import 'package:power_manager/application/activity_use_cases.dart';
+import 'package:power_manager/application/home_view_model.dart';
+import 'package:power_manager/application/history_review_service.dart';
+import 'package:power_manager/application/operation_preparation_service.dart';
+import 'package:power_manager/application/providers.dart';
+import 'package:power_manager/application/wellbeing_use_cases.dart';
+import 'package:power_manager/domain/energy/current_day_projector.dart';
+import 'package:power_manager/domain/energy/energy_enums.dart';
+import 'package:power_manager/domain/energy/estimated_activity.dart';
+import 'package:power_manager/domain/entities/persisted_entities.dart';
+import 'package:power_manager/domain/life_day/life_day.dart';
+import 'package:power_manager/features/activity/presentation/activity_record_sheet.dart';
+import 'package:power_manager/features/activity/presentation/activity_feedback_sheet.dart';
+import 'package:power_manager/features/activity/presentation/energy_gesture_surface.dart';
+import 'package:power_manager/features/activity/application/record_gesture_controller.dart';
+import 'package:power_manager/features/home/presentation/energy_orb/energy_orb.dart';
+import 'package:power_manager/features/wellbeing/presentation/actual_state_sheet.dart';
+import 'package:power_manager/features/wellbeing/presentation/morning_check_in_sheet.dart';
+import 'package:power_manager/features/settings/presentation/onboarding_dialog.dart';
+import 'package:power_manager/shared/widgets/debug_stage_banner.dart';
+
+enum _ActivityUndoKind { created, deleted }
+
+class HomePage extends ConsumerWidget {
+  const HomePage({super.key});
+
+  static const pageKey = Key('home-page');
+  static const energyBallKey = Key('energy-ball-placeholder');
+  static const recordButtonKey = Key('record-button-placeholder');
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preparation = ref.watch(currentPreparationProvider);
+    return Scaffold(
+      key: pageKey,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          SafeArea(
+            minimum: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
+            child: preparation.when(
+              data: (result) => _LoadedHome(result: result),
+              error: (error, _) => _LoadError(
+                onRetry: () => ref.invalidate(currentPreparationProvider),
+              ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+            ),
+          ),
+          const DebugStageBanner(),
+          const _OnboardingAutoPrompt(),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadedHome extends ConsumerWidget {
+  const _LoadedHome({required this.result});
+
+  final OperationPreparationResult result;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final projection = result.current.projection;
+    final impactPreviews =
+        ref.watch(currentActivityImpactCatalogProvider).value ?? const {};
+    final viewModel = HomeViewModel.fromProjection(result.current);
+    final morningStatus = switch (ref.watch(morningCompletionStatusProvider)) {
+      AsyncData(:final value) => value,
+      _ =>
+        result.current.morningCheckInCompleted
+            ? MorningCompletionStatus.completed
+            : MorningCompletionStatus.notAnswered,
+    };
+    final canSupplementYesterday =
+        ref.watch(canSupplementYesterdayProvider).value ?? false;
+    final currentActual = ref.watch(currentDailyObservationProvider).value;
+    final hasCurrentActual = currentActual != null;
+    final feedbackByActivity =
+        ref.watch(currentActivityFeedbackProvider).value ?? const {};
+    final energyActivated = EnergyPalette.shouldActivate(
+      morningHandled: morningStatus != MorningCompletionStatus.notAnswered,
+      hasActivities: projection.activities.isNotEmpty,
+    );
+    final energyRatio = viewModel.initialEstimate == 0
+        ? 0.0
+        : projection.currentEstimate / viewModel.initialEstimate;
+    final gestureColors = energyActivated
+        ? EnergyPalette.forRatio(energyRatio)
+        : EnergyPalette.dormant;
+    final reminderMessage = ref.watch(energyReminderMessageProvider);
+    final history = ref.watch(historyReviewProvider).value;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!ref.read(undoWindowActiveProvider)) {
+        _maybeShowReminder(ref, viewModel, lifeDay: result.current.lifeDay);
+      }
+    });
+    return CustomScrollView(
+      slivers: [
+        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x4)),
+        SliverToBoxAdapter(
+          child: _MorningHint(
+            status: morningStatus,
+            onTap: () =>
+                MorningCheckInSheet.show(context, result.current.lifeDay),
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x8)),
+        SliverToBoxAdapter(
+          child: EnergyGestureSurface(
+            impactPreviews: impactPreviews,
+            accentColor: gestureColors.primary,
+            onConfirmed: (selection) =>
+                _createFromGesture(context, ref, selection),
+            child: EnergyOrb(
+              key: HomePage.energyBallKey,
+              estimate: projection.currentEstimate,
+              initialEstimate: viewModel.initialEstimate,
+              energyActivated: energyActivated,
+              morningCompleted:
+                  morningStatus == MorningCompletionStatus.completed,
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Center(
+            child: Text(
+              '初始 ${viewModel.initialEstimate} · ${viewModel.bandLabel}',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: _ReminderBar(
+            message: reminderMessage,
+            onDismiss: () =>
+                ref.read(energyReminderMessageProvider.notifier).dismiss(),
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x4)),
+        SliverToBoxAdapter(
+          child: Center(
+            child: IconButton.filledTonal(
+              key: HomePage.recordButtonKey,
+              onPressed: () => _create(context, ref),
+              tooltip: '记录活动',
+              icon: const Icon(Icons.add_rounded),
+            ),
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x8)),
+        SliverToBoxAdapter(
+          child: Row(
+            children: [
+              Text('今天的记录', style: Theme.of(context).textTheme.titleMedium),
+              const Spacer(),
+              Text(
+                '${projection.activities.length} 条',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+            ],
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x3)),
+        if (projection.activities.isEmpty)
+          const SliverToBoxAdapter(child: _EmptyActivities())
+        else
+          SliverList.separated(
+            itemCount: projection.activities.length,
+            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.x2),
+            itemBuilder: (context, index) {
+              final activity = projection.activities[index];
+              return _ActivityTile(
+                activity: activity,
+                hasFeedback: feedbackByActivity.containsKey(activity.record.id),
+                onFeedback: () => _feedback(
+                  context,
+                  ref,
+                  activity.record.id,
+                  feedbackByActivity[activity.record.id],
+                ),
+                onEdit: () => _edit(context, ref, activity.record),
+                onDelete: () => _delete(context, ref, activity.record),
+              );
+            },
+          ),
+        if (projection.activities.isNotEmpty && !hasCurrentActual) ...[
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x4)),
+          SliverToBoxAdapter(
+            child: _ActualStateNudge(
+              onPressed: () => ActualStateSheet.show(
+                context,
+                lifeDay: result.current.lifeDay,
+                initialObservation: currentActual,
+              ),
+            ),
+          ),
+        ],
+        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x6)),
+        SliverToBoxAdapter(
+          child: _WellbeingTools(
+            onOverview: () => _showOverview(context, viewModel),
+            hasCurrentActual: hasCurrentActual,
+            onActual: () => ActualStateSheet.show(
+              context,
+              lifeDay: result.current.lifeDay,
+              initialObservation: currentActual,
+            ),
+            onCorrection: () => RelativeCorrectionSheet.show(context),
+            onSettings: () =>
+                Navigator.of(context).pushNamed(AppRoutes.settings),
+          ),
+        ),
+        if (history != null &&
+            (history.latest != null || history.rolling.days.isNotEmpty)) ...[
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x3)),
+          SliverToBoxAdapter(
+            child: _HistoryTools(
+              history: history,
+              currentLifeDay: result.current.lifeDay,
+              canSupplementYesterday: canSupplementYesterday,
+              onSupplementYesterday: () => ActualStateSheet.show(
+                context,
+                lifeDay: result.current.lifeDay.previous,
+                isYesterday: true,
+              ),
+            ),
+          ),
+        ],
+        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.x12)),
+      ],
+    );
+  }
+
+  Future<void> _create(BuildContext context, WidgetRef ref) async {
+    final undoWindow = ref.read(undoWindowActiveProvider.notifier)..begin();
+    ActivityMutationResult? result;
+    try {
+      result = await ActivityRecordSheet.show(context);
+    } finally {
+      undoWindow.end();
+    }
+    if (result != null && context.mounted) {
+      unawaited(
+        _showActivityUndo(
+          context,
+          ref,
+          result,
+          kind: _ActivityUndoKind.created,
+        ),
+      );
+    }
+  }
+
+  Future<void> _createFromGesture(
+    BuildContext context,
+    WidgetRef ref,
+    RecordGestureSelection selection,
+  ) async {
+    final undoWindow = ref.read(undoWindowActiveProvider.notifier)..begin();
+    ActivityMutationResult? result;
+    try {
+      final now = ref.read(clockProvider).now();
+      result = await ref
+          .read(activityUseCasesProvider)
+          .create(
+            ActivityDraft(
+              operationId: ref
+                  .read(recordIdGeneratorProvider)
+                  .next(prefix: 'gesture', now: now),
+              category: selection.category,
+              subcategory: selection.subcategory,
+              duration: selection.duration,
+              completedAt: now,
+            ),
+          );
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('手势记录失败，可立即使用 + 记录。')));
+      }
+    } finally {
+      undoWindow.end();
+    }
+    if (result != null && context.mounted) {
+      ref.invalidate(currentPreparationProvider);
+      ref.invalidate(currentActivityFeedbackProvider);
+      ref.invalidate(dataHealthReportProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
+      unawaited(
+        _showActivityUndo(
+          context,
+          ref,
+          result,
+          kind: _ActivityUndoKind.created,
+        ),
+      );
+    }
+  }
+
+  Future<void> _edit(
+    BuildContext context,
+    WidgetRef ref,
+    EstimatedActivityRecord activity,
+  ) async {
+    final result = await ActivityRecordSheet.show(context, initial: activity);
+    if (result != null) {
+      ref.invalidate(currentActivityFeedbackProvider);
+      ref.invalidate(dataHealthReportProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
+      await _maybeShowReminder(
+        ref,
+        HomeViewModel.fromProjection(result.current),
+        lifeDay: result.current.lifeDay,
+      );
+    }
+  }
+
+  Future<void> _feedback(
+    BuildContext context,
+    WidgetRef ref,
+    String activityId,
+    ActivityFeedback? existingFeedback,
+  ) async {
+    try {
+      final activity = await ref
+          .read(activitiesRepositoryProvider)
+          .find(activityId);
+      if (activity == null || activity.status != ActivityRecordStatus.active) {
+        throw StateError('activityUnavailable');
+      }
+      if (!context.mounted) return;
+      await ActivityFeedbackSheet.show(
+        context,
+        activity: activity,
+        initialFeedback: existingFeedback,
+      );
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('活动已经变化，请刷新后重试。')));
+      }
+    }
+  }
+
+  Future<void> _delete(
+    BuildContext context,
+    WidgetRef ref,
+    EstimatedActivityRecord activity,
+  ) async {
+    try {
+      final result = await ref
+          .read(activityUseCasesProvider)
+          .delete(activity.id);
+      ref.invalidate(currentPreparationProvider);
+      ref.invalidate(currentActivityFeedbackProvider);
+      ref.invalidate(dataHealthReportProvider);
+      ref.invalidate(mvpBUpgradeReadinessProvider);
+      if (context.mounted) {
+        unawaited(
+          _showActivityUndo(
+            context,
+            ref,
+            result,
+            kind: _ActivityUndoKind.deleted,
+          ),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('删除失败，请刷新后重试。')));
+      }
+    }
+  }
+
+  Future<void> _showActivityUndo(
+    BuildContext context,
+    WidgetRef ref,
+    ActivityMutationResult result, {
+    required _ActivityUndoKind kind,
+  }) async {
+    final activity = result.activity;
+    final container = ProviderScope.containerOf(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final undoWindow = container.read(undoWindowActiveProvider.notifier)
+      ..begin();
+    Future<bool>? undoFuture;
+    var undoRequested = false;
+    try {
+      final controller = messenger.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 5),
+          persist: false,
+          content: Text(switch (kind) {
+            _ActivityUndoKind.created =>
+              '${activity.subcategory.label} ${activity.duration.minutes} 分钟'
+                  ' · 估计 ${_signed(activity.appliedDelta)}',
+            _ActivityUndoKind.deleted =>
+              '已删除 ${activity.subcategory.label} '
+                  '${activity.duration.minutes} 分钟',
+          }),
+          action: SnackBarAction(
+            label: '撤销',
+            onPressed: () {
+              undoRequested = true;
+              undoFuture = _applyActivityUndo(
+                container,
+                messenger,
+                activity.id,
+                kind,
+              );
+            },
+          ),
+        ),
+      );
+      await controller.closed;
+      if (undoFuture case final pending?) {
+        await pending;
+      }
+    } finally {
+      undoWindow.end();
+    }
+    if (kind == _ActivityUndoKind.created && !undoRequested) {
+      await _waitForUndoWindows(container);
+      if (!context.mounted) return;
+      try {
+        final current = await ref.read(currentPreparationProvider.future);
+        await _maybeShowReminder(
+          ref,
+          HomeViewModel.fromProjection(current.current),
+          lifeDay: current.current.lifeDay,
+        );
+      } catch (_) {
+        // The home load state owns preparation errors and exposes retry.
+      }
+    }
+  }
+
+  Future<void> _waitForUndoWindows(ProviderContainer container) async {
+    if (!container.read(undoWindowActiveProvider)) return;
+    final completed = Completer<void>();
+    final subscription = container.listen<bool>(undoWindowActiveProvider, (
+      _,
+      active,
+    ) {
+      if (!active && !completed.isCompleted) {
+        completed.complete();
+      }
+    }, fireImmediately: true);
+    await completed.future;
+    subscription.close();
+  }
+
+  Future<bool> _applyActivityUndo(
+    ProviderContainer container,
+    ScaffoldMessengerState messenger,
+    String activityId,
+    _ActivityUndoKind kind,
+  ) async {
+    try {
+      final mutator = container.read(activityUseCasesProvider);
+      switch (kind) {
+        case _ActivityUndoKind.created:
+          await mutator.delete(activityId);
+        case _ActivityUndoKind.deleted:
+          await mutator.restore(activityId);
+      }
+      HapticFeedback.lightImpact();
+      container.invalidate(currentPreparationProvider);
+      container.invalidate(currentActivityFeedbackProvider);
+      container.invalidate(dataHealthReportProvider);
+      container.invalidate(mvpBUpgradeReadinessProvider);
+      return true;
+    } catch (_) {
+      if (messenger.mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('暂时无法撤销，请重试。')));
+      }
+      return false;
+    }
+  }
+
+  Future<void> _maybeShowReminder(
+    WidgetRef ref,
+    HomeViewModel viewModel, {
+    required LifeDay lifeDay,
+  }) async {
+    if (viewModel.band == EstimatedEnergyBand.estimatedNormal) {
+      return;
+    }
+    final message = await ref
+        .read(energyReminderServiceProvider)
+        .createOnce(lifeDay: lifeDay, band: viewModel.band);
+    if (message != null) {
+      if (viewModel.band == EstimatedEnergyBand.estimatedLow ||
+          viewModel.band == EstimatedEnergyBand.estimatedOverdraft) {
+        HapticFeedback.heavyImpact();
+      }
+      ref.read(energyReminderMessageProvider.notifier).show(message);
+    }
+  }
+
+  Future<void> _showOverview(BuildContext context, HomeViewModel viewModel) {
+    return showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (_) => _TodayOverviewSheet(viewModel: viewModel),
+    );
+  }
+
+  String _signed(int value) => value > 0 ? '+$value' : '$value';
+}
+
+class _HistoryTools extends StatelessWidget {
+  const _HistoryTools({
+    required this.history,
+    required this.currentLifeDay,
+    required this.canSupplementYesterday,
+    required this.onSupplementYesterday,
+  });
+
+  final HistoryReview history;
+  final LifeDay currentLifeDay;
+  final bool canSupplementYesterday;
+  final VoidCallback onSupplementYesterday;
+
+  @override
+  Widget build(BuildContext context) {
+    final latest = history.latest;
+    return Card(
+      key: const Key('history-review-card'),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (latest != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(latest.titleFor(currentLifeDay)),
+                subtitle: Text(
+                  '${latest.summary.lifeDay} · '
+                  '最终估计 ${latest.summary.finalEstimatedEnergy} · '
+                  '实际 ${latest.actualStateLabel}',
+                ),
+                trailing: const Icon(Icons.expand_more_rounded),
+                onTap: () => _showDay(context, latest),
+              ),
+            if (latest != null &&
+                canSupplementYesterday &&
+                latest.summary.lifeDay == currentLifeDay.previous &&
+                latest.actualState == null)
+              FilledButton.tonal(
+                key: const Key('yesterday-actual-button'),
+                onPressed: onSupplementYesterday,
+                child: const Text('补充昨天结束时状态'),
+              ),
+            if (history.rolling.days.isNotEmpty)
+              OutlinedButton(
+                key: const Key('rolling-review-button'),
+                onPressed: () => _showRolling(context, history.rolling),
+                child: Text(history.rolling.windowLabel),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDay(BuildContext context, HistoricalDayReview review) {
+    return showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (_) => _HistoricalDaySheet(
+        review: review,
+        title: review.titleFor(currentLifeDay),
+      ),
+    );
+  }
+
+  Future<void> _showRolling(BuildContext context, RollingReview rolling) {
+    return showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (_) => _RollingReviewSheet(rolling: rolling),
+    );
+  }
+}
+
+class _HistoricalDaySheet extends StatelessWidget {
+  const _HistoricalDaySheet({required this.review, required this.title});
+
+  final HistoricalDayReview review;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = review.summary;
+    return _ReviewSheetFrame(
+      title: title,
+      children: [
+        Text('${summary.lifeDay}', textAlign: TextAlign.center),
+        const SizedBox(height: AppSpacing.x4),
+        _ReviewFact(
+          label: '系统估计',
+          value:
+              '初始 ${summary.initialEstimatedEnergy} → '
+              '最终 ${summary.finalEstimatedEnergy}',
+        ),
+        _ReviewFact(label: '实际状态', value: review.actualStateLabel),
+        _ReviewFact(
+          label: '总消耗 / 总恢复',
+          value: '${summary.totalConsumption} / ${summary.totalRecovery}',
+        ),
+        _ReviewFact(label: '此刻校正', value: _correctionText(review.corrections)),
+        if (review.categories.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.x3),
+          Text('分类分布', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.x2),
+          for (final item in review.categories) _CategoryFact(item: item),
+        ],
+        const SizedBox(height: AppSpacing.x3),
+        Text(
+          '以上为当日记录的描述性复盘；系统估计不代表你的实际状态。',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+}
+
+class _RollingReviewSheet extends StatelessWidget {
+  const _RollingReviewSheet({required this.rolling});
+
+  final RollingReview rolling;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = rolling.categorySummaries.values.toList()
+      ..sort((left, right) {
+        final gross = right.grossDelta.compareTo(left.grossDelta);
+        return gross != 0
+            ? gross
+            : left.category.index.compareTo(right.category.index);
+      });
+    return _ReviewSheetFrame(
+      title: rolling.windowLabel,
+      children: [
+        Text(
+          '${rolling.days.first.summary.lifeDay} 至 '
+          '${rolling.days.last.summary.lifeDay}',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: AppSpacing.x4),
+        _ReviewFact(
+          label: '总消耗 / 总恢复',
+          value: '${rolling.totalConsumption} / ${rolling.totalRecovery}',
+        ),
+        _ReviewFact(
+          label: '实际状态已确认',
+          value: '${rolling.confirmedActualDays} / ${rolling.days.length} 天',
+        ),
+        _ReviewFact(label: '此刻校正', value: _correctionText(rolling.corrections)),
+        if (categories.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.x3),
+          Text('分类累计', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.x2),
+          for (final item in categories) _CategoryFact(item: item),
+        ],
+        const SizedBox(height: AppSpacing.x3),
+        Text(
+          rolling.days.length < 7
+              ? '当前不足 7 个有效日，先展示已有记录；不会据此生成能力判断或调整建议。'
+              : '这是最近 7 个有效日的描述性汇总，不生成能力判断或调整建议。',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+}
+
+class _ReviewSheetFrame extends StatelessWidget {
+  const _ReviewSheetFrame({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: 0.86,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewFact extends StatelessWidget {
+  const _ReviewFact({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      trailing: SizedBox(
+        width: MediaQuery.sizeOf(context).width * 0.48,
+        child: Text(value, textAlign: TextAlign.end),
+      ),
+    );
+  }
+}
+
+class _CategoryFact extends StatelessWidget {
+  const _CategoryFact({required this.item});
+
+  final CategoryEstimatedSummary item;
+
+  @override
+  Widget build(BuildContext context) {
+    final net = item.netDelta > 0 ? '+${item.netDelta}' : '${item.netDelta}';
+    return Card(
+      child: ListTile(
+        title: Text(item.category.label),
+        subtitle: Text('${item.durationMinutes} 分钟 · 变化总量 ${item.grossDelta}'),
+        trailing: Text(net),
+      ),
+    );
+  }
+}
+
+String _correctionText(CorrectionCounts counts) {
+  if (counts.total == 0) {
+    return '无';
+  }
+  return '${counts.total} 次'
+      '（偏低 ${counts.lower} · 相符 ${counts.aboutRight} · '
+      '偏高 ${counts.higher}）';
+}
+
+class _ActivityTile extends StatelessWidget {
+  const _ActivityTile({
+    required this.activity,
+    required this.hasFeedback,
+    required this.onFeedback,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final ProjectedEstimatedActivity activity;
+  final bool hasFeedback;
+  final VoidCallback onFeedback;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final record = activity.record;
+    final localTime = record.completedAt.toLocal();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        record.subcategory.label,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${record.category.label} · '
+                        '${record.duration.minutes} 分钟 · '
+                        '${_twoDigits(localTime.hour)}:'
+                        '${_twoDigits(localTime.minute)}',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  activity.appliedDelta > 0
+                      ? '+${activity.appliedDelta}'
+                      : '${activity.appliedDelta}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                TextButton.icon(
+                  key: Key('activity-feedback-button-${record.id}'),
+                  onPressed: onFeedback,
+                  icon: Icon(
+                    hasFeedback
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.rate_review_outlined,
+                  ),
+                  label: Text(hasFeedback ? '已评价' : '评价影响'),
+                ),
+                IconButton(
+                  tooltip: '编辑',
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                IconButton(
+                  tooltip: '删除',
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _twoDigits(int value) => value.toString().padLeft(2, '0');
+}
+
+class _MorningHint extends StatelessWidget {
+  const _MorningHint({required this.status, required this.onTap});
+
+  final MorningCompletionStatus status;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (status) {
+      MorningCompletionStatus.notAnswered => '晨间确认（可跳过）',
+      MorningCompletionStatus.skipped => '今天已跳过晨间确认 · 可补做',
+      MorningCompletionStatus.completed => '晨间已确认 · 可修改',
+    };
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.x2),
+          child: Column(
+            children: [
+              Container(
+                width: 34,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: AppColors.textSecondary.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.x2),
+              Text(label, style: Theme.of(context).textTheme.labelMedium),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActualStateNudge extends StatelessWidget {
+  const _ActualStateNudge({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const Key('current-actual-state-nudge'),
+      color: AppColors.backgroundOverlay,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('留一次现在的整体状态', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.x2),
+            Text(
+              '先按自己的感受选择，保存后才显示系统估计。',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.x3),
+            FilledButton.tonal(
+              key: const Key('current-actual-state-nudge-button'),
+              onPressed: onPressed,
+              child: const Text('记录现在的状态'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WellbeingTools extends StatelessWidget {
+  const _WellbeingTools({
+    required this.onOverview,
+    required this.hasCurrentActual,
+    required this.onActual,
+    required this.onCorrection,
+    required this.onSettings,
+  });
+
+  final bool hasCurrentActual;
+  final VoidCallback onActual;
+  final VoidCallback onCorrection;
+  final VoidCallback onOverview;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.x3),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: AppSpacing.x2,
+          runSpacing: AppSpacing.x2,
+          children: [
+            OutlinedButton(
+              key: const Key('today-overview-button'),
+              onPressed: onOverview,
+              child: const Text('今日概览'),
+            ),
+            OutlinedButton(
+              key: const Key('actual-state-button'),
+              onPressed: onActual,
+              child: Text(hasCurrentActual ? '更新现在的整体状态' : '记录现在的整体状态'),
+            ),
+            OutlinedButton(
+              key: const Key('relative-correction-button'),
+              onPressed: onCorrection,
+              child: const Text('此刻校正'),
+            ),
+            OutlinedButton(
+              key: const Key('settings-button'),
+              onPressed: onSettings,
+              child: const Text('设置'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OnboardingAutoPrompt extends ConsumerStatefulWidget {
+  const _OnboardingAutoPrompt();
+
+  @override
+  ConsumerState<_OnboardingAutoPrompt> createState() =>
+      _OnboardingAutoPromptState();
+}
+
+class _OnboardingAutoPromptState extends ConsumerState<_OnboardingAutoPrompt> {
+  bool _shown = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = ref.watch(appSettingsProvider).value;
+    if (!_shown && settings != null && !settings.onboardingCompleted) {
+      _shown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) {
+          return;
+        }
+        await showOnboardingDialog(context, dismissible: false);
+        await ref.read(settingsServiceProvider).completeOnboarding();
+        ref.invalidate(appSettingsProvider);
+      });
+    }
+    return const SizedBox.shrink();
+  }
+}
+
+class _ReminderBar extends StatelessWidget {
+  const _ReminderBar({required this.message, required this.onDismiss});
+
+  final String? message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
+      child: message == null
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.x3),
+              child: Material(
+                color: AppColors.energyMediumLow.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+                child: ListTile(
+                  key: const Key('energy-reminder-bar'),
+                  title: Text(message!),
+                  trailing: IconButton(
+                    tooltip: '关闭提醒',
+                    onPressed: onDismiss,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class _TodayOverviewSheet extends StatelessWidget {
+  const _TodayOverviewSheet({required this.viewModel});
+
+  final HomeViewModel viewModel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '今日概览',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.x4),
+          if (viewModel.categories.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(AppSpacing.page),
+              child: Text('今天还没有活动记录。', textAlign: TextAlign.center),
+            )
+          else
+            for (final item in viewModel.categories)
+              Card(
+                key: Key('overview-${item.category.code}'),
+                child: ListTile(
+                  title: Text(item.category.label),
+                  subtitle: Text(
+                    '${item.durationMinutes} 分钟 · 变化总量 ${item.grossDelta}',
+                  ),
+                  trailing: Text(
+                    item.netDelta > 0
+                        ? '+${item.netDelta}'
+                        : '${item.netDelta}',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ),
+          const SizedBox(height: AppSpacing.x3),
+          Text(
+            '按变化总量排序，右侧展示估计精力净变化。',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyActivities extends StatelessWidget {
+  const _EmptyActivities();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.page),
+      child: Text(
+        '还没有记录。点击能量球下方的 + 开始。',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+    );
+  }
+}
+
+class _LoadError extends StatelessWidget {
+  const _LoadError({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('读取当天状态失败。'),
+          const SizedBox(height: 12),
+          OutlinedButton(onPressed: onRetry, child: const Text('重试')),
+        ],
+      ),
+    );
+  }
+}
